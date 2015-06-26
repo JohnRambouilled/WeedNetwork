@@ -11,7 +11,7 @@ import Class
 import Timer
 import Sources
 
-
+import Data.List
 import Control.Concurrent.MVar
 import qualified Data.ByteString.Lazy as B
 import Data.Binary
@@ -28,6 +28,7 @@ data Sender = Sender {_sToSend :: [SendBuf],
                       _sCurrentDatagram :: DatagramID}
 
 makeLenses ''Sender
+
 
 senderSendBuf :: (MonadIO m) => MVar Timer -> SendBuf -> WriteFun -> IO () -> StateT Sender m [TrSegment]
 senderSendBuf timerV buf wF break = let ret = buildSegments (sbDataID buf) $ zip [0..] $ sbBuf buf
@@ -68,9 +69,6 @@ onControlPacket timerV writeFun break pkt = do buffers <-  use sToSend
                                                                                   then pure []
                                                                                   else do senderSendBuf timerV (head buffers) writeFun break
                                                                                   
---weedLink :: (WriteFun, BreakFun) -> IO (Callback, BrkClbck)
---weedLink (wF, bF) = 
-
 
 
 openTCPCommunication :: (BreakFun -> IO (Callback, BrkClbck))
@@ -80,19 +78,31 @@ openTCPCommunication :: (BreakFun -> IO (Callback, BrkClbck))
 openTCPCommunication clbkGen timerV tO ref sE pR = do 
                             sndV <- newMVar $ Sender [] (pure ()) 0
                             recvV <- newMVar $ RecvBuf [] 
-                            let breakFun bF = BreakFun $ \d -> do withMVar sndV _sKill 
-                                                                  runBreakFun bF $ d
-                                writeFun (wF, bF) = WriteFun $ \d -> (runStateMVar sndV $ senderQueueDatagram timerV wF (void $ (runBreakFun $ breakFun bF) $ B.empty) d)
-                            let clbkGen' wbF = do clbkT <- clbkGen $ breakFun $ snd wbF
-                                                  pure (Callback $ weedCallback timerV sndV recvV clbkT wbF, snd clbkT) -- TOUT DOUX : kill l'entrée
-                            (wF, bF) <- openCommunication clbkGen' timerV tO ref sE pR
-                            pure (writeFun (wF, bF), breakFun bF)
+                            let genWBF = genTCPWriteBreakFun timerV sndV
+                                clbkGen' wbF = genTCPCallback timerV sndV recvV wbF <$> clbkGen (snd $ genWBF wbF)
+                            genWBF <$> openCommunication clbkGen' timerV tO ref sE pR
+                          
+
+
+genTCPWriteBreakFun :: MVar Timer -> MVar Sender -> (WriteFun, BreakFun) -> (WriteFun, BreakFun)
+genTCPWriteBreakFun timerV sndV (wF, bF) = (writeFun, breakFun)
+        where breakFun = BreakFun $ \d -> do withMVar sndV _sKill 
+                                             runBreakFun bF $ d
+              writeFun = WriteFun $ \d -> (runStateMVar sndV $ senderQueueDatagram timerV wF (void $ (runBreakFun $ breakFun) $ B.empty) d)
+
+
+genTCPCallback :: MVar Timer -> MVar Sender -> MVar RecvBuf -> (WriteFun, BreakFun) -> (Callback, BrkClbck) -> (Callback, BrkClbck)
+genTCPCallback timerV sndV rcvV wbF clbks = (Callback clbk, BrkClbck brck)
+    where clbk = weedCallback timerV sndV rcvV clbks $ genTCPWriteBreakFun timerV sndV wbF
+          brck d = withMVar sndV _sKill >> (runBrkClbck (snd clbks) $ d)
+
 
 weedCallback :: MVar Timer -> MVar Sender -> MVar RecvBuf -> (Callback,BrkClbck) -> (WriteFun, BreakFun) -> RawData -> IO ()
 weedCallback timerV sndV rcvV (clbk,break) (wF, bF) rawData = case decodeMaybe rawData of
                                                                     Just (TransportSeg trSeg) -> modifyMVar_ rcvV $ onSeg trSeg
                                                                     Just (TransportControl trCtl) -> do seg <- runStateMVar sndV (onControlPacket timerV wF onTimeOut trCtl)
                                                                                                         forM_ seg $ runWriteFun wF . encode
+                                                                    Nothing -> pure ()
      where onSeg trSeg (RecvBuf trList) = case runRecvBuf trList trSeg of
                                                 Left (trList', (Just cm)) -> do runWriteFun wF . encode $ TransportControl cm
                                                                                 pure $ RecvBuf trList'
@@ -105,7 +115,15 @@ weedCallback timerV sndV rcvV (clbk,break) (wF, bF) rawData = case decodeMaybe r
 
 
 
-
+protoTCPCallback :: MVar Timer -> ProtoCallback -> ProtoCallback
+protoTCPCallback timerV prtClbk = ProtoCallback protoClbk 
+    where protoClbk :: RawData -> (WriteFun, BreakFun) -> IO (Maybe (Callback, BrkClbck))
+          protoClbk d wbF0 = do 
+                            sndV <- newMVar $ Sender [] (pure ()) 0
+                            recvV <- newMVar $ RecvBuf [] 
+                            let wbF = genTCPWriteBreakFun timerV sndV wbF0
+                            (genTCPCallback timerV sndV recvV wbF <$>) <$> (((runProtoCallback prtClbk) $ d) $ wbF)
+                          
 
 
 
