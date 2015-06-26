@@ -101,6 +101,15 @@ repeatEach :: MVar Timer -> IO () -> DiffTime -> IO (IO ())
 repeatEach timerV act ttl = snd <$> registerTimerM timerV ttl (act >> pure False)
 
 
+repeatNTimes :: MVar Timer -> IO () -> IO () -> DiffTime -> Int -> IO (IO())
+repeatNTimes timerV act end freq ntimes = do initTime <- getTime
+                                             let act' = do act
+                                                           cur <- getTime
+                                                           if diffUTCTime cur initTime >= freq*fromIntegral ntimes
+                                                                   then end >> return True
+                                                                   else return False
+                                             snd <$> registerTimerM timerV freq act'
+
 
 startTimer :: MVar Timer -> Int -> IO ()
 startTimer timer checkfreq = keepLog TimerLog Normal "[timer] cleaning entries..." >>
