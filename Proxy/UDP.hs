@@ -111,7 +111,7 @@ behaviour proxyV sourcesV timerV sock sIDsV p@(ProxPacket src raw) = do keepLog 
                                                                         let killTO' = unregisterM proxyV sockfile >> killTO
                                                                         (wr,br) <- liftIO $ openCommunicationTO (buildPipeCallback sock src killTO' sc)
                                                                                                              timerV leechTimeOut leechRefreshTime
-                                                                                                             (fromJust dest) $ ProtoRequest inetProtoID raw
+                                                                                                             (fromJust dest) $ ProtoRequest inetUDPProtoID raw
                                                                         insertMapBehaviour sockfile $ ProxUDPEntry wr br refresh killTO' sc
                                                                         keepLog ProxyLog Normal $ "[UDP PROXY] New communication openned."
                                                                         return []
