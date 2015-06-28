@@ -27,19 +27,18 @@ tcp_socketName = "testounet_tcp.socket"
 
 
 
-main = runWeeds leechMain
+--main = runWeeds leechMain
 --main = runWeeds seedMain
 
-{-main = do testCL <- testBinaire leechMain seedMain -- testChaine [leechMain, relayMain, seedMain]
+main = do testCL <- testBinaire leechMain seedMain -- testChaine [leechMain, relayMain, seedMain]
           let dumpClients = concat <$> (forM testCL $ (fst <$>) . runStateT dumpClient . client)
           repeatEach (ctimer . client $ head testCL) (putStrLn =<< dumpClients) 2 >> pure ()
           mVL <- forM testCL $ runChildren . run
           forM_ mVL readMVar
-  -} 
+   
 
 --main = fullGraphMain 5
                     
-
 
 runWeeds :: ClientBehaviour -> IO ()
 runWeeds c = do (pubkey,privkey) <- generateKeyPair 1024
