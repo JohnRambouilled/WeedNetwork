@@ -59,7 +59,7 @@ onInetInitPacket sctype' wr br (InetInit (InternetSockConf sctype scaddr scdport
                                                                                         | otherwise = pure Nothing
     where buildGatewayCallback = do lcaddr <- localAddr
                                     ("[GATEWAY] connecting to " ++) <$> inet_ntoa scaddr >>= keepLog GatewayLog Normal
-                                     >>runDuplexerThread wr br sctype (SockAddrInet (fromIntegral $ swapEndian scdport) scaddr) raw
+                                     >>runDuplexerThread wr br sctype (SockAddrInet (PortNum $ swapEndian scdport) scaddr) raw
                                           
 onInetInitPacket _ _ _ _ = return Nothing
 
