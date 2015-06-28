@@ -6,6 +6,8 @@ import Packet
 import Class
 import Sources
 import Log
+import Client
+import Transport.MetaModule
 
 import Control.Monad
 import Control.Monad.State hiding (put,get)
@@ -21,8 +23,10 @@ import Control.Exception
 import Network.Socket hiding (send)
 import Network.Socket.ByteString
 
-inetProtoID :: ProtoID
-inetProtoID = ProtoID $ encode "www"
+inetTCPProtoID :: ProtoID
+inetTCPProtoID = ProtoID $ encode "www:TCP"
+inetUDPProtoID :: ProtoID
+inetUDPProtoID = ProtoID $ encode "www:UDP"
 localAddr :: IO Word32
 localAddr = inet_addr "127.0.0.1"
 
@@ -40,17 +44,24 @@ data SockConf = InternetSockConf {scType    :: SocketType,
 dumpSockConf str (InternetSockConf scType scaddr scDstPort) = do x <- inet_ntoa scaddr
                                                                  pure $ str ++ " [SOCKCONF] addr=" ++ show x ++ "(" ++ show scaddr ++") : " ++ show scDstPort
 
-onInetInitPacket :: ProtoCallback
-onInetInitPacket = ProtoCallback $ \rd (wr,br) -> do 
-                                                    maybe (pure Nothing) (onInetInitPacket' wr br) (decodeMaybe rd)
+inetTCPProtoCallback :: Client -> ProtoCallback
+inetTCPProtoCallback c = protoTCPCallback (ctimer c) $ ProtoCallback $ \rd (wr,br) -> do maybe (pure Nothing) (onInetInitPacket Stream wr br) (decodeMaybe rd)
 
-onInetInitPacket' :: WriteFun -> BreakFun -> InetPacket -> IO (Maybe (Callback, BrkClbck))
-onInetInitPacket' wr br (InetInit (InternetSockConf sctype scaddr scdport) raw) = buildGatewayCallback 
+inetUDPProtoCallback :: ProtoCallback
+inetUDPProtoCallback = ProtoCallback $ \rd (wr,br) -> do maybe (pure Nothing) (onInetInitPacket Datagram wr br) (decodeMaybe rd)
+
+--onInetInitPacket :: ProtoCallback
+--onInetInitPacket = ProtoCallback $ \rd (wr,br) -> do 
+--                                                    maybe (pure Nothing) (onInetInitPacket' wr br) (decodeMaybe rd)
+
+onInetInitPacket :: SocketType -> WriteFun -> BreakFun -> InetPacket -> IO (Maybe (Callback, BrkClbck))
+onInetInitPacket sctype' wr br (InetInit (InternetSockConf sctype scaddr scdport) raw) | sctype == sctype' = buildGatewayCallback 
+                                                                                        | otherwise = pure Nothing
     where buildGatewayCallback = do lcaddr <- localAddr
                                     ("[GATEWAY] connecting to " ++) <$> inet_ntoa scaddr >>= keepLog GatewayLog Normal
-                                     >>runDuplexerThread wr br sctype (SockAddrInet (PortNum $ swapEndian scdport) scaddr) raw
+                                     >>runDuplexerThread wr br sctype (SockAddrInet (fromIntegral $ swapEndian scdport) scaddr) raw
                                           
-onInetInitPacket' _ _ _ = return Nothing
+onInetInitPacket _ _ _ _ = return Nothing
 
 {-| Routes from the internet socket to the comID |-}
 runDuplexerThread :: WriteFun -> BreakFun -> SocketType -> SockAddr -> RawData -> IO (Maybe (Callback, BrkClbck))
