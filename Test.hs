@@ -90,7 +90,7 @@ leechMain c send = do introduceThread c send "Leech Hello"
                       --putStrLn "enregistrement de la répétition de recherche"
                       --putStrLn "démarrage du proxy "
                       repeatEach (ctimer c) (void $ sendRes c send inetRessourceID) 5
- --                     startProxy tcp_socketName Stream c
+                      startProxy tcp_socketName Stream c
                       udpProx <- newMVar $ newMapModule []
                       void $ forkIO $ startProxUDP udpProx c
 
