@@ -72,6 +72,8 @@ insertProtoCallback :: Client -> ProtoID -> ProtoCallback -> IO ()
 insertProtoCallback c rID pCB = do keepLog ClientLog Important "insertion d'un protoCallback"
                                    modifyMVar_ (cprotocol c) $ liftIO . (snd <$>) . runStateT (insertMapBehaviour rID $ ProtoEntry pCB)
 
+
+
 newtype RoadChoice = RoadChoice {choseRoad :: Road -> SourceID -> RessourceCert -> RawData -> IO Bool}
 
 cleanSourceEntryList :: [SourceEntry] -> IO [SourceEntry]
