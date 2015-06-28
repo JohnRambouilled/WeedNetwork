@@ -79,7 +79,7 @@ onNewConnection timerV sourcesV sIDs s = do
                                                                       dest <- choseDest sourcesV sIDs
                                                                       if (isNothing dest) then close s
                                                                         else void $ openCommunication buildCallbacks timerV leechTimeOut leechRefreshTime
-                                                                                                      (fromJust dest) $ ProtoRequest inetProtoID (encode pkt)
+                                                                                                      (fromJust dest) $ ProtoRequest inetTCPProtoID (encode pkt)
                                         _ -> do case decodeOrFail (B.fromStrict raw) of
                                                     Right (_,_,a) -> do pkt <- pure a :: IO InetPacket
                                                                         close s

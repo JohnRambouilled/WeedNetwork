@@ -66,7 +66,7 @@ fullGraphMain n = do testCL <- testFullGraph =<< mapM bhvL [1..n]
 testBhvr :: [RessourceID] -> [RessourceID] -> ClientBehaviour
 testBhvr sdR lchR c send = do introduceThread c send "Seed Hello"
                               forM sdR $ flip (offerRessourceID c) $ encode "C'est de la bonne"
-                              insertProtoCallback c inetProtoID $ ProtoCallback testProtoCallback
+                              insertProtoCallback c inetUDPProtoID $ ProtoCallback testProtoCallback
                               forM_ lchR $ \rID -> do sV <- atomically $ newTVar []
                                                       connectToRessource c sV (proxyRoadChoice (csources c) sV) rID
                               forM_ lchR $ sendRes c send
@@ -102,7 +102,8 @@ sendRes c send rID = send $ sendResearch pK uID rID 10 [] B.empty
 seedMain :: ClientBehaviour 
 seedMain c send = do introduceThread c send "Seed Hello"
                      offerRessourceID c inetRessourceID $ encode "C'est de la bonne"
-                     insertProtoCallback c inetProtoID onInetInitPacket
+                     insertProtoCallback c inetUDPProtoID inetUDPProtoCallback
+                     insertProtoCallback c inetTCPProtoID $ inetTCPProtoCallback c
 
 
 relayMain :: ClientBehaviour
