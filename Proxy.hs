@@ -80,10 +80,10 @@ onNewConnection timerV sourcesV sIDs s = do
                                                                       if (isNothing dest) then close s
                                                                         else void $ openCommunication buildCallbacks timerV leechTimeOut leechRefreshTime
                                                                                                       (fromJust dest) $ ProtoRequest inetTCPProtoID (encode pkt)
-                                        _ -> do case decodeOrFail (B.fromStrict raw) of
-                                                    Right (_,_,a) -> do pkt <- pure a :: IO InetPacket
-                                                                        close s
-                                                    Left (_,_,msg) -> do keepLog ProxyLog Error $ "erreur decode packet : " ++ msg
+                                        _ -> do --case decodeOrFail (B.fromStrict raw) of
+                                               --     Right (_,_,a) -> do pkt <- pure a :: IO InetPacket
+                                               --                         close s
+                                               --     Left (_,_,msg) -> do keepLog ProxyLog Error $ "erreur decode packet : " ++ msg
                                                 close s
         where
               buildCallbacks (wr,br) = do pID <- forkFinally (runDuplexer False wr br s) (pure $ close s) 
