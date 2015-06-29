@@ -87,8 +87,8 @@ testChaine cL = newTest $ zipWith genNeigh [0..] cL
 tcp_socketName = "testounet_tcp.socket"
 leechMain :: ClientBehaviour  
 leechMain c send = do introduceThread c send "Leech Hello"
-                      --putStrLn "enregistrement de la répétition de recherche"
-                      --putStrLn "démarrage du proxy "
+                      putStrLn "enregistrement de la répétition de recherche"
+                      putStrLn "démarrage du proxy "
                       repeatEach (ctimer c) (void $ sendRes c send inetRessourceID) 5
                       forkIO $ startProxy tcp_socketName Stream c
                       udpProx <- newMVar $ newMapModule []

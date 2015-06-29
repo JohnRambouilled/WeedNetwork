@@ -16,7 +16,7 @@ keepLog m st msg = case m of
                         ProxyLog -> printLog
                         GatewayLog -> printLog
                         ClientLog -> printLog
---                        TestLog -> printLog
+                        TestLog -> printLog
                         _ -> pure ()
     where   printLog :: MonadIO m => m ()
             printLog = liftIO $ do t <- getCurrentTime

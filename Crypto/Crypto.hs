@@ -1,13 +1,15 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, ExistentialQuantification #-}
 module Crypto.Crypto where
 import Control.Monad.State
-import Data.List 
-import Data.ByteString.Lazy hiding (null)
+import Data.Maybe
+import qualified Data.ByteString as BStrct
+import qualified Data.ByteString.Lazy as B
 import Crypto.Random
 --import Codec.Crypto.RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as C
 import Crypto.PubKey.HashDescr hiding (HashFunction)
 import Crypto.PubKey.RSA
+import Debug.Trace
 
 import Class
 import Packet
@@ -30,10 +32,10 @@ checkHashFunction k hF p = do
 
 
 -- | Return the last 4 Bytes of the hash SHA256 of a given bytestring.
-pubKeyToHash :: (Binary a) => a -> Hash
-pubKeyToHash = computeHash . encode
-   where computeHash = Data.ByteString.Lazy.drop 28 . fromStrict . hashFunction hashDescrSHA1 . toStrict
-
+pubKeyToHash :: (Show a, Binary a) => a -> Hash
+pubKeyToHash a = trace ("Pubkeytohash : " ++ show a)  $ computeHash . encode $ a
+   where computeHash x = let h = hashFunction hashDescrSHA1 $ trace ("computing hash of : " ) $ B.toStrict x
+                         in B.take keyHashByteSize . B.reverse $ B.fromStrict $ trace ("hashlenght = " ++ (show $ BStrct.length h)) h
 -- | Look for the Key in the map, and check the signature. Return False if the keyHash is unkown, or if the signature is not valid.
 cryptoCheckSig :: (MonadIO m) => KeyHash -> Sig -> Hash -> CryptoT m Bool
 cryptoCheckSig kH s h = do keepLog CryptoLog Normal $ "[cryptoCheckSig] :: checking signature for keyID : " ++ show kH
@@ -43,24 +45,27 @@ cryptoCheckSig kH s h = do keepLog CryptoLog Normal $ "[cryptoCheckSig] :: check
 checkSignature :: PubKey -> Sig -> Hash -> Bool
 --checkSignature pK s h = Codec.Crypto.RSA.verify (runPubKey pK) h s
 --checkSignature pK s h = rsassa_pkcs1_v1_5_verify hashSHA1 (runPubKey pK) h s
-checkSignature pK s h = C.verify hashDescrSHA1 (runPubKey pK) (toStrict h) (toStrict s)
+checkSignature pK s h = trace "verify" $ C.verify hashDescrSHA1 (runPubKey pK) (B.toStrict h) (B.toStrict s)
 
 
 sign :: PrivKey -> RawData -> RawData
 --sign uK h = Codec.Crypto.RSA.sign (runPrivKey uK) h
-sign uK = either (\_->empty) fromStrict . C.sign Nothing hashDescrSHA1 (runPrivKey uK) . toStrict
+sign uK = trace "sign" $ either (\_->B.empty) B.fromStrict . C.sign Nothing hashDescrSHA1 (runPrivKey uK) . B.toStrict
 
 decrypt :: PrivKey -> RawData -> RawData
-decrypt pK =  either (\_->empty) fromStrict . C.decrypt Nothing (runPrivKey pK) . toStrict
+decrypt pK =  trace "decrpypt" $ either (\_-> B.empty) B.fromStrict . C.decrypt Nothing (runPrivKey pK) . B.toStrict
 
 encrypt :: PubKey -> RawData -> IO RawData
 encrypt pK d = do gen <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-                  pure . either (\_->empty) fromStrict . fst . C.encrypt gen (runPubKey pK) $ toStrict d
+                  print "encrypt"
+                  pure . either (\_->B.empty) B.fromStrict . fst . C.encrypt gen (runPubKey pK) $B.toStrict d
 
 
 generateKeyPair :: Int -> IO (PubKey,PrivKey)
 generateKeyPair keySiz = do gen <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-                            let (pubK,privK) = fst $ generate gen keySiz 65537
+                            print "generating key-pair"
+                            let (pubK,privK) = fst $ generate gen (div keySiz 8) 65537
+                            print $ "pubKey : " -- ++ show pubK
                             return $ (PubKey pubK, PrivKey privK)
 
 

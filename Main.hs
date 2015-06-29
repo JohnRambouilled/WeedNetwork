@@ -31,6 +31,7 @@ tcp_socketName = "testounet_tcp.socket"
 --main = runWeeds seedMain
 
 main = do testCL <- testBinaire leechMain seedMain -- testChaine [leechMain, relayMain, seedMain]
+          print "running test"
           let dumpClients = concat <$> (forM testCL $ (fst <$>) . runStateT dumpClient . client)
           repeatEach (ctimer . client $ head testCL) (putStrLn =<< dumpClients) 2 >> pure ()
           mVL <- forM testCL $ runChildren . run

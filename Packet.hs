@@ -46,7 +46,7 @@ instance Binary KeyHash where put (KeyHash h) = putLazyByteString h
 instance Show KeyHash where show (KeyHash d) = prettyPrint d
 
 
-newtype PubKey = PubKey {runPubKey :: PublicKey}
+newtype PubKey = PubKey {runPubKey :: PublicKey} deriving Show
 instance Binary PubKey where put (PubKey k) = put  k
                              get = PubKey <$> get
 
