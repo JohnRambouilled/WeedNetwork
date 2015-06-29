@@ -5,8 +5,8 @@ import Data.Binary.Get
 import Data.Binary.Put
 import Data.Int
 import Data.ByteString.Lazy hiding (map, concat)
-import Codec.Crypto.RSA
 import Numeric(showHex)
+import Crypto.PubKey.RSA
 
 type SendFunction = Packet -> IO Bool
 
