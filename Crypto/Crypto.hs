@@ -4,13 +4,17 @@ import Control.Monad.State
 import Data.List 
 import Data.ByteString.Lazy hiding (null)
 import Crypto.Random
-import Codec.Crypto.RSA
+--import Codec.Crypto.RSA
+import qualified Crypto.PubKey.RSA.PKCS15 as C
+import Crypto.PubKey.HashDescr hiding (HashFunction)
+import Crypto.PubKey.RSA
 
 import Class
 import Packet
 import Data.Binary
 import Log
 import Crypto.Module
+
 
 
 -- | Apply the hashFunction on the Packet. If a tupple (hash, value) is returned, check the signature for the given key and the hash, and return value if correct.
@@ -28,7 +32,7 @@ checkHashFunction k hF p = do
 -- | Return the last 4 Bytes of the hash SHA256 of a given bytestring.
 pubKeyToHash :: (Binary a) => a -> Hash
 pubKeyToHash = computeHash . encode
-   where computeHash = Data.ByteString.Lazy.drop 28 . hashFunction Codec.Crypto.RSA.hashSHA256
+   where computeHash = Data.ByteString.Lazy.drop 28 . fromStrict . hashFunction hashDescrSHA1 . toStrict
 
 -- | Look for the Key in the map, and check the signature. Return False if the keyHash is unkown, or if the signature is not valid.
 cryptoCheckSig :: (MonadIO m) => KeyHash -> Sig -> Hash -> CryptoT m Bool
@@ -38,21 +42,25 @@ cryptoCheckSig kH s h = do keepLog CryptoLog Normal $ "[cryptoCheckSig] :: check
 -- | Ckeck the validity of a signature.
 checkSignature :: PubKey -> Sig -> Hash -> Bool
 --checkSignature pK s h = Codec.Crypto.RSA.verify (runPubKey pK) h s
-checkSignature pK s h = rsassa_pkcs1_v1_5_verify hashSHA1 (runPubKey pK) h s
+--checkSignature pK s h = rsassa_pkcs1_v1_5_verify hashSHA1 (runPubKey pK) h s
+checkSignature pK s h = C.verify hashDescrSHA1 (runPubKey pK) (toStrict h) (toStrict s)
+
 
 sign :: PrivKey -> RawData -> RawData
 --sign uK h = Codec.Crypto.RSA.sign (runPrivKey uK) h
-sign uK = rsassa_pkcs1_v1_5_sign hashSHA1 (runPrivKey uK) 
+sign uK = either (\_->empty) fromStrict . C.sign Nothing hashDescrSHA1 (runPrivKey uK) . toStrict
 
 decrypt :: PrivKey -> RawData -> RawData
-decrypt pK d = Codec.Crypto.RSA.decrypt (runPrivKey pK) d 
+decrypt pK =  either (\_->empty) fromStrict . C.decrypt Nothing (runPrivKey pK) . toStrict
 
 encrypt :: PubKey -> RawData -> IO RawData
-encrypt pK d = do gen <- newGenIO :: IO SystemRandom
-                  pure $ fst $ Codec.Crypto.RSA.encrypt gen (runPubKey pK) d
+encrypt pK d = do gen <- cprgCreate <$> createEntropyPool :: IO SystemRNG
+                  pure . either (\_->empty) fromStrict . fst . C.encrypt gen (runPubKey pK) $ toStrict d
+
 
 generateKeyPair :: Int -> IO (PubKey,PrivKey)
-generateKeyPair keySiz = do (pubK,privK,_) <-  flip Codec.Crypto.RSA.generateKeyPair keySiz <$> (newGenIO :: IO SystemRandom)
+generateKeyPair keySiz = do gen <- cprgCreate <$> createEntropyPool :: IO SystemRNG
+                            let (pubK,privK) = fst $ generate gen keySiz 65537
                             return $ (PubKey pubK, PrivKey privK)
 
 
