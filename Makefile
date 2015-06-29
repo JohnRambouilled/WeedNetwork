@@ -20,7 +20,13 @@ tests:
 	rm *.socket
 	make
 	./Main
+<<<<<<< HEAD
 
 
 profil: Main.hs obj/ethernet.o obj/receiver.o obj/udp.o
 	ghc -osuf p_o -prof -auto-all -threaded obj/ethernet.o obj/receiver.o obj/udp.o --make Main.hs
+=======
+	
+profil: Main.hs obj/ethernet.o obj/receiver.o obj/udp.o
+	ghc -prof -auto-all -threaded obj/ethernet.o obj/receiver.o obj/udp.o --make Main.hs
+>>>>>>> 13f03d22ef56f3ee730b07f089231fe0c956a5b4
