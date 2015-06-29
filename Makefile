@@ -20,3 +20,6 @@ tests:
 	rm *.socket
 	make
 	./Main
+	
+profil: Main.hs obj/ethernet.o obj/receiver.o obj/udp.o
+	ghc -prof -auto-all -threaded obj/ethernet.o obj/receiver.o obj/udp.o --make Main.hs
