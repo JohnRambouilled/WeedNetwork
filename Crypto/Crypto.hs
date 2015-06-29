@@ -37,8 +37,8 @@ cryptoCheckSig kH s h = do keepLog CryptoLog Normal $ "[cryptoCheckSig] :: check
 
 -- | Ckeck the validity of a signature.
 checkSignature :: PubKey -> Sig -> Hash -> Bool
-checkSignature pK s h = Codec.Crypto.RSA.verify (runPubKey pK) h s
-
+--checkSignature pK s h = Codec.Crypto.RSA.verify (runPubKey pK) h s
+checkSignature pK s h = rsassa_pkcs1_v1_5_verify hashSHA1 (runPubKey pK) h s
 
 sign :: PrivKey -> RawData -> RawData
 --sign uK h = Codec.Crypto.RSA.sign (runPrivKey uK) h
