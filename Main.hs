@@ -42,7 +42,7 @@ main = do testCL <- testBinaire leechMain seedMain -- testChaine [leechMain, rel
                     
 
 runWeeds :: ClientBehaviour -> IO ()
-runWeeds c = do (pubkey,privkey) <- generateKeyPair 1024
+runWeeds c = do (pubkey,privkey) <- generateKeyPair <$> genRnd <*> pure (toEnum 6)
                 let me = SourceID $ KeyHash $ pubKeyToHash pubkey
                 sock <- newRawSocket
                 -- Initialize the client

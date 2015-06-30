@@ -9,6 +9,7 @@ import Control.Concurrent.STM.TVar
 import Data.List
 import Data.Maybe
 import Data.Binary hiding (put, get)
+import Crypto.Random
 
 import Class
 import Communication
@@ -111,7 +112,7 @@ openNewPipe :: MonadIO m => PubKey -> Road -> RawData -> ClientT m Bool
 openNewPipe dK r d = do (uK,uID) <- (,) <$> gets (privateKey . cidentity) <*> gets (clientSourceID . cidentity)
                         (cryptoM, timerM, send) <- (,,) <$> gets ccrypto <*> gets ctimer <*> gets csender
                         liftIO . keepLog ClientLog Normal $ "generating new request"
-                        (pipePK, req) <- liftIO $ genNewPipeRequest 1024 uK dK r d
+                        (pipePK, req) <- liftIO $ genNewPipeRequest uK dK r d
                         let sendReq = sendRequest send cryptoM req pipePK
                         liftIO $ do _ <- repeatEach timerM (void sendReq) pipeRefreshTO 
                                     sendReq
@@ -122,14 +123,15 @@ sendRequest :: SendFunction -> MVar Crypto -> Packet -> PrivKey -> IO Bool
 sendRequest send crypto p pK = do keepLog ClientLog Normal "Passing request to crypto"
                                   reqL <- runModule crypto p 
                                   keepLog ClientLog Normal "Sending request"
-                                  head <$> mapM signAndSend reqL
-   where signAndSend p = case decodeMaybe (runIntroContent $ introContent p) :: Maybe Request of
+                                  gen <- liftIO genRnd
+                                  head <$> mapM (signAndSend gen) reqL
+   where signAndSend g p = case decodeMaybe (runIntroContent $ introContent p) :: Maybe Request of
                                         Nothing -> pure False
-                                        Just req -> send $ p{sig = sign pK $ reqSourceHash (keyID p) req}
+                                        Just req -> send $ p{sig = sign g pK $ reqSourceHash (keyID p) req}
 
 
-genNeighHello :: Identity -> RawData -> Packet
-genNeighHello i d = Introduce kID (publicKey i) (sign (privateKey i) $ encode (kID, publicKey i, nHello)) $ IntroContent nHello
+genNeighHello :: CPRG g => g -> Identity -> RawData -> Packet
+genNeighHello gen i d = Introduce kID (publicKey i) (sign gen (privateKey i) $ encode (kID, publicKey i, nHello)) $ IntroContent nHello
        where nHello = encode $ NeighHello d 
              kID = keyHash $ clientSourceID i
 

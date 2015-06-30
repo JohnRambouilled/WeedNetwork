@@ -15,6 +15,7 @@ import Data.ByteString.Lazy hiding (null,head,tail)
 import Data.Maybe
 import Data.Time hiding (DiffTime)
 import Timer
+import Crypto.Random
 
 type TTL = Int
 newtype RessourceID = RessourceID RawData
@@ -123,13 +124,14 @@ registerRessourceModule me myKey mv = DataCB (ressourceHashFunction me) clbk --(
   where clbk :: CryptoCB RessourcePacket Packet
         clbk rP = (liftIO $ runModule mv rP) >>= mapM craftPacket
         craftPacket :: (MonadIO m) => RessourcePacket -> CryptoT m Packet
-        craftPacket resPkt = return $ DataPacket (keyHash me) (sign myKey $ encode dc) dc
-                                where dc = DataContent $ encode resPkt
+        craftPacket resPkt = do gen <- liftIO genRnd
+                                return $ DataPacket (keyHash me) (sign gen myKey $ encode dc) dc
+                                  where dc = DataContent $ encode resPkt
 
  
-sendResearch :: PrivKey -> KeyHash -> RessourceID -> TTL ->Road -> RawData -> Packet
-sendResearch pK uID rID ttl r d = let res = DataContent. encode $ Research rID ttl r d
-                                  in DataPacket uID (sign pK $ encode res) res
+sendResearch :: CPRG g => g -> PrivKey -> KeyHash -> RessourceID -> TTL ->Road -> RawData -> Packet
+sendResearch gen pK uID rID ttl r d = let res = DataContent. encode $ Research rID ttl r d
+                                  in DataPacket uID (sign gen pK $ encode res) res
 
 
 answerMaxFrequency = 100 :: DiffTime
@@ -138,14 +140,15 @@ genRessourceCallback :: MVar Time -> PubKey -> PrivKey -> SourceID -> RessourceI
 genRessourceCallback tV pK uK uID rID d p = if isResearch p then do keepLog RessourcesLog Important $ "received research for offered ressource : " ++ show rID
                                                                     tM <- liftIO $ tryReadMVar tV
                                                                     t' <- liftIO getTime
+                                                                    gen <- liftIO genRnd
                                                                     case tM of Nothing -> do liftIO $ putMVar tV t' 
-                                                                                             pure [sendAnswer t'] 
+                                                                                             pure [sendAnswer gen t'] 
                                                                                Just t -> if diffUTCTime t' t > answerMaxFrequency then do liftIO $ swapMVar tV t'
-                                                                                                                                          pure [sendAnswer t]
+                                                                                                                                          pure [sendAnswer gen t]
                                                                                                                                      else pure []
                                                            else pure []
-    where sendAnswer t = Answer (cert t) ressourceTtlMax [uID] uID d
-          cert t = RessourceCert pK t rID $ sign uK $ encode (pK, t, rID)
+    where sendAnswer gen t = Answer (cert gen t) ressourceTtlMax [uID] uID d
+          cert gen t = RessourceCert pK t rID $ sign gen uK $ encode (pK, t, rID)
 
                              
 

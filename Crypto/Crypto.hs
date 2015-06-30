@@ -5,10 +5,12 @@ import Data.Maybe
 import qualified Data.ByteString as BStrct
 import qualified Data.ByteString.Lazy as B
 import Crypto.Random
---import Codec.Crypto.RSA
-import qualified Crypto.PubKey.RSA.PKCS15 as C
 import Crypto.PubKey.HashDescr hiding (HashFunction)
-import Crypto.PubKey.RSA
+import qualified Crypto.PubKey.ECC.DH as E
+import qualified Crypto.PubKey.ECC.ECDSA as E
+import Crypto.Types.PubKey.ECC
+import Crypto.PubKey.ECC.Generate
+
 import Debug.Trace
 
 import Class
@@ -17,6 +19,8 @@ import Data.Binary
 import Log
 import Crypto.Module
 
+
+hashSHA1 = hashFunction hashDescrSHA1 
 
 
 -- | Apply the hashFunction on the Packet. If a tupple (hash, value) is returned, check the signature for the given key and the hash, and return value if correct.
@@ -34,7 +38,7 @@ checkHashFunction k hF p = do
 -- | Return the last 4 Bytes of the hash SHA256 of a given bytestring.
 pubKeyToHash :: (Show a, Binary a) => a -> Hash
 pubKeyToHash a = trace ("Pubkeytohash : " ++ show a)  $ computeHash . encode $ a
-   where computeHash x = let h = hashFunction hashDescrSHA1 $ trace ("computing hash of : " ) $ B.toStrict x
+   where computeHash x = let h = hashSHA1 $ trace ("computing hash of : " ) $ B.toStrict x
                          in B.take keyHashByteSize . B.reverse $ B.fromStrict $ trace ("hashlenght = " ++ (show $ BStrct.length h)) h
 -- | Look for the Key in the map, and check the signature. Return False if the keyHash is unkown, or if the signature is not valid.
 cryptoCheckSig :: (MonadIO m) => KeyHash -> Sig -> Hash -> CryptoT m Bool
@@ -43,29 +47,35 @@ cryptoCheckSig kH s h = do keepLog CryptoLog Normal $ "[cryptoCheckSig] :: check
 
 -- | Ckeck the validity of a signature.
 checkSignature :: PubKey -> Sig -> Hash -> Bool
---checkSignature pK s h = Codec.Crypto.RSA.verify (runPubKey pK) h s
---checkSignature pK s h = rsassa_pkcs1_v1_5_verify hashSHA1 (runPubKey pK) h s
-checkSignature pK s h = trace "verify" $ C.verify hashDescrSHA1 (runPubKey pK) (B.toStrict h) (B.toStrict s)
+checkSignature pK s h = trace "verify" $ E.verify hashSHA1 (runPubKey pK) s $ B.toStrict h
 
 
-sign :: PrivKey -> RawData -> RawData
---sign uK h = Codec.Crypto.RSA.sign (runPrivKey uK) h
-sign uK = trace "sign" $ either (\_->B.empty) B.fromStrict . C.sign Nothing hashDescrSHA1 (runPrivKey uK) . B.toStrict
 
-decrypt :: PrivKey -> RawData -> RawData
-decrypt pK =  trace "decrpypt" $ either (\_-> B.empty) B.fromStrict . C.decrypt Nothing (runPrivKey pK) . B.toStrict
+sign :: CPRG g => g -> PrivKey -> RawData -> Sig
+sign gen uK d = fst $ E.sign gen (runPrivKey uK) hashSHA1 $ B.toStrict d
 
-encrypt :: PubKey -> RawData -> IO RawData
-encrypt pK d = do gen <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-                  print "encrypt"
-                  pure . either (\_->B.empty) B.fromStrict . fst . C.encrypt gen (runPubKey pK) $B.toStrict d
+type PubPoint = PublicPoint
 
-
-generateKeyPair :: Int -> IO (PubKey,PrivKey)
-generateKeyPair keySiz = do gen <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-                            print "generating key-pair"
-                            let (pubK,privK) = fst $ generate gen (div keySiz 8) 65537
-                            print $ "pubKey : " -- ++ show pubK
-                            return $ (PubKey pubK, PrivKey privK)
+transmitKey :: CPRG g => g -> PubKey -> (PubPoint, (PrivKey, PubKey))
+transmitKey gen pK = (E.calculatePublic c privN, keysFromShared $ E.getShared c privN $ pkPublicPoint pK)
+    where c = pkCurve pK
+          cN = pkCurveName pK
+          privN = fst $ E.generatePrivate gen c
+          keysFromShared (E.SharedKey sk) = (PrivKey cN sk, PubKey cN $ E.calculatePublic c sk)
 
 
+exctractKey :: PrivKey -> PubPoint -> (PrivKey, PubKey)
+exctractKey prK pP = keysFromShared $ E.getShared c (prPrivateNumber prK) pP
+    where c = prCurve prK
+          cN = prCurveName prK
+          keysFromShared (E.SharedKey sk) = (PrivKey cN sk, PubKey cN $ E.calculatePublic c sk)
+
+    
+
+
+generateKeyPair :: CPRG g => g -> CurveName -> (PubKey,PrivKey)
+generateKeyPair gen cN = (PubKey cN (E.public_q pubK), PrivKey cN (E.private_d privK))
+    where ((pubK, privK),_) = generate gen $ getCurveByName cN
+
+genRnd :: IO SystemRNG 
+genRnd = cprgCreate <$> createEntropyPool
