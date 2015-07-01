@@ -40,6 +40,7 @@ struct prox_ans{
 int (*orig_connect) (int , const struct sockaddr*, socklen_t);
 int (*orig_socket) (int,int,int);
 ssize_t (*orig_recv) (int, void*, size_t, int);
+ssize_t (*orig_send) (int,const void* ,size_t,int);
 ssize_t (*orig_sendto) (int,const void* ,size_t,int,const struct sockaddr*, socklen_t);
 ssize_t (*orig_recvfrom) (int,void* ,size_t,int,const struct sockaddr*,socklen_t);
 
@@ -55,6 +56,7 @@ void _init(void)
 	orig_connect = dlsym(RTLD_NEXT,"connect");
 	orig_socket = dlsym(RTLD_NEXT,"socket");
 	orig_recv = dlsym(RTLD_NEXT,"recv");
+	orig_send = dlsym(RTLD_NEXT,"send");
 	orig_sendto = dlsym(RTLD_NEXT,"sendto");
 	orig_recvfrom = dlsym(RTLD_NEXT,"recvfrom");
     
@@ -89,6 +91,7 @@ ssize_t sendto(int socket, const void *message, size_t length,
         
     }
     else{
+            printf("sendto ...\n");
             ssize_t ret = orig_sendto(socket,message,length,flags,dest_addr,dest_len);
             //printf("[connect.c,sendto()] %zd bytes written\n",ret);
             return ret;
@@ -160,7 +163,7 @@ int socket (int domain, int type, int protocol){
 	int ret;
     printf("af_inet %d, pf_inet = %d, pf_inet6=%d , ?=%d %d %d\n",AF_INET,PF_INET,PF_INET6,domain,type,protocol);
 	//if ((AF_INET == domain) && (SOCK_STREAM == type || SOCK_DGRAM == type || 2050 == type)){
-	if ((AF_INET == domain) && (SOCK_DGRAM == type || 2050 == type)){
+	if ((AF_INET == domain) && (SOCK_DGRAM == type || 2050 == type || SOCK_STREAM == type)){
 //    if (AF_INET == domain && SOCK_STREAM == type){
 		printf("socket() hijacked => unix\n");
         if (2050 == type)
@@ -199,6 +202,7 @@ int connect_ (int socket, const struct sockaddr_in* sin,int so_type,char* socket
 		free (sun); 
 		if (ret < 0){
 			printf("[connect.c, connect_()] : %s \n", strerror(errno));
+            exit(-1);
             return ret;
         }
 		printf("ret=%d\n",ret);
@@ -213,12 +217,12 @@ int connect (int socket, const struct sockaddr* address, socklen_t address_len){
 	
 	getsockopt (socket,SOL_SOCKET,SO_TYPE,&so_type,&optlen);
 	if ((AF_INET == sin->sin_family) || PF_INET == sin->sin_family){ // && SOCK_STREAM  == so_type){
-            /*
+            
         if (SOCK_STREAM == so_type){
                 printf("[connect.c,connect()] tcp socket hijacked\n");
                 return connect_ (socket,sin,SOCK_STREAM,SOCKET_PATH_STREAM,address_len);
         }
-        */
+        
 
         if (2050 == so_type || SOCK_DGRAM == so_type){
                 printf("[connect.c, connect()] udp socket hijacked\n");
@@ -251,9 +255,16 @@ void write_sockaddr (int sockfd, const struct sockaddr_in* addr, int sotype){
     //
     struct sockaddr_un server;
     server.sun_family = AF_UNIX;
-    strcpy((server.sun_path),SOCKET_PATH_DGRAM);
+    if (SOCK_STREAM == sotype)
+            strcpy ((server.sun_path),SOCKET_PATH_STREAM);
+    else if (SOCK_DGRAM == sotype)
+            strcpy((server.sun_path),SOCKET_PATH_DGRAM);
 
-    ssize_t ret = orig_sendto(sockfd,sw,sizeof(struct sock_wrapper),0,(struct sockaddr*)&server,sizeof(struct sockaddr_un));
+    ssize_t ret = -1;
+    if (SOCK_STREAM == sotype)
+            ret = orig_send (sockfd,sw,sizeof(struct sock_wrapper),0);
+    else if (SOCK_DGRAM == sotype)
+            ret = orig_sendto(sockfd,sw,sizeof(struct sock_wrapper),0,(struct sockaddr*)&server,sizeof(struct sockaddr_un));
 
     if (ret < 0){
 			printf("[connect.c, write_addr()] : %s \n", strerror(errno));

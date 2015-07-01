@@ -78,8 +78,9 @@ onNewConnection timerV sourcesV sIDs s = do
                                                
                                                                       keepLog ProxyLog Normal =<< dumpSockConf "[UNIX] new pkt decoded" sc
                                                                       dest <- choseDest sourcesV sIDs
-                                                                      if (isNothing dest) then close s
-                                                                        else void $ openTCPCommunication buildCallbacks timerV leechTimeOut leechRefreshTime
+                                                                      if (isNothing dest) then keepLog ProxyLog Normal "[TCP] No destinary for the requested ressource" >>  close s
+                                                                        else do keepLog ProxyLog Normal "[TCP] connecting ..." 
+                                                                                void $ openTCPCommunication buildCallbacks timerV leechTimeOut leechRefreshTime
                                                                                                       (fromJust dest) $ ProtoRequest inetTCPProtoID (encode pkt)
                                         _ -> do --case decodeOrFail (B.fromStrict raw) of
                                                --     Right (_,_,a) -> do pkt <- pure a :: IO InetPacket
