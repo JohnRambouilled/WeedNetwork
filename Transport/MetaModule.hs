@@ -110,7 +110,9 @@ weedCallback timerV sndV rcvV (clbk,break) (wF, bF) rawData = do print "Callback
                                                 Left (trList', _) -> pure $ RecvBuf trList'                              
                                                 Right (trList', cm) -> do runWriteFun wF . encode $ TransportControl cm
                                                                           print "running callback (WeedCallback, Metamodule)"
-                                                                          runCallback clbk . B.concat $ map trData trList' 
+                                                                          let r = B.concat $ map trData trList' 
+                                                                          print r
+                                                                          runCallback clbk $ r
                                                                           pure $ RecvBuf []
            onTimeOut = void $ runBrkClbck break B.empty >> runBreakFun bF B.empty
                    

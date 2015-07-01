@@ -100,7 +100,7 @@ runDuplexer ignoreInit wr br s = do raw <- fromStrict <$> Network.Socket.ByteStr
 
 {-| Routes from the comID to the internet socket |-}
 gatewayCallback :: ThreadId ->  BreakFun -> Socket -> RawData -> IO ()
-gatewayCallback pID br s pkt = keepLog GatewayLog Normal ("[WEED] New data from a comID :"{- ++ BC.unpack pkt-})  >> maybe (pure ()) (gatewayCallback' pID br s) (decodeMaybe pkt)
+gatewayCallback pID br s pkt = keepLog GatewayLog Normal ("[WEED] New data from a comID :"{- ++ BC.unpack pkt-})  >> maybe (print "failed to decode") (gatewayCallback' pID br s) (decodeMaybe pkt)
 gatewayCallback' :: ThreadId -> BreakFun -> Socket -> InetPacket -> IO ()
 gatewayCallback' pID br s (InetData raw) = do keepLog GatewayLog Normal "[INETDATA]"
                                               r <- send s $ toStrict raw
