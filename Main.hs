@@ -33,7 +33,7 @@ tcp_socketName = "testounet_tcp.socket"
 main = do testCL <- testBinaire leechMain seedMain -- testChaine [leechMain, relayMain, seedMain]
           print "running test"
           let dumpClients = concat <$> (forM testCL $ (fst <$>) . runStateT dumpClient . client)
-          repeatEach (ctimer . client $ head testCL) (putStrLn =<< dumpClients) 2 >> pure ()
+          repeatEach (ctimer . client $ head testCL) (putStrLn =<< dumpClients) 10 >> pure ()
           mVL <- forM testCL $ runChildren . run
           forM_ mVL readMVar
    
@@ -52,7 +52,7 @@ runWeeds c = do (pubkey,privkey) <- generateKeyPair
                 tim <- runChildren $ startTimer (ctimer client) 1
                 -- Launching the specifieds actions
                 srvc <- runChildren $ c client $ writePacket sock
-                repeatEach (ctimer client) (putStrLn =<< fst <$> runStateT dumpClient client) 2 >> pure ()
+                repeatEach (ctimer client) (putStrLn =<< fst <$> runStateT dumpClient client) 10 >> pure ()
                 -- Starts the networks
                 weed <- runChildren $ loop $ listenPacket client sock
                 -- Waits for childrens

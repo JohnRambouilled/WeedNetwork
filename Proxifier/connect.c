@@ -83,14 +83,14 @@ ssize_t sendto(int socket, const void *message, size_t length,
         proxy.sun_family = AF_UNIX;
         strcpy((char*)&(proxy.sun_path),SOCKET_PATH_DGRAM);
         ssize_t ret = orig_sendto(socket,message,length,0,(struct sockaddr*)&proxy,sizeof(struct sockaddr_un));
-        printf("[connect.c,sendto()] %zd bytes written\n",ret);
+        //printf("[connect.c,sendto()] %zd bytes written\n",ret);
         return ret;
 
         
     }
     else{
             ssize_t ret = orig_sendto(socket,message,length,flags,dest_addr,dest_len);
-            printf("[connect.c,sendto()] %zd bytes written\n",ret);
+            //printf("[connect.c,sendto()] %zd bytes written\n",ret);
             return ret;
     }
 
@@ -119,7 +119,7 @@ ssize_t recvfrom(int socket, void *buffer, size_t length,
     ans_hdr = (struct prox_ans*) &buf;
     struct in_addr addr;
     addr.s_addr = ans_hdr->addr;
-    printf("[connect.c, recvfrom()] RECVFROM() %zu bytes from destinary (%s,%zu)!!\n",hdr_siz,inet_ntoa(addr),sizeof(struct prox_ans));
+    //printf("[connect.c, recvfrom()] RECVFROM() %zu bytes from destinary (%s,%zu)!!\n",hdr_siz,inet_ntoa(addr),sizeof(struct prox_ans));
 
 
     /*
@@ -143,7 +143,7 @@ ssize_t recvfrom(int socket, void *buffer, size_t length,
     char* addr2 = inet_ntoa (r);
 //    printf("[connect.c,recvfrom()] %zu received after the header %s:%d.\n",ret,addr2,ntohs(sender->sin_port));
     ssize_t ret =  (hdr_siz - sizeof(struct prox_ans));
-    printf("Copying %zu bytes (%zd)...\n",ret,ans_hdr->data_len);
+    //printf("Copying %zu bytes (%zd)...\n",ret,ans_hdr->data_len);
     memcpy(buffer, buf + sizeof(struct prox_ans),hdr_siz - sizeof(struct prox_ans));
 
 //    printf("Copying %d bytes.\n",ret);

@@ -10,13 +10,13 @@ data ModuleName = CryptoLog | NeighborLog | RessourcesLog | RoutingLog |  Source
 
 keepLog :: MonadIO m => ModuleName -> LogStatus -> String -> m ()
 keepLog m st msg = case m of
-                        CryptoLog -> printLog
-                        CommunicationLog -> printLog
-                        ProtocolLog -> printLog
-                        ProxyLog -> printLog
-                        GatewayLog -> printLog
-                        ClientLog -> printLog
-                        TestLog -> printLog
+--                        CryptoLog -> printLog
+--                        CommunicationLog -> printLog
+--                        ProtocolLog -> printLog
+--                        ProxyLog -> printLog
+--                        GatewayLog -> printLog
+--                        ClientLog -> printLog
+--                        TestLog -> printLog
                         _ -> pure ()
     where   printLog :: MonadIO m => m ()
             printLog = liftIO $ do t <- getCurrentTime

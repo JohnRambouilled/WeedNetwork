@@ -16,10 +16,10 @@ int next_pkt(int s, struct sockaddr_ll* sin_addr, char* buf){
 	//int siz = recvfrom(s,buf,ETH_FRAME_LEN,0,(struct sockaddr*)sin_addr,&confSiz);
 	int siz = recvfrom(s,buf,ETH_FRAME_LEN,0,NULL,NULL);
 	if (-1 == siz){
-		printf("[receiver.c] : %s \n", strerror(errno));
+		//printf("[receiver.c] : %s \n", strerror(errno));
 		return 0;
 	}
-	printf("[receiver.c] : received %d bytes.\n",siz);
+	//printf("[receiver.c] : received %d bytes.\n",siz);
 	return siz;
 }
 

@@ -11,7 +11,6 @@ import qualified Crypto.PubKey.Curve25519 as DH
 --import Crypto.Types.PubKey.ECC
 --import Crypto.PubKey.ECC.Generate
 import Crypto.Error
-import Debug.Trace
 
 import Class
 import Packet
@@ -37,9 +36,9 @@ checkHashFunction k hF p = do
 
 -- | Return the last 4 Bytes of the hash SHA256 of a given bytestring.
 pubKeyToHash :: (Show a, Binary a) => a -> Hash
-pubKeyToHash a = trace ("Pubkeytohash : " ++ show a)  $ computeHash . encode $ a
-   where computeHash x = let h = hashSHA1 $ trace ("computing hash of : " ) $ B.toStrict x
-                         in B.take keyHashByteSize . B.reverse $ B.fromStrict $ trace ("hashlenght = " ++ (show $ BStrct.length h)) h
+pubKeyToHash a = computeHash . encode $ a
+   where computeHash x = let h = hashSHA1 $ B.toStrict x
+                         in B.take keyHashByteSize . B.reverse $ B.fromStrict $ h
 -- | Look for the Key in the map, and check the signature. Return False if the keyHash is unkown, or if the signature is not valid.
 cryptoCheckSig :: (MonadIO m) => KeyHash -> Sig -> Hash -> CryptoT m Bool
 cryptoCheckSig kH s h = do keepLog CryptoLog Normal $ "[cryptoCheckSig] :: checking signature for keyID : " ++ show kH
@@ -47,7 +46,7 @@ cryptoCheckSig kH s h = do keepLog CryptoLog Normal $ "[cryptoCheckSig] :: check
 
 -- | Ckeck the validity of a signature.
 checkSignature :: PubKey -> Sig -> Hash -> Bool
-checkSignature pK s h = trace "verify" $ S.verify (runPubKey pK) (B.toStrict h) s 
+checkSignature pK s h = S.verify (runPubKey pK) (B.toStrict h) s 
 
 
 

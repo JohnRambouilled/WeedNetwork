@@ -81,7 +81,7 @@ struct udp_packet* udp_nextPacket (int sock, ssize_t max_size) {
         printf("[udp.c udp_nextPacket()] recvfrom error : %s\n",strerror(errno));
         exit(-1);
     }
-    printf("Packet received : %d bytes from %s(%zu bytes)\n",nb_read,dest.sun_path,dest_size);
+    //printf("Packet received : %d bytes from %s(%zu bytes)\n",nb_read,dest.sun_path,dest_size);
 
 /*    struct udp_packet* ret = new_udp_packet (max_size);
     printf("Waiting for packets...\n");

@@ -32,14 +32,11 @@ foreign import ccall "Proxifier/udp.c set_block"
 
 nextUDPPacket :: Socket -> Int -> IO (String,ByteString)
 nextUDPPacket sock maxSiz = do pkt <- c_udp_nextPacket (fdSocket sock) (fromIntegral maxSiz)
-                               print $ "nextUDPPacket 1 : " ++ show pkt
                                (buf,siz,src) <- (,,) <$> c_udp_buf pkt <*> c_udp_size pkt <*> c_udp_src pkt
-                               putStrLn $ "[HASKELL] received " ++ show siz ++ "bytes." 
+                               --putStrLn $ "[HASKELL] received " ++ show siz ++ "bytes." 
                                srcFile <- peekCString src
-                               putStrLn $ "[HASKELL] file = " ++ show srcFile
+                               --putStrLn $ "[HASKELL] file = " ++ show srcFile
                                udpRaw <- peekCStringLen (buf,fromIntegral siz)
-                               print $ "nextUDPPacket 4 "
                                c_udp_free pkt
-                               print $ "nextUDPPacket 5 "
                                return (srcFile,pack udpRaw)
                                
