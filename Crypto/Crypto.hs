@@ -8,8 +8,6 @@ import Crypto.Random
 import Crypto.PubKey.HashDescr hiding (HashFunction)
 import qualified Crypto.PubKey.Ed25519 as S
 import qualified Crypto.PubKey.Curve25519 as DH
---import Crypto.Types.PubKey.ECC
---import Crypto.PubKey.ECC.Generate
 import Crypto.Error
 
 import Class

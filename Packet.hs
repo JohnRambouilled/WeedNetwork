@@ -4,6 +4,7 @@ import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
 import Data.Int
+import qualified Data.ByteString as BStrct
 import Data.ByteString.Lazy hiding (map, concat)
 import Numeric(showHex)
 --import Crypto.PubKey.RSA
@@ -44,17 +45,15 @@ type RawData = ByteString
 
 type Sig = S.Signature
 
-instance Binary S.Signature where put s = put . fromStrict $ (BA.convert s)
-                                  get = do b <- BA.convert . toStrict <$> get
-                                           case S.signature (b :: BA.Bytes) of
-                                                 CryptoFailed e -> fail (show e) 
-                                                 CryptoPassed s -> pure $ s
+
+instance Binary S.Signature where put s = putByteString $ BA.convert s
+                                  get = getCryptoFailable sigByteSize S.signature
 
 
-
-instance Binary DH.PublicKey where put pk = put . fromStrict $ (BA.convert pk)
-                                   get = do b <- BA.convert . toStrict <$> get
-                                            case DH.publicKey (b :: BA.Bytes) of
+dhPubKeyByteSize = 32 :: Int
+instance Binary DH.PublicKey where put pk = putByteString $ BA.convert pk
+                                   get = do b <- DH.publicKey <$> getByteString dhPubKeyByteSize
+                                            case b of
                                                  Left e -> fail (show e) 
                                                  Right k -> pure k
 
@@ -62,7 +61,8 @@ instance Binary DH.PublicKey where put pk = put . fromStrict $ (BA.convert pk)
 --                                get = Signature <$> get <*> get
 
 keyHashByteSize = 4 :: Int64
-sigByteSize = 128 :: Int64
+sigByteSize = 64 :: Int
+keyByteSize = 32 :: Int
 
 newtype KeyHash = KeyHash {runKeyHash :: RawData} deriving (Eq, Ord)
 instance Binary KeyHash where put (KeyHash h) = putLazyByteString h
@@ -72,19 +72,12 @@ instance Show KeyHash where show (KeyHash d) = prettyPrint d
 
 newtype PubKey = PubKey {runPubKey :: S.PublicKey} deriving (Show)
 newtype PrivKey = PrivKey {runPrivKey :: S.SecretKey}
-instance Binary PubKey where put (PubKey pk) = put . fromStrict $ (BA.convert pk)
-                             get = do b <- BA.convert . toStrict <$> get
-                                      case S.publicKey (b :: BA.Bytes) of
-                                            CryptoFailed e -> fail (show e) 
-                                            CryptoPassed k -> pure $ PubKey k
+instance Binary PubKey where put (PubKey pk) = putByteString $ BA.convert pk
+                             get = PubKey <$> getCryptoFailable keyByteSize S.publicKey 
 
 
-
-instance Binary PrivKey where put (PrivKey pk) = put . fromStrict $ (BA.convert pk)
-                              get = do b <- BA.convert . toStrict <$> get
-                                       case S.secretKey (b :: BA.Bytes) of
-                                            CryptoFailed e -> fail (show e) 
-                                            CryptoPassed k -> pure $ PrivKey k
+instance Binary PrivKey where put (PrivKey pk) = putByteString $ BA.convert pk
+                              get = PrivKey <$> getCryptoFailable keyByteSize S.secretKey 
 
 
 
@@ -94,6 +87,14 @@ newtype SourceID = SourceID {keyHash :: KeyHash} deriving (Eq,Ord, Show)
 
 instance Binary SourceID where put (SourceID i) = put i
                                get = SourceID <$> get
+
+
+
+getCryptoFailable :: Int -> (BStrct.ByteString -> CryptoFailable a) -> Get a
+getCryptoFailable n f = do b <- f <$> getByteString n
+                           case b of CryptoFailed e -> fail (show e)
+                                     CryptoPassed s -> pure s
+
 
 decodeMaybe :: Binary a => ByteString -> Maybe a
 decodeMaybe bs = case decodeOrFail bs of
