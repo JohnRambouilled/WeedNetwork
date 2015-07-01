@@ -5,11 +5,11 @@ import Transport.Control
 import Transport.Sender
 import Transport.Receiver
 
-import Protocol
-import Packet
-import Class
+import Client.Protocol
+import Client.Packet
+import Client.Class
 import Timer
-import Sources
+import Client.Sources
 
 import Data.List
 import Control.Concurrent.MVar
@@ -71,7 +71,7 @@ onControlPacket timerV writeFun break pkt = do buffers <-  use sToSend
                                                                                   
 
 
-openTCPCommunication :: (BreakFun -> IO (Callback, BrkClbck))
+openTCPCommunication :: ((WriteFun, BreakFun) -> IO (Callback, BrkClbck))
                        -> MVar Timer -> DiffTime -> DiffTime
                        -> SourceEntry -> ProtoRequest
                        -> IO (WriteFun, BreakFun)
@@ -79,7 +79,7 @@ openTCPCommunication clbkGen timerV tO ref sE pR = do
                             sndV <- newMVar $ Sender [] (pure ()) 0
                             recvV <- newMVar $ RecvBuf [] 
                             let genWBF = genTCPWriteBreakFun timerV sndV
-                                clbkGen' wbF = genTCPCallback timerV sndV recvV wbF <$> clbkGen (snd $ genWBF wbF)
+                                clbkGen' wbF = genTCPCallback timerV sndV recvV wbF <$> clbkGen (genWBF wbF)
                             genWBF <$> openCommunication clbkGen' timerV tO ref sE pR
                           
 

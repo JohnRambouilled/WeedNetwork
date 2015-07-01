@@ -1,20 +1,20 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, ExistentialQuantification #-}
-module Crypto
-     (module Crypto.Module,
-      module Crypto.Crypto,
-      module Crypto)
+module Client.Crypto
+     (module Client.Crypto.Module,
+      module Client.Crypto.Crypto,
+      module Client.Crypto)
  where
 import Control.Monad.State
 import Data.List 
 import Data.Maybe
 import Control.Concurrent
 
-import Class
-import Packet
+import Client.Class
+import Client.Packet
 import Log
 import Timer
-import Crypto.Module
-import Crypto.Crypto
+import Client.Crypto.Module
+import Client.Crypto.Crypto
 
 
 {- Main function for generating Callbacks on IntroducePacket from unknown keys. Arguments are :

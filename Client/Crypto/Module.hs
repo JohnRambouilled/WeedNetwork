@@ -1,12 +1,12 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, ExistentialQuantification #-}
-module Crypto.Module where
+module Client.Crypto.Module where
 import Control.Monad.State
 import qualified Data.Map as M
 
 import Data.List
 
-import Class
-import Packet
+import Client.Class
+import Client.Packet
 
 
 {- | CryptoModule : entry point of the netWork

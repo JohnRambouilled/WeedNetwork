@@ -1,14 +1,14 @@
 {-# LANGUAGE MultiParamTypeClasses,FunctionalDependencies #-}
-module Routing where
+module Client.Routing where
 
 import Control.Monad.State hiding (put, get)
 import Control.Concurrent
 import Data.Binary
 import Data.List
 
-import Class
-import Crypto
-import Packet
+import Client.Class
+import Client.Crypto
+import Client.Packet
 import Timer
 import Log
 

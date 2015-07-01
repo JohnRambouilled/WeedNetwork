@@ -1,5 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses,FunctionalDependencies #-}
-module Sources where
+module Client.Sources where
 
 import Control.Monad.State
 import Control.Concurrent
@@ -7,12 +7,12 @@ import Data.List
 import Data.Maybe
 import Data.Binary
 
-import Class
-import Crypto
+import Client.Class
+import Client.Crypto
 import qualified Data.Map as M
-import Packet
-import Routing
-import Communication
+import Client.Packet
+import Client.Routing
+import Client.Communication
 import Log
 
 type Sources = MapModule SourceEntry SourceID Request SourceAnswer

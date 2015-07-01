@@ -2,13 +2,13 @@
 
 module Proxy.UDP where
 
-import Class
-import Protocol
-import Packet
+import Client.Class
+import Client.Protocol
+import Client.Packet
 import Gateway
 import Proxy
 import Timer
-import Sources
+import Client.Sources
 import Client
 import Log
 --import Proxifier.UDP

@@ -1,5 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses,FunctionalDependencies #-}
-module Protocol where
+module Client.Protocol where
 
 import Control.Monad.State hiding (put, get)
 import qualified Control.Monad.State  as S (get)
@@ -9,12 +9,12 @@ import qualified Data.Map as M
 import Data.Maybe
 import Data.List
 
-import Class
-import Crypto
-import Packet
-import Routing
-import Communication
-import Sources
+import Client.Class
+import Client.Crypto
+import Client.Packet
+import Client.Routing
+import Client.Communication
+import Client.Sources
 import Timer
 import Log
 

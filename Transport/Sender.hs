@@ -3,10 +3,10 @@ module Transport.Sender where
 
 import Control.Monad
 import Control.Monad.State
-import Packet
+import Client.Packet
 import Transport.Control
 import Timer
-import Class
+import Client.Class
 
 
 data SendBuf = SendBuf { sbDataID :: DatagramID,

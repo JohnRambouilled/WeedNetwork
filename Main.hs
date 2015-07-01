@@ -3,14 +3,14 @@ module Main where
 import Data.Binary
 import Data.ByteString.Lazy(empty, length)
 
-import Crypto
-import Packet
-import Ressource
+import Client.Crypto
+import Client.Packet
+import Client.Ressource
 import Client
-import Sources
-import Protocol
+import Client.Sources
+import Client.Protocol
 import Gateway
-import Class
+import Client.Class
 import Proxy
 import Timer
 import Log
@@ -21,7 +21,7 @@ import Sniffer.Ethernet
 import Network.Socket
 import Control.Monad.State
 import Control.Concurrent
-import Communication
+import Client.Communication
 
 tcp_socketName = "testounet_tcp.socket"
 

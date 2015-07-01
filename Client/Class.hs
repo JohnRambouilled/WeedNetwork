@@ -1,6 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses,FunctionalDependencies, GADTs, FlexibleContexts, FlexibleInstances #-}
 
-module Class where
+module Client.Class where
 
 import Control.Monad.State
 import Control.Concurrent

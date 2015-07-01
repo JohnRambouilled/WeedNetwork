@@ -15,16 +15,17 @@ import Control.Monad
 import Data.Maybe
 import Data.List 
 
-import Class
-import Packet
+import Client.Class
+import Client.Packet
 import Client
-import Sources
-import Communication
-import Protocol
+import Client.Sources
+import Client.Communication
+import Client.Protocol
 import Gateway
 import Timer
 import Log
-import Ressource
+import Client.Ressource
+import Transport.MetaModule
 
 nbRoads = 1
 nbSourcesMax = 1
@@ -78,7 +79,7 @@ onNewConnection timerV sourcesV sIDs s = do
                                                                       keepLog ProxyLog Normal =<< dumpSockConf "[UNIX] new pkt decoded" sc
                                                                       dest <- choseDest sourcesV sIDs
                                                                       if (isNothing dest) then close s
-                                                                        else void $ openCommunication buildCallbacks timerV leechTimeOut leechRefreshTime
+                                                                        else void $ openTCPCommunication buildCallbacks timerV leechTimeOut leechRefreshTime
                                                                                                       (fromJust dest) $ ProtoRequest inetTCPProtoID (encode pkt)
                                         _ -> do --case decodeOrFail (B.fromStrict raw) of
                                                --     Right (_,_,a) -> do pkt <- pure a :: IO InetPacket

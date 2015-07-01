@@ -11,20 +11,20 @@ import Data.List
 import Data.Binary
 import System.Random
 
-import Class
-import Crypto
-import Packet
-import Routing
-import Sources
-import Ressource
-import Neighborhood
+import Client.Class
+import Client.Crypto
+import Client.Packet
+import Client.Routing
+import Client.Sources
+import Client.Ressource
+import Client.Neighborhood
 import Proxy
 import Proxy.UDP
 import Gateway
-import Protocol
+import Client.Protocol
 import Timer
 import Client
-import Communication
+import Client.Communication
 import Log
 import Network.Socket
 

@@ -1,11 +1,11 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
-module Ressource where
+module Client.Ressource where
 
 
-import Class
-import Crypto
-import Packet
-import Neighborhood
+import Client.Class
+import Client.Crypto
+import Client.Packet
+import Client.Neighborhood
 import Log
 
 import Control.Monad.State hiding (get,put)

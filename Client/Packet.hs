@@ -1,4 +1,4 @@
-module Packet where
+module Client.Packet where
 import Data.List
 import Data.Binary
 import Data.Binary.Get

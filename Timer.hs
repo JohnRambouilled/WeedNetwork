@@ -9,7 +9,7 @@ import Data.Tuple
 import Data.Time hiding (DiffTime)
 import Data.Binary
 
-import Class
+import Client.Class
 import Log
 
 type DiffTime = NominalDiffTime

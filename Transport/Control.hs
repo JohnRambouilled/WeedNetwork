@@ -12,7 +12,7 @@ module Transport.Control where
 -}
        
 
-import Packet
+import Client.Packet
 
 import Data.List.Ordered
 import Control.Concurrent.STM

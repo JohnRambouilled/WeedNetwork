@@ -1,10 +1,10 @@
 
 module Gateway where
 
-import Protocol
-import Packet
-import Class
-import Sources
+import Client.Protocol
+import Client.Packet
+import Client.Class
+import Client.Sources
 import Log
 import Client
 import Transport.MetaModule

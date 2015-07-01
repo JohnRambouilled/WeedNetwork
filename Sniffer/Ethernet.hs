@@ -12,7 +12,7 @@ import Control.Concurrent
 import System.Posix.Signals
 import Foreign.ForeignPtr
 
-import Packet
+import Client.Packet
 
 type Socket = CInt
 

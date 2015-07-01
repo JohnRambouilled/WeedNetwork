@@ -1,9 +1,9 @@
 {-# LANGUAGE MultiParamTypeClasses,FlexibleContexts #-}
-module Neighborhood where
+module Client.Neighborhood where
 
-import Class
-import Crypto
-import Packet
+import Client.Class
+import Client.Crypto
+import Client.Packet
 import Control.Monad.State hiding (put,get)
 import Data.Binary
 import Control.Concurrent.MVar

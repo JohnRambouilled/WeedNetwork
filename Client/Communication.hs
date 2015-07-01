@@ -1,5 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses,FunctionalDependencies #-}
-module Communication where
+module Client.Communication where
 
 import Control.Monad.State hiding (put, get)
 import qualified Control.Monad.State  as S (get)
@@ -8,10 +8,10 @@ import Data.Binary
 import Data.List
 import qualified Data.Map as M
 
-import Class
-import Crypto
-import Packet
-import Routing
+import Client.Class
+import Client.Crypto
+import Client.Packet
+import Client.Routing
 import Log
 
 

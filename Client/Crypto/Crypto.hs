@@ -1,5 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, ExistentialQuantification #-}
-module Crypto.Crypto where
+module Client.Crypto.Crypto where
 import Control.Monad.State
 import Data.Maybe
 import qualified Data.ByteString as BStrct
@@ -10,11 +10,11 @@ import qualified Crypto.PubKey.Ed25519 as S
 import qualified Crypto.PubKey.Curve25519 as DH
 import Crypto.Error
 
-import Class
-import Packet
+import Client.Crypto.Module
+import Client.Class
+import Client.Packet
 import Data.Binary
 import Log
-import Crypto.Module
 
 
 hashSHA1 = hashFunction hashDescrSHA1 

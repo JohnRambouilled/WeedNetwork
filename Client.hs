@@ -11,15 +11,15 @@ import Data.Maybe
 import Data.Binary hiding (put, get)
 import Crypto.Random
 
-import Class
-import Communication
-import Crypto
-import Packet
-import Routing
-import Sources
-import Ressource
-import Neighborhood
-import Protocol
+import Client.Class
+import Client.Communication
+import Client.Crypto
+import Client.Packet
+import Client.Routing
+import Client.Sources
+import Client.Ressource
+import Client.Neighborhood
+import Client.Protocol
 import Timer
 import Log
 
