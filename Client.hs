@@ -59,10 +59,10 @@ genClient :: SourceID -> PrivKey -> PubKey -> (Packet -> IO Bool) -> IO Client
 genClient uID privK pubK send = do  timerV <- newMVar $ Timer M.empty [1..]
                                     protoV <- newMapMVar [] 
                                     sourceV <- newMapMVar [pipesNewSourceCallback timerV seedComTimeOut protoV] 
-                                    routV <- newMVar $ Routing routingRelayCallback $ pipesRoutingCallback privK send sourceV
+                                    routV <- newMVar $ Routing routingRelayCallback $ pipesRoutingCallback privK pubK send sourceV
                                     resV <- newEmptyMVar 
                                     putMVar resV $ newMapModule [newDefaultBehaviour resV timerV  uID]
-                                    neighV <- newMVar $ Neighborhood [registerRessourceModule uID privK resV]
+                                    neighV <- newMVar $ Neighborhood [registerRessourceModule uID privK pubK resV]
                                     cryptoV <- newEmptyMVar
                                     putMVar cryptoV $ newMapModule [neighCryptoCallback cryptoV timerV neighV, routingCryptoCallback cryptoV timerV pubK privK uID routV]
                                     let cID = Identity uID privK pubK
@@ -90,7 +90,7 @@ connectToRessource c sV rC rID = insertRessourceEntry (cressource c) rID $ resCa
                                                                      (atomically . writeTVar sV) =<< (filterM  ((isJust <$>) . extractRoads (csources c))) =<< (atomically $ readTVar sV)
                                                                      b <- (choseRoad rC) r' sID cert d
                                                                      if b then do keepLog ClientLog Important $ "interesting road, opening pipe..."
-                                                                                  forkIO $ openNewPipeIO c (cResSourceKey cert) r' d -- TODO :c'est vraiment utile de se passer de la data?
+                                                                                  forkIO $ openNewPipeIO c (cResSourceDHKey cert) r' d -- TODO :c'est vraiment utile de se passer de la data?
                                                                                   keepLog ClientLog Normal $ "Pipe opened, registering the source"
                                                                                   atomically $ (readTVar sV >>= (writeTVar sV) . nub . (sID :))
                                                                                   pure . maybeToList $ relayAnswerPacket uID a
@@ -105,33 +105,32 @@ extractRoads sourcesV sID = do pipes <- getSourceEntry sourcesV sID >>= maybe (p
 
 
 
-openNewPipeIO :: Client -> PubKey -> Road -> RawData -> IO ()
+openNewPipeIO :: Client -> DHPubKey -> Road -> RawData -> IO ()
 openNewPipeIO c k r d = runStateT (openNewPipe k r d) c >> pure ()
 
-openNewPipe :: MonadIO m => PubKey -> Road -> RawData -> ClientT m Bool 
-openNewPipe dK r d = do (uK,uID) <- (,) <$> gets (privateKey . cidentity) <*> gets (clientSourceID . cidentity)
+openNewPipe :: MonadIO m => DHPubKey -> Road -> RawData -> ClientT m Bool 
+openNewPipe dK r d = do (uK,uID, pK) <- (,,) <$> gets (privateKey . cidentity) <*> gets (clientSourceID . cidentity) <*> gets (publicKey . cidentity)
                         (cryptoM, timerM, send) <- (,,) <$> gets ccrypto <*> gets ctimer <*> gets csender
                         liftIO . keepLog ClientLog Normal $ "generating new request"
-                        (pipePK, req) <- liftIO $ genNewPipeRequest uK dK r d
-                        let sendReq = sendRequest send cryptoM req pipePK
+                        (pipePrK, pipePK, req) <- liftIO $ genNewPipeRequest uK pK dK r d
+                        let sendReq = sendRequest send cryptoM req pipePrK pipePK
                         liftIO $ do _ <- repeatEach timerM (void sendReq) pipeRefreshTO 
                                     sendReq
 
 
 -- | Process a request (pass it to the cryptoModule), then send it on the network
-sendRequest :: SendFunction -> MVar Crypto -> Packet -> PrivKey -> IO Bool
-sendRequest send crypto p pK = do keepLog ClientLog Normal "Passing request to crypto"
-                                  reqL <- runModule crypto p 
-                                  keepLog ClientLog Normal "Sending request"
-                                  gen <- liftIO genRnd
-                                  head <$> mapM (signAndSend gen) reqL
-   where signAndSend g p = case decodeMaybe (runIntroContent $ introContent p) :: Maybe Request of
+sendRequest :: SendFunction -> MVar Crypto -> Packet -> PrivKey -> PubKey -> IO Bool
+sendRequest send crypto p prK pK = do keepLog ClientLog Normal "Passing request to crypto"
+                                      reqL <- runModule crypto p 
+                                      keepLog ClientLog Normal "Sending request"
+                                      head <$> mapM signAndSend reqL
+   where signAndSend p = case decodeMaybe (runIntroContent $ introContent p) :: Maybe Request of
                                         Nothing -> pure False
-                                        Just req -> send $ p{sig = sign g pK $ reqSourceHash (keyID p) req}
+                                        Just req -> send $ p{sig = sign prK pK $ reqSourceHash (keyID p) req}
 
 
-genNeighHello :: CPRG g => g -> Identity -> RawData -> Packet
-genNeighHello gen i d = Introduce kID (publicKey i) (sign gen (privateKey i) $ encode (kID, publicKey i, nHello)) $ IntroContent nHello
+genNeighHello :: Identity -> RawData -> Packet
+genNeighHello i d = Introduce kID (publicKey i) (sign (privateKey i) (publicKey i) $ encode (kID, publicKey i, nHello)) $ IntroContent nHello
        where nHello = encode $ NeighHello d 
              kID = keyHash $ clientSourceID i
 

@@ -78,10 +78,10 @@ routingCryptoCallback cV tV pubK uK uID rV = genCryptoCallback cV tV pipeTimeOut
           inFun _ = return Nothing
           checkRequest (Request n _ l r _ _) = (l == length r) && (n < l) && (n >= 0)
           outFun :: Packet -> RoutingAnswer -> CryptoT IO (Maybe [CryptoAction], [Packet], IO())
-          outFun p (RoutingAnswer onTO regM rL) = do pktL <- liftIO $ forM rL (\r -> forgePacket p r <$> genRnd)
-                                                     return (map runDataCB <$> regM, pktL, onTO)
-          forgePacket p r g = p{introContent = IntroContent . encode $ signReq g (keyID p) r}
-          signReq g kH r = let r' = r{roadPosition = roadPosition r + 1} in r'{neighborSignature = sign g uK $ reqNeighHash kH r'}
+          outFun p (RoutingAnswer onTO regM rL) = --do pktL <- liftIO $ forM rL (\r -> forgePacket p r <$> genRnd)
+                                                     return (map runDataCB <$> regM, map (forgePacket p) rL, onTO)
+          forgePacket p r = p{introContent = IntroContent . encode $ signReq (keyID p) r}
+          signReq kH r = let r' = r{roadPosition = roadPosition r + 1} in r'{neighborSignature = sign uK pubK $ reqNeighHash kH r'}
 
 
 reqNeighHash :: KeyHash -> Request -> Hash

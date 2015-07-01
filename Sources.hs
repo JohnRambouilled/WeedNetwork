@@ -35,24 +35,16 @@ instance MapModules SourceEntry SourceID Request SourceAnswer where
                                                                  else head $ road req
         entryBehaviour (SourceEntry sID pV _ cV) = [\_ r -> return [SourceAnswer sID $ Just (genCommunicationCallback pV cV $ roadPosition r, pV)]]
 
-{- | Arguments are : KeySize, User PrivKey (to sign as neighbor), Destinary PubKey, Road and Content
-genNewPipeRequest :: Int -> PrivKey -> PubKey -> Road -> RawData -> IO (PrivKey, Packet)
-genNewPipeRequest kSize uK destK r d = do (pub, priv) <- generateKeyPair kSize
-                                          let l = length r
-                                              kH = KeyHash $ pubKeyToHash pub
-                                              epk = encode (kH, priv, destK)
-                                              req = Request 0 (sign uK $ epk) l r epk d
-                                          pure (priv, Introduce kH pub  (sign priv $ reqSourceHash kH req) $ IntroContent $ encode req)
-    
--}
-genNewPipeRequest :: PrivKey -> PubKey -> Road -> RawData -> IO (PrivKey, Packet)
-genNewPipeRequest uK destK r d = do gen <- genRnd
-                                    let (pP, (priv, pub)) = transmitKey gen destK
-                                        l = length r
-                                        kH = KeyHash $ pubKeyToHash pub
-                                        epk = encode (pP, (priv, kH))
-                                        req = Request 0 (sign gen uK $ epk) l r epk d
-                                    pure (priv, Introduce kH pub (sign gen priv $ reqSourceHash kH req) $ IntroContent $ encode req)
+
+
+genNewPipeRequest :: PrivKey -> PubKey -> DHPubKey -> Road -> RawData -> IO (PrivKey, PubKey, Packet)
+genNewPipeRequest uK pK destK r d = do dhP <- generateDHPrivKey
+                                       let (pP, (priv, pub)) = fromJust $ transmitKey destK dhP
+                                           l = length r
+                                           kH = KeyHash $ pubKeyToHash pub
+                                           epk = encode (kH, (pP, (priv, pub)))
+                                           req = Request 0 (sign uK pK $ epk) l r epk d
+                                       pure (priv, pub, Introduce kH pub (sign priv pub $ reqSourceHash kH req) $ IntroContent $ encode req)
 
 
 
@@ -79,43 +71,41 @@ removeSourceEntry sV sID d = modifyMVar_ sV $ \s -> do let (msE, kM) = M.updateL
 
 
 -- | Standard DestCallback for routing
-pipesRoutingCallback ::  PrivKey -> SendFunction -> MVar Sources -> RoutingCB
-pipesRoutingCallback uK send sV = genCallback sV inFun outFun
+pipesRoutingCallback ::  PrivKey -> PubKey -> SendFunction -> MVar Sources -> RoutingCB
+pipesRoutingCallback uK pK send sV = genCallback sV inFun outFun
     where inFun req = return [req]
           outFun r (SourceAnswer sID sAnsM) = case sAnsM of
                                                 Nothing -> pure []
-                                                Just (dCB, pV) -> do (onBrk, pL) <- addNewPipe uK send pV r
+                                                Just (dCB, pV) -> do (onBrk, pL) <- addNewPipe uK pK send pV r
                                                                      return [RoutingAnswer (onBrk >> chkSource pV sID) (Just [dCB]) pL ]
           chkSource pV sID = do b <- withMVar pV $ pure . M.null
                                 if b then removeSourceEntry sV sID (encode ()) 
                                      else pure ()
 
 
-addNewPipe :: MonadIO m => PrivKey -> SendFunction -> MVar Pipes -> Request -> m (IO (), [Request] )
-addNewPipe uK send pV r = if roadPosition r == 0 then case decodeMaybe (encryptedPrivKey r) of
+addNewPipe :: MonadIO m => PrivKey -> PubKey -> SendFunction -> MVar Pipes -> Request -> m (IO (), [Request] )
+addNewPipe uK pK send pV r = if roadPosition r == 0 then case decodeMaybe (encryptedPrivKey r) of
                                                         Nothing -> pure (pure (), [])
-                                                        Just (pP, (prK, kH)) -> let r' = r{encryptedPrivKey = encode (pP :: PubPoint)} in
-                                                                         do gen <- liftIO genRnd
-                                                                            onTO <- insertPipe (kH, prK) True r'{neighborSignature = sign gen uK $ reqNeighHash kH r'}
+                                                        Just (kH, (pP, (prK, pK))) -> let r' = r{encryptedPrivKey = encode (pP :: DHPubKey)} in
+                                                                         do onTO <- insertPipe (kH, prK, pK) True r'{neighborSignature = sign uK pK $ reqNeighHash kH r'}
                                                                             pure (onTO, [r'])
                                                  else case decodeMaybe $ encryptedPrivKey r of
                                                         Nothing -> pure (pure (), [])
-                                                        Just pP -> let (prK, pK) = exctractKey uK pP
-                                                                       kH = KeyHash $ pubKeyToHash pK
-                                                                   in insertPipe (kH, prK) False r >>= \onTO -> pure (onTO, [])
-    where insertPipe :: MonadIO m => (KeyHash, PrivKey) -> Bool -> Request -> m (IO ())
+                                                        Just pP -> do 
+                                                                      let (prK, pK) = fromJust $ (exctractKey pP =<< privKeyToDHPrivKey uK)
+                                                                          kH = KeyHash $ pubKeyToHash pK
+                                                                      insertPipe (kH, prK, pK) False r >>= \onTO -> pure (onTO, [])
+    where insertPipe :: MonadIO m => (KeyHash, PrivKey, PubKey) -> Bool -> Request -> m (IO ())
           insertPipe k b r = liftIO $ modifyMVar pV $ insertPipeEntry k b r
-          insertPipeEntry (kH, pK) b r pM =  do keepLog SourcesLog Important $ "Inserting pipe entry for pipe : " ++ (show . roadToRoadID $ road r) ++ "on Road : " ++ (show $ road r)
-                                                let n = if b then (roadPosition r + 1) else (roadPosition r -1)
-                                                pure (M.insert kH (PipesEntry (roadToRoadID $ road r)
-                                                                           (genWriteFunction b kH pK n)
-                                                                           (genBreakFunction b kH pK n) ) pM, onTimeOut kH)
-          genWriteFunction :: Bool -> KeyHash -> PrivKey -> Number -> ComMessage -> IO Bool
-          genWriteFunction b kH pK n cm = do gen <- genRnd
-                                             send $ DataPacket kH (sign gen pK $ pipeMessageHash kH b (encode cm)) $ DataContent . encode $ PipeData n b $ encode cm
-          genBreakFunction :: Bool -> KeyHash -> PrivKey -> Number -> RawData -> IO Bool
-          genBreakFunction b kH pK n m = do gen <- genRnd
-                                            send $ DataPacket kH (sign gen pK $ pipeMessageHash kH b m) $ DataContent . encode $ PipeExit n b m
+          insertPipeEntry (kH, prK, pK) b r pM = do keepLog SourcesLog Important $ "Inserting pipe entry for pipe : " ++ (show . roadToRoadID $ road r) ++ "on Road : " ++ (show $ road r)
+                                                    let n = if b then (roadPosition r + 1) else (roadPosition r -1)
+                                                    pure (M.insert kH (PipesEntry (roadToRoadID $ road r)
+                                                                           (genWriteFunction b kH prK pK n)
+                                                                           (genBreakFunction b kH prK pK n) ) pM, onTimeOut kH)
+          genWriteFunction :: Bool -> KeyHash -> PrivKey -> PubKey -> Number -> ComMessage -> IO Bool
+          genWriteFunction b kH prK pK n cm = send $ DataPacket kH (sign prK pK $ pipeMessageHash kH b (encode cm)) $ DataContent . encode $ PipeData n b $ encode cm
+          genBreakFunction :: Bool -> KeyHash -> PrivKey -> PubKey -> Number -> RawData -> IO Bool
+          genBreakFunction b kH prK pK n m = send $ DataPacket kH (sign prK pK $ pipeMessageHash kH b m) $ DataContent . encode $ PipeExit n b m
           onTimeOut kH = modifyMVar_ pV (pure . M.delete kH)
 
 

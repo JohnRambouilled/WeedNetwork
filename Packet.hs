@@ -7,9 +7,13 @@ import Data.Int
 import Data.ByteString.Lazy hiding (map, concat)
 import Numeric(showHex)
 --import Crypto.PubKey.RSA
-import Crypto.PubKey.ECC.DH
-import Crypto.PubKey.ECC.ECDSA
+--import Crypto.PubKey.ECC.DH
+--import Crypto.PubKey.ECC.ECDSA
+import qualified Crypto.PubKey.Ed25519 as S
+import qualified Crypto.PubKey.Curve25519 as DH
 import Crypto.Types.PubKey.ECC
+import qualified Data.ByteArray as BA
+import Crypto.Error
 
 type SendFunction = Packet -> IO Bool
 
@@ -38,9 +42,24 @@ instance Binary DataContent where put (DataContent d) = putLazyByteString d
 
 type RawData = ByteString 
 
-type Sig = Signature
-instance Binary Signature where put (Signature r s) = put r >> put s
-                                get = Signature <$> get <*> get
+type Sig = S.Signature
+
+instance Binary S.Signature where put s = put . fromStrict $ (BA.convert s)
+                                  get = do b <- BA.convert . toStrict <$> get
+                                           case S.signature (b :: BA.Bytes) of
+                                                 CryptoFailed e -> fail (show e) 
+                                                 CryptoPassed s -> pure $ s
+
+
+
+instance Binary DH.PublicKey where put pk = put . fromStrict $ (BA.convert pk)
+                                   get = do b <- BA.convert . toStrict <$> get
+                                            case DH.publicKey (b :: BA.Bytes) of
+                                                 Left e -> fail (show e) 
+                                                 Right k -> pure k
+
+--instance Binary Signature where put (Signature r s) = put r >> put s
+--                                get = Signature <$> get <*> get
 
 keyHashByteSize = 4 :: Int64
 sigByteSize = 128 :: Int64
@@ -51,36 +70,21 @@ instance Binary KeyHash where put (KeyHash h) = putLazyByteString h
 instance Show KeyHash where show (KeyHash d) = prettyPrint d
 
 
-data PubKey = PubKey {pkCurveName :: CurveName,
-                      pkPublicPoint :: PublicPoint} deriving Show
-instance Binary PubKey where put (PubKey c p) = put (fromEnum c) >> put p
-                             get = PubKey <$> (toEnum <$> get ) <*> get
-pkCurve :: PubKey -> Curve
-pkCurve = getCurveByName . pkCurveName
-runPubKey :: PubKey -> PublicKey
-runPubKey (PubKey cN pP) = PublicKey (getCurveByName cN) pP
-
-instance Binary Point where
-        put PointO = put False
-        put (Point x y) = put True >> put x >> put y
-        get = do b <- get :: Get Bool
-                 if b then Point <$> get <*> get
-                      else pure PointO
+newtype PubKey = PubKey {runPubKey :: S.PublicKey} deriving (Show)
+newtype PrivKey = PrivKey {runPrivKey :: S.SecretKey}
+instance Binary PubKey where put (PubKey pk) = put . fromStrict $ (BA.convert pk)
+                             get = do b <- BA.convert . toStrict <$> get
+                                      case S.publicKey (b :: BA.Bytes) of
+                                            CryptoFailed e -> fail (show e) 
+                                            CryptoPassed k -> pure $ PubKey k
 
 
---instance Binary PublicKey where put (PublicKey size n e) = put size >> put n >> put e
---                                get = PublicKey <$> get <*> get <*> get
 
-
-data PrivKey = PrivKey {prCurveName :: CurveName,
-                        prPrivateNumber :: PrivateNumber} deriving Show
-instance Binary PrivKey where put (PrivKey c n) = put (fromEnum c) >> put n
-                              get = PrivKey <$> (toEnum <$> get) <*> get
-
-prCurve :: PrivKey -> Curve
-prCurve = getCurveByName . prCurveName 
-runPrivKey :: PrivKey -> PrivateKey
-runPrivKey (PrivKey cN pN) = PrivateKey (getCurveByName cN) pN
+instance Binary PrivKey where put (PrivKey pk) = put . fromStrict $ (BA.convert pk)
+                              get = do b <- BA.convert . toStrict <$> get
+                                       case S.secretKey (b :: BA.Bytes) of
+                                            CryptoFailed e -> fail (show e) 
+                                            CryptoPassed k -> pure $ PrivKey k
 
 
 

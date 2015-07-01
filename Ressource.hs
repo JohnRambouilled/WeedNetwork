@@ -23,7 +23,8 @@ newtype RessourceID = RessourceID RawData
 
 
 
-data RessourceCert = RessourceCert {cResSourceKey :: PubKey,
+data RessourceCert = RessourceCert {cResSourceDHKey :: DHPubKey,
+                                    cResSourceKey :: PubKey,
                                     cResTimestamp :: Time,
                                     cResID :: RessourceID,
                                     cResSig :: Sig}
@@ -88,7 +89,7 @@ newDefaultBehaviour _ _ _ _ = return []
 
 
 checkCert :: RessourceCert -> SourceID -> Bool 
-checkCert (RessourceCert sKey time rID sig) (SourceID kH)  = runKeyHash kH  == pubKeyToHash sKey && (checkSignature sKey sig $ encode (sKey, time, rID))
+checkCert (RessourceCert dhKey sKey time rID sig) (SourceID kH)  = runKeyHash kH  == pubKeyToHash sKey && (checkSignature sKey sig $ encode (dhKey, sKey, time, rID))
 
 
 {-| Accepts only researches if they have an empty road or a road where my user ID is on its top.
@@ -119,19 +120,18 @@ relayAnswerPacket me (Answer crt ttl roadL source cnt) = if ttl > 1 && not (me `
 relayAnswerPacket _ _ = Nothing
 
 
-registerRessourceModule :: SourceID -> PrivKey -> MVar RessourceModule -> DataCB
-registerRessourceModule me myKey mv = DataCB (ressourceHashFunction me) clbk --(ressourceHashFunction,clbk)
+registerRessourceModule :: SourceID -> PrivKey -> PubKey -> MVar RessourceModule -> DataCB
+registerRessourceModule me uK pK mv = DataCB (ressourceHashFunction me) clbk --(ressourceHashFunction,clbk)
   where clbk :: CryptoCB RessourcePacket Packet
         clbk rP = (liftIO $ runModule mv rP) >>= mapM craftPacket
         craftPacket :: (MonadIO m) => RessourcePacket -> CryptoT m Packet
-        craftPacket resPkt = do gen <- liftIO genRnd
-                                return $ DataPacket (keyHash me) (sign gen myKey $ encode dc) dc
+        craftPacket resPkt = return $ DataPacket (keyHash me) (sign uK pK $ encode dc) dc
                                   where dc = DataContent $ encode resPkt
 
  
-sendResearch :: CPRG g => g -> PrivKey -> KeyHash -> RessourceID -> TTL ->Road -> RawData -> Packet
-sendResearch gen pK uID rID ttl r d = let res = DataContent. encode $ Research rID ttl r d
-                                  in DataPacket uID (sign gen pK $ encode res) res
+sendResearch :: PrivKey -> PubKey -> KeyHash -> RessourceID -> TTL ->Road -> RawData -> Packet
+sendResearch prK pK uID rID ttl r d = let res = DataContent. encode $ Research rID ttl r d
+                                  in DataPacket uID (sign prK pK $ encode res) res
 
 
 answerMaxFrequency = 100 :: DiffTime
@@ -140,15 +140,15 @@ genRessourceCallback :: MVar Time -> PubKey -> PrivKey -> SourceID -> RessourceI
 genRessourceCallback tV pK uK uID rID d p = if isResearch p then do keepLog RessourcesLog Important $ "received research for offered ressource : " ++ show rID
                                                                     tM <- liftIO $ tryReadMVar tV
                                                                     t' <- liftIO getTime
-                                                                    gen <- liftIO genRnd
                                                                     case tM of Nothing -> do liftIO $ putMVar tV t' 
-                                                                                             pure [sendAnswer gen t'] 
+                                                                                             pure [sendAnswer t'] 
                                                                                Just t -> if diffUTCTime t' t > answerMaxFrequency then do liftIO $ swapMVar tV t'
-                                                                                                                                          pure [sendAnswer gen t]
+                                                                                                                                          pure [sendAnswer t]
                                                                                                                                      else pure []
                                                            else pure []
-    where sendAnswer gen t = Answer (cert gen t) ressourceTtlMax [uID] uID d
-          cert gen t = RessourceCert pK t rID $ sign gen uK $ encode (pK, t, rID)
+    where sendAnswer t = Answer (cert t) ressourceTtlMax [uID] uID d
+          cert t = RessourceCert dhKey pK t rID $ sign uK pK $ encode (dhKey, pK, t, rID)
+          dhKey = fromJust $ privKeyToDHPubKey uK
 
                              
 
@@ -157,8 +157,8 @@ instance Show RessourceID where show (RessourceID d) = "RID:"++ prettyPrint d
 instance Binary RessourceID where put (RessourceID rID) = put rID
                                   get = RessourceID <$> get
 
-instance Binary RessourceCert where put (RessourceCert key time rID sig) = put key >> put time >> put rID >> put sig
-                                    get = RessourceCert <$> get <*> get <*> get <*> get
+instance Binary RessourceCert where put (RessourceCert dh key time rID sig) = put dh >> put key >> put time >> put rID >> put sig
+                                    get = RessourceCert <$> get <*> get <*> get <*> get <*> get
 instance Binary RessourcePacket where 
         put (Research rID ttl road cnt) = putWord8 1 >> put rID >> put ttl >> put road >> put cnt
         put (Answer crt ttl road source cnt) = putWord8 2 >> put crt >> put ttl >> put road >> put source >> put cnt

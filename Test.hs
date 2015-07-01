@@ -37,7 +37,7 @@ data TestClient = TestClient {client :: Client,
 
 
 newTestClient :: SendFunction -> IO Client
-newTestClient send = do (pubkey,privkey) <- generateKeyPair <$> genRnd <*> pure (toEnum 4)
+newTestClient send = do (pubkey,privkey) <- generateKeyPair 
                         let me = SourceID $ KeyHash $ pubKeyToHash pubkey
                         genClient me privkey pubkey send
 
@@ -96,9 +96,8 @@ leechMain c send = do introduceThread c send "Leech Hello"
 
 
 sendRes :: Client -> SendFunction -> RessourceID -> IO Bool
-sendRes c send rID = do gen <- genRnd
-                        send $ sendResearch gen pK uID rID 10 [] B.empty
-   where (uID, pK) = (keyHash . clientSourceID $ cidentity c, privateKey $ cidentity c) 
+sendRes c send rID = send $ sendResearch prK pK uID rID 10 [] B.empty
+   where (uID, prK, pK) = (keyHash . clientSourceID $ cidentity c, privateKey $ cidentity c, publicKey $ cidentity c) 
 
 seedMain :: ClientBehaviour 
 seedMain c send = do introduceThread c send "Seed Hello"
@@ -174,10 +173,9 @@ runChildren x = do r <- newEmptyMVar
                    return r
 
 introduceThread :: (Binary a, Show a) => Client -> SendFunction -> a -> IO ()
-introduceThread c send d = do gen <- genRnd
-                              send  . genNeighHello gen (cidentity c) $ encode d
+introduceThread c send d = do send . genNeighHello (cidentity c) $ encode d
                               repeatEach (ctimer c) (do print $ "sending NeighHello from : " ++ (show . clientSourceID $ cidentity c) ++ "  " ++ (show d)
-                                                        send  . genNeighHello gen (cidentity c) $ encode d
+                                                        send  . genNeighHello (cidentity c) $ encode d
                                                         pure ()) 5 >> pure ()
 
 

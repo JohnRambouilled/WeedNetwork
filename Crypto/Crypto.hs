@@ -6,11 +6,11 @@ import qualified Data.ByteString as BStrct
 import qualified Data.ByteString.Lazy as B
 import Crypto.Random
 import Crypto.PubKey.HashDescr hiding (HashFunction)
-import qualified Crypto.PubKey.ECC.DH as E
-import qualified Crypto.PubKey.ECC.ECDSA as E
-import Crypto.Types.PubKey.ECC
-import Crypto.PubKey.ECC.Generate
-
+import qualified Crypto.PubKey.Ed25519 as S
+import qualified Crypto.PubKey.Curve25519 as DH
+--import Crypto.Types.PubKey.ECC
+--import Crypto.PubKey.ECC.Generate
+import Crypto.Error
 import Debug.Trace
 
 import Class
@@ -47,35 +47,53 @@ cryptoCheckSig kH s h = do keepLog CryptoLog Normal $ "[cryptoCheckSig] :: check
 
 -- | Ckeck the validity of a signature.
 checkSignature :: PubKey -> Sig -> Hash -> Bool
-checkSignature pK s h = trace "verify" $ E.verify hashSHA1 (runPubKey pK) s $ B.toStrict h
+checkSignature pK s h = trace "verify" $ S.verify (runPubKey pK) (B.toStrict h) s 
 
 
 
-sign :: CPRG g => g -> PrivKey -> RawData -> Sig
-sign gen uK d = fst $ E.sign gen (runPrivKey uK) hashSHA1 $ B.toStrict d
-
-type PubPoint = PublicPoint
-
-transmitKey :: CPRG g => g -> PubKey -> (PubPoint, (PrivKey, PubKey))
-transmitKey gen pK = (E.calculatePublic c privN, keysFromShared $ E.getShared c privN $ pkPublicPoint pK)
-    where c = pkCurve pK
-          cN = pkCurveName pK
-          privN = fst $ E.generatePrivate gen c
-          keysFromShared (E.SharedKey sk) = (PrivKey cN sk, PubKey cN $ E.calculatePublic c sk)
+sign :: PrivKey -> PubKey -> RawData -> Sig
+sign uK pK d = S.sign  (runPrivKey uK) (runPubKey pK) $ B.toStrict d
 
 
-exctractKey :: PrivKey -> PubPoint -> (PrivKey, PubKey)
-exctractKey prK pP = keysFromShared $ E.getShared c (prPrivateNumber prK) pP
-    where c = prCurve prK
-          cN = prCurveName prK
-          keysFromShared (E.SharedKey sk) = (PrivKey cN sk, PubKey cN $ E.calculatePublic c sk)
+-- | Dest pubKey, et new privKey to generate the pipeKey, and the pubKey to transmit to destinary (the new privKey can be discarded)
+type DHPubKey = DH.PublicKey
+type DHPrivKey = DH.SecretKey
 
+transmitKey :: DHPubKey -> DHPrivKey -> Maybe (DHPubKey, (PrivKey, PubKey))
+transmitKey dK nK = (\keys -> (DH.toPublic nK, keys)) <$> (keysFromShared $ DH.dh dK nK)
+    where keysFromShared dhS = let sKM = S.secretKey dhS
+                  in case sKM of CryptoPassed sK -> Just (PrivKey sK, PubKey $ S.toPublic sK )
+                                 _ -> Nothing
+
+exctractKey :: DHPubKey -> DHPrivKey -> Maybe (PrivKey, PubKey)
+exctractKey pK prK = keysFromShared $ DH.dh pK prK
+    where keysFromShared dhS = let sKM = S.secretKey dhS
+                  in case sKM of CryptoPassed sk -> Just (PrivKey sk, PubKey $ S.toPublic sk )
+                                 _ -> Nothing
     
 
 
-generateKeyPair :: CPRG g => g -> CurveName -> (PubKey,PrivKey)
-generateKeyPair gen cN = (PubKey cN (E.public_q pubK), PrivKey cN (E.private_d privK))
-    where ((pubK, privK),_) = generate gen $ getCurveByName cN
+generateKeyPair ::  IO (PubKey,PrivKey)
+generateKeyPair = do skBs <- getRandomBytes 32 :: IO BStrct.ByteString
+                     case S.secretKey skBs of
+                                CryptoFailed e -> fail (show e)
+                                CryptoPassed k -> let pK = S.toPublic k in pure (PubKey pK, PrivKey k)
+        
 
-genRnd :: IO SystemRNG 
-genRnd = cprgCreate <$> createEntropyPool
+
+generateDHPrivKey :: IO DHPrivKey
+generateDHPrivKey = do skBs <- getRandomBytes 32 :: IO BStrct.ByteString
+                       case DH.secretKey skBs of
+                                Left e -> fail (show e)
+                                Right k -> pure k
+        
+
+privKeyToDHPrivKey :: PrivKey -> Maybe DHPrivKey
+privKeyToDHPrivKey (PrivKey pk) = case DH.secretKey pk of Left e -> Nothing
+                                                          Right k -> Just k
+
+privKeyToDHPubKey :: PrivKey -> Maybe DHPubKey
+privKeyToDHPubKey = (DH.toPublic <$>) . privKeyToDHPrivKey
+
+
+
