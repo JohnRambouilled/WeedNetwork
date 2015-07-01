@@ -98,7 +98,8 @@ genTCPCallback timerV sndV rcvV wbF clbks = (Callback clbk, BrkClbck brck)
 
 
 weedCallback :: MVar Timer -> MVar Sender -> MVar RecvBuf -> (Callback,BrkClbck) -> (WriteFun, BreakFun) -> RawData -> IO ()
-weedCallback timerV sndV rcvV (clbk,break) (wF, bF) rawData = case decodeMaybe rawData of
+weedCallback timerV sndV rcvV (clbk,break) (wF, bF) rawData = do print "Callback called"
+                                                                 case decodeMaybe rawData of
                                                                     Just (TransportSeg trSeg) -> modifyMVar_ rcvV $ onSeg trSeg
                                                                     Just (TransportControl trCtl) -> do seg <- runStateMVar sndV (onControlPacket timerV wF onTimeOut trCtl)
                                                                                                         forM_ seg $ runWriteFun wF . encode
@@ -108,6 +109,7 @@ weedCallback timerV sndV rcvV (clbk,break) (wF, bF) rawData = case decodeMaybe r
                                                                                 pure $ RecvBuf trList'
                                                 Left (trList', _) -> pure $ RecvBuf trList'                              
                                                 Right (trList', cm) -> do runWriteFun wF . encode $ TransportControl cm
+                                                                          print "running callback (WeedCallback, Metamodule)"
                                                                           runCallback clbk . B.concat $ map trData trList' 
                                                                           pure $ RecvBuf []
            onTimeOut = void $ runBrkClbck break B.empty >> runBreakFun bF B.empty
