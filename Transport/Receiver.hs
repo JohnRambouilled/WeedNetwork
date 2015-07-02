@@ -30,7 +30,7 @@ craftReqRangePkt = map (uncurry SegmentRange)
 {-| Checks the buffer and returns the list of missing segments. |-}
 checkBuf :: [TrSegment] -> [(SegmentID,SegmentID)]
 checkBuf [] = []
-checkBuf buf@(lastSeg:_) = extractRanges $ trace "minus..." $ minus (trace "wanted" wantedIndexes) (trace "received" receivedIndexes)
+checkBuf buf@(lastSeg:_) = extractRanges $  minus wantedIndexes receivedIndexes
   where receivedIndexes = map trSegmentID buf
         wantedIndexes = [sID | sID <- [0.. lastSegID]] 
         lastSegID = trSegmentID lastSeg

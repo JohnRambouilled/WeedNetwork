@@ -13,6 +13,8 @@ module Transport.Control where
        
 
 import Client.Packet
+import Log
+import Control.Monad.State hiding (get, put)
 
 import Data.List.Ordered
 import Control.Concurrent.STM
@@ -24,6 +26,8 @@ import Data.Binary
 type DatagramID = Int
 type SegmentID = Int
 
+data TransportPacket = TransportSeg TrSegment | TransportControl TrControlMessage
+
 data Flags = Flags {flPush :: Bool} deriving Show
 data TrSegment = TrSegment { trDatagramID :: DatagramID,
                              trSegmentID  :: SegmentID,
@@ -34,7 +38,7 @@ data TrControlMessage =  -- Asks for a range of segments
                          TrGet { cmDataID :: DatagramID,
                                  cmSegRequests :: [SegmentRequest]}
                          -- Acknowledges a datagram
-                      | TrAck { cmAckID :: DatagramID}
+                      | TrAck { cmAckID :: DatagramID} deriving Show
 instance Eq TrSegment where
         t1 == t2 = trDatagramID t1 == trDatagramID t2
                 && trSegmentID t1 == trSegmentID t2
@@ -46,9 +50,9 @@ instance Ord TrSegment where
               where cmpDgram = trDatagramID t1 `compare` trDatagramID t2
 
 
-data SegmentRequest = SegmentRange { fromSegment :: SegmentID,
+data SegmentRequest = SegmentRange { fromSegment :: SegmentID, 
                                      toSegment   :: SegmentID}
-                    | SegmentFrom {fromSegment :: SegmentID}
+                    | SegmentFrom {fromSegment :: SegmentID} deriving Show
 
 ---------------------------8<----------------------------------------
 --          Receiver
@@ -60,6 +64,17 @@ extractRanges l = catMaybes $ zipWith f l (tail l)
         where f el nxt
                 | el+1 == nxt = Nothing
                 | otherwise  = Just (el,nxt)
+
+
+instance Binary TransportPacket where
+        put (TransportSeg x) = putWord8 0 >> put x
+        put (TransportControl x) = putWord8 1 >> put x
+        get = do x <- getWord8 
+                 case x of
+                   0 -> TransportSeg <$> get
+                   1 -> TransportControl <$> get
+                   _ -> fail "invalid transport packet"
+
 
 instance Binary Flags where
         put (Flags f) = put f
@@ -87,3 +102,5 @@ instance Binary TrControlMessage where
                    1 -> TrAck <$> get
                    _ -> fail "invalid transport control message"
 
+keepL :: MonadIO m => LogStatus -> String -> m ()
+keepL = keepLog TransportLog

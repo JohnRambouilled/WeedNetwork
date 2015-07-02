@@ -9,7 +9,7 @@ import Client.Protocol
 import Client.Packet
 import Client.Class
 import Timer
-import Log
+import Log 
 import Client.Sources
 
 import Data.List
@@ -20,58 +20,23 @@ import Control.Monad
 import Control.Monad.State hiding (get,put)
 import Control.Lens
 
-data TransportPacket = TransportSeg TrSegment | TransportControl TrControlMessage
-
-fragSize = 1000 --- TODO
-
-data Sender = Sender {_sToSend :: [SendBuf],
-                      _sKill :: IO (),
-                      _sCurrentDatagram :: DatagramID}
-
-makeLenses ''Sender
 
 
-senderSendBuf :: (MonadIO m) => MVar Timer -> SendBuf -> WriteFun -> IO () -> StateT Sender m [TrSegment]
-senderSendBuf timerV buf wF break = let ret = buildSegments (sbDataID buf) $ zip [0..] $ sbBuf buf
-                                    in do killRepeat <- liftIO $ repeatNTimes timerV (void $ spamPsh (last ret)) break  pshFreq pshRepeatParam 
-                                          bufs <- use sToSend
-                                          sKill .= killRepeat
-                                          return ret
-        where pshFreq = 5
-              pshRepeatParam = 3
-              spamPsh payload = sendTRSegment wF payload
-
-fragData :: RawData -> [RawData]
-fragData raw = fst $ until (B.null . snd) f ([],raw)
-  where f (frags,rest) = let (nfrag,nrest) = B.splitAt fragSize rest
-                         in (frags ++ [nfrag],nrest)
-
-senderQueueDatagram :: (MonadIO m) => MVar Timer ->  WriteFun -> IO () -> RawData -> StateT Sender m Bool
-senderQueueDatagram timerV wF break raw  = do (toSend,curID) <- (,) <$> use sToSend <*> use sCurrentDatagram
-                                              sCurrentDatagram += 1
-                                              let sendBuf = SendBuf (curID + 1) raws
-                                              sToSend .= toSend ++ [sendBuf]
-                                              if null toSend 
-                                                then and `fmap` (senderSendBuf timerV sendBuf wF break >>= mapM (sendTRSegment wF))
-                                                else return True
-    where raws = fragData raw
-
-sendTRSegment :: MonadIO m => WriteFun -> TrSegment -> m Bool
-sendTRSegment wF = liftIO . runWriteFun wF . encode . TransportSeg
-
-onControlPacket :: (MonadIO m) => MVar Timer -> WriteFun -> IO () -> TrControlMessage -> StateT Sender m [TrSegment]
-onControlPacket timerV writeFun break pkt = do buffers <-  use sToSend
-                                               if null buffers then pure []
+onControlPacket :: (MonadIO m) => MVar Timer -> (WriteFun, BreakFun) -> IO () -> TrControlMessage -> StateT Sender m [TrSegment]
+onControlPacket timerV wrBrkFun break pkt = do buffers <-  use sToSend
+                                               keepL Normal $ "control packet received : " ++ show pkt
+                                               if null buffers then keepL Error "No datagram in buffer" >> pure []
                                                   else let cur = head buffers
                                                        in do (retM,_) <- runStateT (runSendBuf pkt) cur
                                                              case retM of
-                                                               Just pkts -> pure pkts
+                                                               Just pkts -> keepL Normal "sending correction packets" >> pure pkts
                                                                Nothing -> let rest = tail buffers
                                                                           in do sToSend .= rest
+                                                                                keepL Important "Datagram successfully sent, flushing buffer"
                                                                                 use sKill >>= liftIO
                                                                                 if null rest
-                                                                                  then pure []
-                                                                                  else do senderSendBuf timerV (head buffers) writeFun break
+                                                                                  then keepL Normal "Datagram queue empty" >> pure []
+                                                                                  else do keepL Normal "Sending the next datagram" >> senderSendBuf timerV (head buffers) wrBrkFun break
                                                                                   
 
 
@@ -80,6 +45,7 @@ openTCPCommunication :: ((WriteFun, BreakFun) -> IO (Callback, BrkClbck))
                        -> SourceEntry -> ProtoRequest
                        -> IO (WriteFun, BreakFun)
 openTCPCommunication clbkGen timerV tO ref sE pR = do 
+                            keepL Important $ "New TCP-communication opened to source : " ++ show (sourceID sE)
                             sndV <- newMVar $ Sender [] (pure ()) 0
                             recvV <- newMVar $ RecvBuf [] 
                             let genWBF = genTCPWriteBreakFun timerV sndV
@@ -89,11 +55,11 @@ openTCPCommunication clbkGen timerV tO ref sE pR = do
 
 
 genTCPWriteBreakFun :: MVar Timer -> MVar Sender -> (WriteFun, BreakFun) -> (WriteFun, BreakFun)
-genTCPWriteBreakFun timerV sndV (wF, bF) = (writeFun, breakFun)
-        where breakFun = BreakFun $ \d -> do withMVar sndV _sKill 
-                                             runBreakFun bF $ d
-              writeFun = WriteFun $ \d -> (runStateMVar sndV $ senderQueueDatagram timerV wF (void $ (runBreakFun $ breakFun) $ B.empty) d)
-
+genTCPWriteBreakFun timerV sndV wbF = (writeFun, breakFun)
+        where breakFun = BreakFun $ \d -> runStateMVar sndV $ senderQueueSendBuf  timerV wbF kill $ BufKill d
+              writeFun = WriteFun $ \d -> runStateMVar sndV $ senderQueueDatagram timerV wbF kill d
+              kill = do withMVar sndV _sKill 
+                        void . runBreakFun (snd wbF) $ B.empty
 
 genTCPCallback :: MVar Timer -> MVar Sender -> MVar RecvBuf -> (WriteFun, BreakFun) -> (Callback, BrkClbck) -> (Callback, BrkClbck)
 genTCPCallback timerV sndV rcvV wbF clbks = (Callback clbk, BrkClbck brck)
@@ -105,18 +71,19 @@ weedCallback :: MVar Timer -> MVar Sender -> MVar RecvBuf -> (Callback,BrkClbck)
 weedCallback timerV sndV rcvV (clbk,break) (wF, bF) rawData = do keepLog TransportLog Normal "Callback called"
                                                                  case decodeMaybe rawData of
                                                                     Just (TransportSeg trSeg) -> modifyMVar_ rcvV $ onSeg trSeg
-                                                                    Just (TransportControl trCtl) -> do seg <- runStateMVar sndV (onControlPacket timerV wF onTimeOut trCtl)
+                                                                    Just (TransportControl trCtl) -> do seg <- runStateMVar sndV (onControlPacket timerV (wF, bF) onTimeOut trCtl)
                                                                                                         forM_ seg $ sendTRSegment wF
                                                                     Nothing -> keepLog TransportLog Error "[WEEDCallback] fail to decode transport packet"
      where onSeg trSeg (RecvBuf trList) = case runRecvBuf trList trSeg of
                                                 Left (trList', (Just cm)) -> do runWriteFun wF . encode $ TransportControl cm
-                                                                                keepLog TransportLog Normal $ "Incomplete Datagram : " ++ show trList'
+                                                                                keepLog TransportLog Normal $ "Datagram received from wrong datagramID " -- ++ show trList'
                                                                                 pure $ RecvBuf trList'
-                                                Left (trList', _) -> pure $ RecvBuf trList'                              
+                                                Left (trList', _) -> do keepL Normal "Datagram added to buffer"
+                                                                        pure $ RecvBuf trList'                              
                                                 Right (trList', cm) -> do runWriteFun wF . encode $ TransportControl cm
                                                                           keepLog TransportLog Normal "running callback (WeedCallback, Metamodule)"
                                                                           let r = B.concat $ map trData trList' 
-                                                                          forM (map trData trList') print 
+                                                                          --forM (map trData trList') print 
                                                                           runCallback clbk $ r
                                                                           pure $ RecvBuf []
            onTimeOut = void $ runBrkClbck break B.empty >> runBreakFun bF B.empty
@@ -138,12 +105,3 @@ protoTCPCallback timerV prtClbk = ProtoCallback protoClbk
 
 
 
-
-instance Binary TransportPacket where
-        put (TransportSeg x) = putWord8 0 >> put x
-        put (TransportControl x) = putWord8 1 >> put x
-        get = do x <- getWord8 
-                 case x of
-                   0 -> TransportSeg <$> get
-                   1 -> TransportControl <$> get
-                   _ -> fail "invalid transport packet"
