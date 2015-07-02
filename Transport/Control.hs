@@ -24,11 +24,11 @@ import Data.Binary
 type DatagramID = Int
 type SegmentID = Int
 
-data Flags = Flags {flPush :: Bool}
+data Flags = Flags {flPush :: Bool} deriving Show
 data TrSegment = TrSegment { trDatagramID :: DatagramID,
                              trSegmentID  :: SegmentID,
                              trFlags      :: Flags,
-                             trData       :: RawData}
+                             trData       :: RawData} deriving Show
 {- Infinite segment is -1 -}
 data TrControlMessage =  -- Asks for a range of segments
                          TrGet { cmDataID :: DatagramID,
@@ -55,6 +55,7 @@ data SegmentRequest = SegmentRange { fromSegment :: SegmentID,
 ------------------------------------------------------------------
 extractRanges :: [SegmentID] -> [(SegmentID,SegmentID)]
 extractRanges [] = []
+extractRanges [x] = [(0,x)]
 extractRanges l = catMaybes $ zipWith f l (tail l)
         where f el nxt
                 | el+1 == nxt = Nothing

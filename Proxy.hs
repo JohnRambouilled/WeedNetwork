@@ -66,7 +66,6 @@ choseDest sourcesV sIDs = (atomically $ safeHead <$> readTVar sIDs) >>= maybe (p
 {-| Opens a new communication if the socket supplies a well-formed InetInit. |-}
 onNewConnection :: MVar Timer -> MVar Sources -> TVar [SourceID] -> Socket -> IO ()
 onNewConnection timerV sourcesV sIDs s = do 
-                                     print "Noaihfoae"
                                      keepLog ProxyLog Normal "NEW CONNECTION !!!"
                                      raw <- recv s 4096
                                      keepLog ProxyLog Normal $ "[PROXY] received " ++ show (BS.length raw) ++ " bytes."

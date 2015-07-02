@@ -48,7 +48,7 @@ inetTCPProtoCallback :: Client -> ProtoCallback
 inetTCPProtoCallback c = protoTCPCallback (ctimer c) $ ProtoCallback $ \rd (wr,br) -> do maybe (pure Nothing) (onInetInitPacket Stream wr br) (decodeMaybe rd)
 
 inetUDPProtoCallback :: ProtoCallback
-inetUDPProtoCallback = ProtoCallback $ \rd (wr,br) -> do maybe (pure Nothing) (onInetInitPacket Datagram wr br) (decodeMaybe rd)
+inetUDPProtoCallback = ProtoCallback $ \rd (wr,br) ->  maybe (pure Nothing) (onInetInitPacket Datagram wr br) (decodeMaybe rd)
 
 --onInetInitPacket :: ProtoCallback
 --onInetInitPacket = ProtoCallback $ \rd (wr,br) -> do 
@@ -90,7 +90,7 @@ runDuplexer ignoreInit wr br s = do raw <- fromStrict <$> Network.Socket.ByteStr
                                     keepLog GatewayLog Normal ("[UNIX] New data from a socket (" ++ show (Data.ByteString.Lazy.length raw) ++ ")")
                                     if Data.ByteString.Lazy.null raw then void $ runBreakFun br raw --return ()
                                                                      else do b <- case decodeMaybe raw of
-                                                                                Just (InetInit _ _) -> if ignoreInit == True then runWriteFun wr raw
+                                                                                Just (InetInit _ _) -> if ignoreInit == False then runWriteFun wr raw
                                                                                                                             else runWriteFun wr (encode $ InetData raw)
                                                                                 Nothing             -> runWriteFun wr (encode $ InetData raw)
                                                                              if b then runDuplexer ignoreInit wr br s else return ()
@@ -100,7 +100,11 @@ runDuplexer ignoreInit wr br s = do raw <- fromStrict <$> Network.Socket.ByteStr
 
 {-| Routes from the comID to the internet socket |-}
 gatewayCallback :: ThreadId ->  BreakFun -> Socket -> RawData -> IO ()
-gatewayCallback pID br s pkt = keepLog GatewayLog Normal ("[WEED] New data from a comID :"{- ++ BC.unpack pkt-})  >> maybe (print "failed to decode") (gatewayCallback' pID br s) (decodeMaybe pkt)
+gatewayCallback pID br s pkt = do keepLog GatewayLog Normal ("[WEED] New data from a comID :"{- ++ BC.unpack pkt-}) 
+                                  --maybe (print "failed to decode") (gatewayCallback' pID br s) (decodeMaybe pkt)
+                                  case decodeOrFail pkt of
+                                            Left (_, _ ,e) -> print e
+                                            Right (_, _, r) -> gatewayCallback' pID br s r 
 gatewayCallback' :: ThreadId -> BreakFun -> Socket -> InetPacket -> IO ()
 gatewayCallback' pID br s (InetData raw) = do keepLog GatewayLog Normal "[INETDATA]"
                                               r <- send s $ toStrict raw

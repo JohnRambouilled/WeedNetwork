@@ -42,8 +42,8 @@ checkBuf buf@(lastSeg:_) = extractRanges $ trace "minus..." $ minus (trace "want
 onPshPacket :: [TrSegment] -> TrSegment -> Either ([TrSegment], Maybe TrControlMessage) ([TrSegment],TrControlMessage)
 onPshPacket buf seg = case trace "receiveFlow : " $ receiveFlow buf seg of
                         Left err -> Left (buf,pure err)
-                        Right v -> let missings = checkBuf (trace "haha" v) --(v,map (craftPkt $ trDatagramID seg) $ checkBuf v)
-                                  in if trace ("missings : ") $ null missings then Right (v,TrAck $ trDatagramID seg)
+                        Right v -> let missings = checkBuf (trace ("haha : " ++ show v) v) --(v,map (craftPkt $ trDatagramID seg) $ checkBuf v)
+                                  in if trace ("missings : " ++ show missings) $ null missings then Right (v,TrAck $ trDatagramID seg)
                                                       else Left (v, pure $ TrGet (trDatagramID seg) $ craftReqRangePkt missings)
 
 
@@ -54,5 +54,4 @@ runRecvBuf buf seg
                                      Left err -> (buf,Just err)
                                      Right v -> (v,Nothing)
 ------------------------------------------------------------------------
-
 

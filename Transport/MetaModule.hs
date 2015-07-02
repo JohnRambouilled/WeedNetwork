@@ -9,6 +9,7 @@ import Client.Protocol
 import Client.Packet
 import Client.Class
 import Timer
+import Log
 import Client.Sources
 
 import Data.List
@@ -38,7 +39,7 @@ senderSendBuf timerV buf wF break = let ret = buildSegments (sbDataID buf) $ zip
                                           return ret
         where pshFreq = 5
               pshRepeatParam = 3
-              spamPsh payload = runWriteFun wF $ encode $ TransportSeg payload
+              spamPsh payload = sendTRSegment wF payload
 
 fragData :: RawData -> [RawData]
 fragData raw = fst $ until (B.null . snd) f ([],raw)
@@ -51,9 +52,12 @@ senderQueueDatagram timerV wF break raw  = do (toSend,curID) <- (,) <$> use sToS
                                               let sendBuf = SendBuf (curID + 1) raws
                                               sToSend .= toSend ++ [sendBuf]
                                               if null toSend 
-                                                then and `fmap` (senderSendBuf timerV sendBuf wF break >>= mapM (liftIO . runWriteFun wF . encode))
+                                                then and `fmap` (senderSendBuf timerV sendBuf wF break >>= mapM (sendTRSegment wF))
                                                 else return True
     where raws = fragData raw
+
+sendTRSegment :: MonadIO m => WriteFun -> TrSegment -> m Bool
+sendTRSegment wF = liftIO . runWriteFun wF . encode . TransportSeg
 
 onControlPacket :: (MonadIO m) => MVar Timer -> WriteFun -> IO () -> TrControlMessage -> StateT Sender m [TrSegment]
 onControlPacket timerV writeFun break pkt = do buffers <-  use sToSend
@@ -98,20 +102,21 @@ genTCPCallback timerV sndV rcvV wbF clbks = (Callback clbk, BrkClbck brck)
 
 
 weedCallback :: MVar Timer -> MVar Sender -> MVar RecvBuf -> (Callback,BrkClbck) -> (WriteFun, BreakFun) -> RawData -> IO ()
-weedCallback timerV sndV rcvV (clbk,break) (wF, bF) rawData = do print "Callback called"
+weedCallback timerV sndV rcvV (clbk,break) (wF, bF) rawData = do keepLog TransportLog Normal "Callback called"
                                                                  case decodeMaybe rawData of
                                                                     Just (TransportSeg trSeg) -> modifyMVar_ rcvV $ onSeg trSeg
                                                                     Just (TransportControl trCtl) -> do seg <- runStateMVar sndV (onControlPacket timerV wF onTimeOut trCtl)
-                                                                                                        forM_ seg $ runWriteFun wF . encode
-                                                                    Nothing -> pure ()
+                                                                                                        forM_ seg $ sendTRSegment wF
+                                                                    Nothing -> keepLog TransportLog Error "[WEEDCallback] fail to decode transport packet"
      where onSeg trSeg (RecvBuf trList) = case runRecvBuf trList trSeg of
                                                 Left (trList', (Just cm)) -> do runWriteFun wF . encode $ TransportControl cm
+                                                                                keepLog TransportLog Normal $ "Incomplete Datagram : " ++ show trList'
                                                                                 pure $ RecvBuf trList'
                                                 Left (trList', _) -> pure $ RecvBuf trList'                              
                                                 Right (trList', cm) -> do runWriteFun wF . encode $ TransportControl cm
-                                                                          print "running callback (WeedCallback, Metamodule)"
+                                                                          keepLog TransportLog Normal "running callback (WeedCallback, Metamodule)"
                                                                           let r = B.concat $ map trData trList' 
-                                                                          print r
+                                                                          forM (map trData trList') print 
                                                                           runCallback clbk $ r
                                                                           pure $ RecvBuf []
            onTimeOut = void $ runBrkClbck break B.empty >> runBreakFun bF B.empty
