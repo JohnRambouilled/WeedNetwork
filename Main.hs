@@ -22,6 +22,7 @@ import Network.Socket
 import Control.Monad.State
 import Control.Concurrent
 import Client.Communication
+import Crypto.Random
 
 tcp_socketName = "testounet_tcp.socket"
 
@@ -42,12 +43,13 @@ main = do testCL <- testBinaire leechMain seedMain -- testChaine [leechMain, rel
                     
 
 runWeeds :: ClientBehaviour -> IO ()
-runWeeds c = do (pubkey,privkey) <- generateKeyPair
+runWeeds c = do gV <- newMVar =<< drgNew--getSystemDRG
+                (pubkey,privkey) <- genKeyPairMVar gV
                 let me = SourceID $ KeyHash $ pubKeyToHash pubkey
                 sock <- newRawSocket
                 -- Initialize the client
-                client <- genClient me privkey pubkey $ \d -> do putStrLn $ "sending packet : " ++ (show . Data.ByteString.Lazy.length $ encode d)
-                                                                 writePacket sock d
+                client <- genClient gV me privkey pubkey $ \d -> do putStrLn $ "sending packet : " ++ (show . Data.ByteString.Lazy.length $ encode d)
+                                                                    writePacket sock d
                 -- Initialize the ctimer - checks every 10 seconds [TODO]
                 tim <- runChildren $ startTimer (ctimer client) 1
                 -- Launching the specifieds actions

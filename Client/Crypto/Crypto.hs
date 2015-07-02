@@ -5,10 +5,13 @@ import Data.Maybe
 import qualified Data.ByteString as BStrct
 import qualified Data.ByteString.Lazy as B
 import Crypto.Random
+--import System.Random.MWC 
 import Crypto.PubKey.HashDescr hiding (HashFunction)
 import qualified Crypto.PubKey.Ed25519 as S
 import qualified Crypto.PubKey.Curve25519 as DH
 import Crypto.Error
+import Control.Concurrent.MVar
+import Data.Tuple
 
 import Client.Crypto.Module
 import Client.Class
@@ -17,6 +20,7 @@ import Data.Binary
 import Log
 
 
+type RandomGen = ChaChaDRG
 hashSHA1 = hashFunction hashDescrSHA1 
 
 
@@ -70,17 +74,26 @@ exctractKey pK prK = keysFromShared $ DH.dh pK prK
     
 
 
-generateKeyPair ::  IO (PubKey,PrivKey)
-generateKeyPair = do skBs <- getRandomBytes 32 :: IO BStrct.ByteString
-                     case S.secretKey skBs of
-                                CryptoFailed e -> fail (show e)
-                                CryptoPassed k -> let pK = S.toPublic k in pure (PubKey pK, PrivKey k)
+generateKeyPair :: DRG gen => gen -> (gen, CryptoFailable (PubKey,PrivKey))
+generateKeyPair g = --
+                    let (skBs,gen') = randomBytesGenerate keyByteSize g
+                     in (gen', do sK <- S.secretKey (skBs :: BStrct.ByteString)
+                                  pure (PubKey $ S.toPublic sK, PrivKey sK))
         
 
+genKeyPairMVar :: DRG gen => MVar gen -> IO (PubKey, PrivKey)
+genKeyPairMVar gV = do keepLog CryptoLog Important "Generating Key pair"
+                       keysF <- modifyMVar gV (pure . generateKeyPair)
+                       keepLog CryptoLog Normal "Done"
+                       case keysF of
+                              CryptoFailed e -> do keepLog CryptoLog Error $ "error generating key-pair : " ++ show e
+                                                   fail (show e)
+                              CryptoPassed k -> do keepLog CryptoLog Normal "returning key pair"
+                                                   pure k 
 
-generateDHPrivKey :: IO DHPrivKey
-generateDHPrivKey = do skBs <- getRandomBytes 32 :: IO BStrct.ByteString
-                       case DH.secretKey skBs of
+generateDHPrivKey :: DRG gen => MVar gen -> IO DHPrivKey
+generateDHPrivKey gV = do skBs <- modifyMVar gV $ pure . swap . randomBytesGenerate keyByteSize
+                          case DH.secretKey (skBs :: BStrct.ByteString) of
                                 Left e -> fail (show e)
                                 Right k -> pure k
         

@@ -23,11 +23,13 @@ import Client.Protocol
 import Timer
 import Log
 
+
 data Identity = Identity {clientSourceID :: SourceID,
                           privateKey :: PrivKey,
                           publicKey :: PubKey}
 
 data Client = Client {cidentity :: Identity,
+                      cRandomGen :: MVar RandomGen,
                       csender :: Packet -> IO Bool,
                       ctimer :: MVar Timer,
         
@@ -55,18 +57,18 @@ insertRessourceEntry rM rID rCB = runStateMVar rM $ insertMapBehaviourWith merge
 
 seedComTimeOut = 200 :: DiffTime
 
-genClient :: SourceID -> PrivKey -> PubKey -> (Packet -> IO Bool) -> IO Client
-genClient uID privK pubK send = do  timerV <- newMVar $ Timer M.empty [1..]
-                                    protoV <- newMapMVar [] 
-                                    sourceV <- newMapMVar [pipesNewSourceCallback timerV seedComTimeOut protoV] 
-                                    routV <- newMVar $ Routing routingRelayCallback $ pipesRoutingCallback privK pubK send sourceV
-                                    resV <- newEmptyMVar 
-                                    putMVar resV $ newMapModule [newDefaultBehaviour resV timerV  uID]
-                                    neighV <- newMVar $ Neighborhood [registerRessourceModule uID privK pubK resV]
-                                    cryptoV <- newEmptyMVar
-                                    putMVar cryptoV $ newMapModule [neighCryptoCallback cryptoV timerV neighV, routingCryptoCallback cryptoV timerV pubK privK uID routV]
-                                    let cID = Identity uID privK pubK
-                                    pure $ Client cID send timerV cryptoV neighV resV routV sourceV protoV
+genClient :: MVar RandomGen -> SourceID -> PrivKey -> PubKey -> (Packet -> IO Bool) -> IO Client
+genClient gen uID privK pubK send = do  timerV <- newMVar $ Timer M.empty [1..]
+                                        protoV <- newMapMVar [] 
+                                        sourceV <- newMapMVar [pipesNewSourceCallback timerV seedComTimeOut protoV] 
+                                        routV <- newMVar $ Routing routingRelayCallback $ pipesRoutingCallback privK pubK send sourceV
+                                        resV <- newEmptyMVar 
+                                        putMVar resV $ newMapModule [newDefaultBehaviour resV timerV  uID]
+                                        neighV <- newMVar $ Neighborhood [registerRessourceModule uID privK pubK resV]
+                                        cryptoV <- newEmptyMVar
+                                        putMVar cryptoV $ newMapModule [neighCryptoCallback cryptoV timerV neighV, routingCryptoCallback cryptoV timerV pubK privK uID routV]
+                                        let cID = Identity uID privK pubK
+                                        pure $ Client cID gen send timerV cryptoV neighV resV routV sourceV protoV
         where newMapMVar = newMVar . newMapModule
 
 insertProtoCallback :: Client -> ProtoID -> ProtoCallback -> IO ()
@@ -110,9 +112,10 @@ openNewPipeIO c k r d = runStateT (openNewPipe k r d) c >> pure ()
 
 openNewPipe :: MonadIO m => DHPubKey -> Road -> RawData -> ClientT m Bool 
 openNewPipe dK r d = do (uK,uID, pK) <- (,,) <$> gets (privateKey . cidentity) <*> gets (clientSourceID . cidentity) <*> gets (publicKey . cidentity)
+                        gV <- gets cRandomGen
                         (cryptoM, timerM, send) <- (,,) <$> gets ccrypto <*> gets ctimer <*> gets csender
                         liftIO . keepLog ClientLog Normal $ "generating new request"
-                        (pipePrK, pipePK, req) <- liftIO $ genNewPipeRequest uK pK dK r d
+                        (pipePrK, pipePK, req) <- liftIO $ genNewPipeRequest gV uK pK dK r d
                         let sendReq = sendRequest send cryptoM req pipePrK pipePK
                         liftIO $ do _ <- repeatEach timerM (void sendReq) pipeRefreshTO 
                                     sendReq

@@ -37,14 +37,14 @@ instance MapModules SourceEntry SourceID Request SourceAnswer where
 
 
 
-genNewPipeRequest :: PrivKey -> PubKey -> DHPubKey -> Road -> RawData -> IO (PrivKey, PubKey, Packet)
-genNewPipeRequest uK pK destK r d = do dhP <- generateDHPrivKey
-                                       let (pP, (priv, pub)) = fromJust $ transmitKey destK dhP
-                                           l = length r
-                                           kH = KeyHash $ pubKeyToHash pub
-                                           epk = encode (kH, (pP, (priv, pub)))
-                                           req = Request 0 (sign uK pK $ epk) l r epk d
-                                       pure (priv, pub, Introduce kH pub (sign priv pub $ reqSourceHash kH req) $ IntroContent $ encode req)
+genNewPipeRequest :: MVar RandomGen -> PrivKey -> PubKey -> DHPubKey -> Road -> RawData -> IO (PrivKey, PubKey, Packet)
+genNewPipeRequest gV uK pK destK r d = do dhP <- generateDHPrivKey gV
+                                          let (pP, (priv, pub)) = fromJust $ transmitKey destK dhP
+                                              l = length r
+                                              kH = KeyHash $ pubKeyToHash pub
+                                              epk = encode (kH, (pP, (priv, pub)))
+                                              req = Request 0 (sign uK pK $ epk) l r epk d
+                                          pure (priv, pub, Introduce kH pub (sign priv pub $ reqSourceHash kH req) $ IntroContent $ encode req)
 
 
 

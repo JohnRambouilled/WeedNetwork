@@ -97,7 +97,7 @@ genTCPWriteBreakFun timerV sndV (wF, bF) = (writeFun, breakFun)
 
 genTCPCallback :: MVar Timer -> MVar Sender -> MVar RecvBuf -> (WriteFun, BreakFun) -> (Callback, BrkClbck) -> (Callback, BrkClbck)
 genTCPCallback timerV sndV rcvV wbF clbks = (Callback clbk, BrkClbck brck)
-    where clbk = weedCallback timerV sndV rcvV clbks $ genTCPWriteBreakFun timerV sndV wbF
+    where clbk = weedCallback timerV sndV rcvV clbks wbF -- $ genTCPWriteBreakFun timerV sndV wbF
           brck d = withMVar sndV _sKill >> (runBrkClbck (snd clbks) $ d)
 
 
@@ -131,7 +131,7 @@ protoTCPCallback timerV prtClbk = ProtoCallback protoClbk
                             sndV <- newMVar $ Sender [] (pure ()) 0
                             recvV <- newMVar $ RecvBuf [] 
                             let wbF = genTCPWriteBreakFun timerV sndV wbF0
-                            (genTCPCallback timerV sndV recvV wbF <$>) <$> (((runProtoCallback prtClbk) $ d) $ wbF)
+                            (genTCPCallback timerV sndV recvV wbF0 <$>) <$> (((runProtoCallback prtClbk) $ d) $ wbF)
                           
 
 

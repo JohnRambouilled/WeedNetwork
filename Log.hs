@@ -11,13 +11,13 @@ data ModuleName = CryptoLog | NeighborLog | RessourcesLog | RoutingLog |  Source
 
 keepLog :: MonadIO m => ModuleName -> LogStatus -> String -> m ()
 keepLog m st msg = case m of
---                        CryptoLog -> printLog
---                        CommunicationLog -> printLog
---                        ProtocolLog -> printLog
+                        CryptoLog -> printLog
+                        CommunicationLog -> printLog
+                        ProtocolLog -> printLog
                         ProxyLog -> printLog
                         GatewayLog -> printLog
---                        ClientLog -> printLog
---                        TestLog -> printLog
+                        ClientLog -> printLog
+                        TestLog -> printLog
                         TransportLog -> printLog
                         _ -> case st of
                                Normal -> pure ()

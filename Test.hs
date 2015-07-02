@@ -9,7 +9,7 @@ import Control.Concurrent.STM
 import Control.Concurrent.STM.TVar
 import Data.List
 import Data.Binary
-import System.Random
+import System.Random (randomIO)
 
 import Client.Class
 import Client.Crypto
@@ -27,7 +27,7 @@ import Client
 import Client.Communication
 import Log
 import Network.Socket
-
+import Crypto.Random
 
 data TestClient = TestClient {client :: Client,
                               input :: TChan RawData,
@@ -36,10 +36,11 @@ data TestClient = TestClient {client :: Client,
 
 
 
-newTestClient :: SendFunction -> IO Client
-newTestClient send = do (pubkey,privkey) <- generateKeyPair 
-                        let me = SourceID $ KeyHash $ pubKeyToHash pubkey
-                        genClient me privkey pubkey send
+newTestClient ::  MVar RandomGen -> SendFunction -> IO Client
+newTestClient gV send = do (pubkey,privkey) <- genKeyPairMVar gV
+                           keepLog TestLog Normal "Creating client"
+                           let me = SourceID $ KeyHash $ pubKeyToHash pubkey
+                           genClient gV me privkey pubkey send
 
 
 
@@ -87,8 +88,8 @@ testChaine cL = newTest $ zipWith genNeigh [0..] cL
 tcp_socketName = "testounet_tcp.socket"
 leechMain :: ClientBehaviour  
 leechMain c send = do introduceThread c send "Leech Hello"
-                      putStrLn "enregistrement de la répétition de recherche"
-                      putStrLn "démarrage du proxy "
+                      keepLog TestLog Normal "enregistrement de la répétition de recherche"
+                      keepLog TestLog Normal "démarrage du proxy "
                       repeatEach (ctimer c) (void $ sendRes c send inetRessourceID) 5
                       forkIO $ startProxy tcp_socketName Stream c
                       udpProx <- newMVar $ newMapModule []
@@ -101,8 +102,11 @@ sendRes c send rID = send $ sendResearch prK pK uID rID 10 [] B.empty
 
 seedMain :: ClientBehaviour 
 seedMain c send = do introduceThread c send "Seed Hello"
+                     keepLog TestLog Normal "Enregistrement du callback de ressource"  
                      offerRessourceID c inetRessourceID $ encode "C'est de la bonne"
+                     keepLog TestLog Normal "Enregistrement du protocallback UDP"  
                      insertProtoCallback c inetUDPProtoID inetUDPProtoCallback
+                     keepLog TestLog Normal "Enregistrement du protocallback TCP"  
                      insertProtoCallback c inetTCPProtoID $ inetTCPProtoCallback c
 
 
@@ -114,11 +118,16 @@ testBinaire bh1 bh2 = newTest [ ([1],bh1), ([0], bh2) ]
 
 
 newTest :: [ ([Int], ClientBehaviour) ] -> IO [TestClient]
-newTest cL = do tChanL <- atomically $ forM cL $ \c -> newTChan >>= (\tc -> pure (tc, c) )
-                forM tChanL $ genTestC $ map fst tChanL
-    where genTestC :: [TChan RawData] -> (TChan RawData, ([Int], ClientBehaviour)) -> IO TestClient
-          genTestC tChanL (tC,(nL, bhv)) = let send = genSendFun nL tChanL in
-                                           do cl <- newTestClient send
+newTest cL = do keepLog TestLog Normal "building test"
+                tChanL <- atomically $ forM cL $ \c -> newTChan >>= (\tc -> pure (tc, c) )
+                gV <- newMVar =<< drgNew
+                tcL <- forM tChanL $ genTestC gV $ map fst tChanL
+                keepLog TestLog Normal "done"
+                pure tcL
+    where genTestC :: MVar RandomGen -> [TChan RawData] -> (TChan RawData, ([Int], ClientBehaviour)) -> IO TestClient
+          genTestC gV tChanL (tC,(nL, bhv)) = let send = genSendFun nL tChanL in
+                                           do cl <- newTestClient gV send
+                                              keepLog TestLog Normal "building testclient"
                                               tC' <- atomically $ dupTChan tC
                                               pure $ TestClient cl tC' $ do clM <- runChildren $ runTestClient bhv tC send cl
                                                                             readMVar clM
