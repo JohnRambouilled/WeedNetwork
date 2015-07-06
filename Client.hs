@@ -20,6 +20,7 @@ import Client.Sources
 import Client.Ressource
 import Client.Neighborhood
 import Client.Protocol
+import Client.Pipes
 import Timer
 import Log
 
@@ -80,7 +81,7 @@ insertProtoCallback c rID pCB = do keepLog ClientLog Important "insertion d'un p
 newtype RoadChoice = RoadChoice {choseRoad :: Road -> SourceID -> RessourceCert -> RawData -> IO Bool}
 
 cleanSourceEntryList :: [SourceEntry] -> IO [SourceEntry]
-cleanSourceEntryList = filterM $ (flip withMVar $ pure . M.null) . sourcePipes
+cleanSourceEntryList = filterM $ (flip withMVar $ pure . M.null . pipesMap) . sourcePipes
 
 connectToRessource :: Client -> TVar [SourceID] -> RoadChoice -> RessourceID -> IO ()
 connectToRessource c sV rC rID = insertRessourceEntry (cressource c) rID $ resCallback c $ csources c
@@ -102,7 +103,8 @@ connectToRessource c sV rC rID = insertRessourceEntry (cressource c) rID $ resCa
 extractRoads :: MVar Sources -> SourceID -> IO (Maybe [RoadID])
 extractRoads sourcesV sID = do pipes <- getSourceEntry sourcesV sID >>= maybe (pure Nothing) (pure . Just . sourcePipes)  
                                if isNothing pipes then return Nothing
-                                                  else (Just . map roadID .M.elems) <$> readMVar (fromJust pipes)
+                                                  --else (Just . map (roadID . roadSpecs) . M.elems) <$> readMVar (fromJust pipes)
+                                                  else Just . pipesList <$> readMVar (fromJust pipes)
 --                              pipes <- (sourcePipes . fromJust) <$> getSourceEntry sourcesV sID   
 
 

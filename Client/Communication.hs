@@ -12,6 +12,7 @@ import Client.Class
 import Client.Crypto
 import Client.Packet
 import Client.Routing
+import Client.Pipes
 import Log
 
 
@@ -27,14 +28,6 @@ instance MapModules ComEntry ComID ComMessage () where
                           return . Just $ comID cm
         entryBehaviour cE = map (\x -> (\_ -> x)) $ comCallback cE
 
-newtype RoadID = RoadID RawData deriving (Eq, Ord)
-instance Show RoadID where show (RoadID d) = prettyPrint d
-
-type Pipes  = M.Map KeyHash PipeEntry
-data PipeEntry = PipesEntry {roadID :: RoadID,
-                             writeFun :: ComMessage -> IO Bool,
-                             breakFun :: RawData -> IO Bool}
-
 
 
 insertComCallback :: MVar Communication -> ComID -> ComCB -> IO ()
@@ -42,7 +35,7 @@ insertComCallback cV cID clbk = modifyMVar_ cV $ \s -> pure s{keyMap = M.insert 
 
 closeComIO :: MVar [ComID] -> MVar Communication -> ComID -> IO ()
 closeComIO fV cV cID = runStateMVar cV $ closeCom fV cID
-                         
+                        
 
 closeCom :: MonadIO m => MVar [ComID] -> ComID -> ComT m ()
 closeCom fV cID =  do keepLog CommunicationLog Important $ "Closing communication : " ++ show cID
@@ -69,8 +62,8 @@ defaultComCallback mv iFun oFun p = case iFun p of
 
 
 
-genCommunicationCallback :: MVar Pipes -> MVar Communication -> Number -> DataCB
-genCommunicationCallback pV cV n0 = DataCB hFun clbk
+genCommunicationCallback :: MVar Pipes -> MVar Communication -> Number -> RoadID -> DataCB
+genCommunicationCallback pV cV n0 rID = DataCB hFun clbk
     where hFun :: HashFunction (Either ComMessage Packet)
           hFun (DataPacket kH _ (DataContent cnt)) = case decodeMaybe cnt of
                                         Nothing -> return Nothing
@@ -81,7 +74,7 @@ genCommunicationCallback pV cV n0 = DataCB hFun clbk
                                                                                                                          return $ Just (pipeMessageHash kH b cm, Left x)
                                                                              else pure Nothing
                                         Just (PipeExit n _ _) -> if n == n0 then do unregisterKeyEntry kH
-                                                                                    liftIO $ modifyMVar_ pV $ return . (M.delete kH)
+                                                                                    removePipe pV rID
                                                                                     return  Nothing
                                                                             else pure Nothing
           hFun p@(Introduce kH _ _ (IntroContent cnt)) = case decodeMaybe cnt :: Maybe Request of
@@ -98,33 +91,5 @@ genCommunicationCallback pV cV n0 = DataCB hFun clbk
 
 
 
-roadToRoadID :: Road -> RoadID
-roadToRoadID = RoadID . pubKeyToHash  
 
-newtype ComID = ComID Int deriving (Eq, Ord, Show)
-instance Binary ComID where put (ComID i) = put i
-                            get = ComID <$> get
-
-data ComMessage = ComInit {comID :: ComID ,
-                           comContent :: RawData} |
-                  ComData {comID :: ComID ,
-                           comContent :: RawData} |
-                  ComExit {comID :: ComID ,
-                           comContent :: RawData}
-
-instance Show ComMessage where
-        show (ComInit cI _) = "COM_INIT = " ++ show cI
-        show (ComData cI _) = "COM_DATA = " ++ show cI
-        show (ComExit cI _) = "COM_EXIT = " ++ show cI
-
-instance Binary ComMessage where
-        put (ComInit cID cnt) = putWord8 0  >> put cID >> put cnt
-        put (ComData cID cnt) = putWord8 1 >> put cID >> put cnt
-        put (ComExit cID cnt) = putWord8 2 >> put cID >> put cnt
-        get = do i <- getWord8
-                 case i of
-                   0 -> ComInit <$> get <*> get
-                   1 -> ComData <$> get <*> get
-                   2 -> ComExit <$> get <*> get
-                   _ -> fail $ "Unable to parse ComMessage : " ++ show i
 

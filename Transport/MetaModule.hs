@@ -36,7 +36,7 @@ onControlPacket timerV wrBrkFun break pkt = do buffers <-  use sToSend
                                                                                 use sKill >>= liftIO
                                                                                 if null rest
                                                                                   then keepL Normal "Datagram queue empty" >> pure []
-                                                                                  else do keepL Normal "Sending the next datagram" >> senderSendBuf timerV (head buffers) wrBrkFun break
+                                                                                  else do keepL Normal "Sending the next datagram" >> senderSendBuf timerV (head rest) wrBrkFun break
                                                                                   
 
 
@@ -56,7 +56,8 @@ openTCPCommunication clbkGen timerV tO ref sE pR = do
 
 genTCPWriteBreakFun :: MVar Timer -> MVar Sender -> (WriteFun, BreakFun) -> (WriteFun, BreakFun)
 genTCPWriteBreakFun timerV sndV wbF = (writeFun, breakFun)
-        where breakFun = BreakFun $ \d -> runStateMVar sndV $ senderQueueSendBuf  timerV wbF kill $ BufKill d
+        where breakFun = BreakFun $ \d -> do keepL Important "BreakFun called"
+                                             runStateMVar sndV $ senderQueueSendBuf  timerV wbF kill $ BufKill d
               writeFun = WriteFun $ \d -> runStateMVar sndV $ senderQueueDatagram timerV wbF kill d
               kill = do withMVar sndV _sKill 
                         void . runBreakFun (snd wbF) $ B.empty
@@ -74,7 +75,8 @@ weedCallback timerV sndV rcvV (clbk,break) (wF, bF) rawData = do keepLog Transpo
                                                                     Just (TransportControl trCtl) -> do seg <- runStateMVar sndV (onControlPacket timerV (wF, bF) onTimeOut trCtl)
                                                                                                         forM_ seg $ sendTRSegment wF
                                                                     Nothing -> keepLog TransportLog Error "[WEEDCallback] fail to decode transport packet"
-     where onSeg trSeg (RecvBuf trList) = case runRecvBuf trList trSeg of
+     where onSeg trSeg (RecvBuf trList) = do keepL Normal $ "received packet : "-- ++ show trSeg
+                                             case runRecvBuf trList trSeg of
                                                 Left (trList', (Just cm)) -> do runWriteFun wF . encode $ TransportControl cm
                                                                                 keepLog TransportLog Normal $ "Datagram received from wrong datagramID " -- ++ show trList'
                                                                                 pure $ RecvBuf trList'

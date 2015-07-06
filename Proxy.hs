@@ -21,6 +21,7 @@ import Client
 import Client.Sources
 import Client.Communication
 import Client.Protocol
+import Client.Pipes
 import Gateway
 import Timer
 import Log
@@ -46,14 +47,8 @@ proxyRoadChoice sourcesV sIDsV  = RoadChoice roadC
                                      if length sIDs < nbSourcesMax 
                                          then case sID `elem` sIDs of
                                                 False -> pure True
-                                                True -> extractRoads sID >>= maybe (pure False) (pure . (roadToRoadID road `notElem`))
+                                                True -> extractRoads sourcesV sID >>= maybe (pure False) (pure . (roadToRoadID road `notElem`))
                                          else return False
-        extractRoads :: SourceID -> IO (Maybe [RoadID])
-        extractRoads sID = do 
---                              pipes <- (sourcePipes . fromJust) <$> getSourceEntry sourcesV sID   
-                              pipes <- getSourceEntry sourcesV sID >>= maybe (pure Nothing) (pure . Just . sourcePipes)  
-                              if isNothing pipes then return Nothing
-                                                 else (Just . map roadID .M.elems) <$> readMVar (fromJust pipes)
 
 
                                                                                 

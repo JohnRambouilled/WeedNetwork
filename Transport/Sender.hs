@@ -19,7 +19,7 @@ fragSize = 1000 --- TODO
 
 data SendBuf = SendBuf { sbDataID :: DatagramID,
                          sbBuf    :: [RawData]} |
-               BufKill RawData
+               BufKill RawData deriving Show
 
 
 data Sender = Sender {_sToSend :: [SendBuf],

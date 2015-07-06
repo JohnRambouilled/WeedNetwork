@@ -43,6 +43,9 @@ ssize_t (*orig_recv) (int, void*, size_t, int);
 ssize_t (*orig_send) (int,const void* ,size_t,int);
 ssize_t (*orig_sendto) (int,const void* ,size_t,int,const struct sockaddr*, socklen_t);
 ssize_t (*orig_recvfrom) (int,void* ,size_t,int,const struct sockaddr*,socklen_t);
+ssize_t (*orig_sendmsg) (int , const struct msghdr*, int );
+ssize_t (*orig_recvmsg) (int, struct msghdr*, int);
+
 
 void write_sockaddr (int sockfd, const struct sockaddr_in* addr, int sotype);
 char* SOCKET_PATH_STREAM;
@@ -59,6 +62,8 @@ void _init(void)
 	orig_send = dlsym(RTLD_NEXT,"send");
 	orig_sendto = dlsym(RTLD_NEXT,"sendto");
 	orig_recvfrom = dlsym(RTLD_NEXT,"recvfrom");
+    orig_sendmsg = dlsym(RTLD_NEXT,"sendmsg");
+    orig_recvmsg = dlsym(RTLD_NEXT,"recvmsg");
     
     SOCKET_PATH_STREAM = getenv ("WEED_TCP_SOCKET");
     SOCKET_PATH_DGRAM = getenv ("WEED_UDP_SOCKET");
@@ -78,22 +83,22 @@ ssize_t sendto(int socket, const void *message, size_t length,
 	socklen_t optlen = sizeof so_type;
 	
 	getsockopt (socket,SOL_SOCKET,SO_TYPE,&so_type,&optlen);
-    if (so_type == SOCK_DGRAM){
+    if (so_type == SOCK_DGRAM || so_type == 2050){
         write_sockaddr(socket,(struct sockaddr_in*) dest_addr,so_type);
 
         struct sockaddr_un proxy;
         proxy.sun_family = AF_UNIX;
         strcpy((char*)&(proxy.sun_path),SOCKET_PATH_DGRAM);
         ssize_t ret = orig_sendto(socket,message,length,0,(struct sockaddr*)&proxy,sizeof(struct sockaddr_un));
-        //printf("[connect.c,sendto()] %zd bytes written\n",ret);
+        printf("[connect.c,sendto()] %zd bytes written\n",ret);
         return ret;
 
         
     }
     else{
-            printf("sendto ...\n");
+            printf("sendto ...%d\n",so_type);
             ssize_t ret = orig_sendto(socket,message,length,flags,dest_addr,dest_len);
-            //printf("[connect.c,sendto()] %zd bytes written\n",ret);
+            printf("[connect.c,sendto()] %zd bytes written\n",ret);
             return ret;
     }
 
@@ -278,3 +283,19 @@ void write_sockaddr (int sockfd, const struct sockaddr_in* addr, int sotype){
 
 	return;
 }
+ssize_t sendmsg(int socket, const struct msghdr *message, int flags){
+
+    printf("[SENDMSG !!!!!]\n");
+    orig_sendmsg(socket,message,flags);
+}
+ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags){
+        ssize_t ret;
+
+        printf("[RECVMSG !!!\n");
+        ret = orig_recvmsg(sockfd, msg, flags);
+        return ret;
+}
+
+
+
+

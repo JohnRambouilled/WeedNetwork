@@ -76,7 +76,7 @@ routingCryptoCallback cV tV pubK uK uID rV = genCryptoCallback cV tV pipeTimeOut
                                                      else (keepLog RoutingLog Suspect $ "Non-conform request") >> pure Nothing
                                       Nothing -> pure Nothing
           inFun _ = return Nothing
-          checkRequest (Request n _ l r _ _) = (l == length r) && (n < l) && (n >= 0)
+          checkRequest (Request n _ l r _ _ _) = (l == length r) && (n < l) && (n >= 0)
           outFun :: Packet -> RoutingAnswer -> CryptoT IO (Maybe [CryptoAction], [Packet], IO())
           outFun p (RoutingAnswer onTO regM rL) = --do pktL <- liftIO $ forM rL (\r -> forgePacket p r <$> genRnd)
                                                      return (map runDataCB <$> regM, map (forgePacket p) rL, onTO)
@@ -85,10 +85,10 @@ routingCryptoCallback cV tV pubK uK uID rV = genCryptoCallback cV tV pipeTimeOut
 
 
 reqNeighHash :: KeyHash -> Request -> Hash
-reqNeighHash kH (Request n _ l r epk cnt) = encode (kH,n,l,r,epk,cnt)
+reqNeighHash kH (Request n _ l r epk t cnt) = encode (kH,n,l,r,epk,t,cnt)
 
 reqSourceHash :: KeyHash -> Request -> Hash  
-reqSourceHash kH (Request _ _ l r epk cnt) = encode (kH,l,r,epk,cnt)
+reqSourceHash kH (Request _ _ l r epk t cnt) = encode (kH,l,r,epk,t,cnt)
 
 pipeMessageHash :: KeyHash -> Bool -> RawData -> Hash
 pipeMessageHash kH b d = encode (kH, b, d)
@@ -124,15 +124,16 @@ data Request = Request {roadPosition :: Number, -- ^ Current position of the req
                         roadLength :: Number, -- ^ Total length of the road
                         road :: Road,  -- ^ Road : list of UserID
                         encryptedPrivKey :: RawData,  -- ^ encrypted (Keyhash, PrivKey) for the destination of the road
+                        requestTime :: Time,
                         requestContent :: RawData}
 
-instance Binary Request where put (Request n ns l r epk cnt) = put (0 :: Word8) >> put n >> put ns >> put l >> put r >> put epk >> put cnt
+instance Binary Request where put (Request n ns l r epk t cnt) = put (0 :: Word8) >> put n >> put ns >> put l >> put r >> put epk >> put t >> put cnt
                               get = do n <- get :: Get Word8
-                                       if n == 0 then Request <$> get <*> get <*> get <*> get <*> get <*> get
+                                       if n == 0 then Request <$> get <*> get <*> get <*> get <*> get <*> get <*> get
                                                  else fail "Not a Request"
 
 
 instance Show Request where 
-        show (Request n _ l r _ _) = "Request : " ++ "  n / l = " ++ show n ++ " / " ++ show l  ++ "   road = " ++ show r  
+        show (Request n _ l r _ _ _) = "Request : " ++ "  n / l = " ++ show n ++ " / " ++ show l  ++ "   road = " ++ show r  
 
 

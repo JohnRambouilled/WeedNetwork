@@ -88,7 +88,7 @@ startDuplexer wr br socktype sockaddr raw = do keepLog GatewayLog Normal "[GATEW
 runDuplexer :: Bool -> WriteFun -> BreakFun -> Socket -> IO ()
 runDuplexer ignoreInit wr br s = do raw <- fromStrict <$> Network.Socket.ByteString.recv s 4096
                                     keepLog GatewayLog Normal ("[UNIX] New data from a socket (" ++ show (Data.ByteString.Lazy.length raw) ++ ")")
-                                    if Data.ByteString.Lazy.null raw then void $ runBreakFun br raw --return ()
+                                    if Data.ByteString.Lazy.null raw then void $ runBreakFun br raw
                                                                      else do b <- case decodeMaybe raw of
                                                                                 Just (InetInit _ _) -> if ignoreInit == False then runWriteFun wr raw
                                                                                                                             else runWriteFun wr (encode $ InetData raw)
