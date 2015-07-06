@@ -18,7 +18,7 @@ import Client.Routing
 import Client.Sources
 import Client.Ressource
 import Client.Neighborhood
-import Proxy
+import Proxy.TCP
 import Proxy.UDP
 import Gateway
 import Client.Protocol
