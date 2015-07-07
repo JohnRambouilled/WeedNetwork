@@ -17,7 +17,7 @@ keepLog m st msg = case m of
                         ProxyLog -> printLog
                         GatewayLog -> printLog
 --                        ClientLog -> printLog
-                        TestLog -> printLog
+--                        TestLog -> printLog
                         TransportLog -> printLog
                         _ -> case st of
                                Normal -> pure ()

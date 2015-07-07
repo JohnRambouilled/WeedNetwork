@@ -86,6 +86,7 @@ weedCallback timerV sndV rcvV (clbk,break) (wF, bF) rawData = do keepLog Transpo
                                                 Right (trList', cm) -> do runWriteFun wF . encode $ TransportControl cm
                                                                           keepLog TransportLog Normal "running callback (WeedCallback, Metamodule)"
                                                                           let r = B.concat $ map trData trList' 
+                                                                          print r
                                                                           --forM (map trData trList') print 
                                                                           runCallback clbk $ r
                                                                           pure $ RecvBuf []
