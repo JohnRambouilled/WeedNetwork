@@ -14,10 +14,10 @@ keepLog m st msg = case m of
 --                        CryptoLog -> printLog
 --                        CommunicationLog -> printLog
 --                        ProtocolLog -> printLog
---                        ProxyLog -> printLog
---                        GatewayLog -> printLog
+                        ProxyLog -> printLog
+                        GatewayLog -> printLog
 --                        ClientLog -> printLog
-                        TestLog -> printLog
+--                        TestLog -> printLog
                         TransportLog -> printLog
                         _ -> case st of
                                Normal -> pure ()

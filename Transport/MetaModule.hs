@@ -36,7 +36,7 @@ onControlPacket timerV wrBrkFun break pkt = do buffers <-  use sToSend
                                                                                 use sKill >>= liftIO
                                                                                 if null rest
                                                                                   then keepL Normal "Datagram queue empty" >> pure []
-                                                                                  else do keepL Normal "Sending the next datagram" >> senderSendBuf timerV (head buffers) wrBrkFun break
+                                                                                  else do keepL Normal "Sending the next datagram" >> senderSendBuf timerV (head rest) wrBrkFun break
                                                                                   
 
 
@@ -83,6 +83,7 @@ weedCallback timerV sndV rcvV (clbk,break) (wF, bF) rawData = do keepLog Transpo
                                                 Right (trList', cm) -> do runWriteFun wF . encode $ TransportControl cm
                                                                           keepLog TransportLog Normal "running callback (WeedCallback, Metamodule)"
                                                                           let r = B.concat $ map trData trList' 
+                                                                          print r
                                                                           --forM (map trData trList') print 
                                                                           runCallback clbk $ r
                                                                           pure $ RecvBuf []

@@ -105,6 +105,7 @@ runProxy socketFileName sockType client sIDs = do  keepLog ProxyLog Normal "PROX
                                                    connectToRessource client sIDs (proxyRoadChoice (csources client) sIDs) inetRessourceID
                                                    keepLog ProxyLog Normal  "PROXY : ouverture de la socket"
                                                    s <- socket AF_INET sockType 0
+                                                   setSocketOption s ReuseAddr 1
                                                    keepLog ProxyLog Normal "PROXY : bind"
                                                    bind s (SockAddrInet (PortNum $ swapEndian 1337) iNADDR_ANY)
                                                    keepLog ProxyLog Normal "PROXY : listen"
