@@ -5,10 +5,11 @@ import Data.Maybe
 import qualified Data.ByteString as BStrct
 import qualified Data.ByteString.Lazy as B
 import Crypto.Random
---import System.Random.MWC 
-import Crypto.PubKey.HashDescr hiding (HashFunction)
 import qualified Crypto.PubKey.Ed25519 as S
 import qualified Crypto.PubKey.Curve25519 as DH
+import Data.ByteArray
+import Crypto.Hash
+import Crypto.Hash.Algorithms
 import Crypto.Error
 import Control.Concurrent.MVar
 import Data.Tuple
@@ -21,8 +22,9 @@ import Log
 
 
 type RandomGen = ChaChaDRG
-hashSHA1 = hashFunction hashDescrSHA1 
 
+hashF :: B.ByteString -> Digest SHA1
+hashF = hashlazy
 
 -- | Apply the hashFunction on the Packet. If a tupple (hash, value) is returned, check the signature for the given key and the hash, and return value if correct.
 checkHashFunction :: PubKey -> HashFunction p -> Packet -> CryptoT IO (Maybe p)
@@ -36,11 +38,11 @@ checkHashFunction k hF p = do
 
 
 
+
 -- | Return the last 4 Bytes of the hash SHA256 of a given bytestring.
 pubKeyToHash :: (Show a, Binary a) => a -> Hash
 pubKeyToHash a = computeHash . encode $ a
-   where computeHash x = let h = hashSHA1 $ B.toStrict x
-                         in B.take keyHashByteSize . B.reverse $ B.fromStrict $ h
+   where computeHash x = B.take keyHashByteSize . B.reverse . B.fromStrict . convert $ hashF x
 -- | Look for the Key in the map, and check the signature. Return False if the keyHash is unkown, or if the signature is not valid.
 cryptoCheckSig :: (MonadIO m) => KeyHash -> Sig -> Hash -> CryptoT m Bool
 cryptoCheckSig kH s h = do keepLog CryptoLog Normal $ "[cryptoCheckSig] :: checking signature for keyID : " ++ show kH

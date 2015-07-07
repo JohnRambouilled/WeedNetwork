@@ -22,6 +22,7 @@ import Client
 import Client.Sources
 import Client.Communication
 import Client.Protocol
+import Client.Pipes
 import Gateway
 import Timer
 import Log
@@ -55,7 +56,7 @@ proxyRoadChoice sourcesV sIDsV  = RoadChoice roadC
 --                              pipes <- (sourcePipes . fromJust) <$> getSourceEntry sourcesV sID   
                               pipes <- getSourceEntry sourcesV sID >>= maybe (pure Nothing) (pure . Just . sourcePipes)  
                               if isNothing pipes then return Nothing
-                                                 else (Just . map roadID .M.elems) <$> readMVar (fromJust pipes)
+                                                 else (Just . pipesList) <$> readMVar (fromJust pipes)
 
 
                                                                                 

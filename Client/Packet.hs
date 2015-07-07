@@ -12,7 +12,7 @@ import Numeric(showHex)
 --import Crypto.PubKey.ECC.ECDSA
 import qualified Crypto.PubKey.Ed25519 as S
 import qualified Crypto.PubKey.Curve25519 as DH
-import Crypto.Types.PubKey.ECC
+--import Crypto.Types.PubKey.ECC
 import qualified Data.ByteArray as BA
 import Crypto.Error
 

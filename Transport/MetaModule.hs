@@ -78,7 +78,8 @@ weedCallback timerV sndV rcvV (clbk,break) (wF, bF) rawData = do keepLog Transpo
      where onSeg trSeg (RecvBuf trList) = do keepL Normal $ "received packet : "-- ++ show trSeg
                                              case runRecvBuf trList trSeg of
                                                 Left (trList', (Just cm)) -> do runWriteFun wF . encode $ TransportControl cm
-                                                                                keepLog TransportLog Normal $ "Datagram received from wrong datagramID " -- ++ show trList'
+                                                                                keepLog TransportLog Normal $ "Datagram received from wrong datagramID "  ++ show trSeg
+                                                                                keepL Normal $ "buffer : " ++ show trList'
                                                                                 pure $ RecvBuf trList'
                                                 Left (trList', _) -> do keepL Normal "Datagram added to buffer"
                                                                         pure $ RecvBuf trList'                              
