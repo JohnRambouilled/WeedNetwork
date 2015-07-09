@@ -75,7 +75,7 @@ onControlMessage bufID buf (TrAck dID) = if dID == bufID then Nothing
 
 senderSendBuf :: (MonadIO m) => MVar Timer -> SendBuf -> (WriteFun, BreakFun) -> IO () -> StateT Sender m [TrSegment]
 senderSendBuf _ (BufKill d) (_,bF) break = do keepL Important "[senderSendBuf] BufKill received, closing communication."
-                                              liftIO $ break >> (runBreakFun bF $ d)
+                                              liftIO $ (runBreakFun bF $ d) >> break  
                                               pure []
 senderSendBuf timerV buf (wF,_) break = let ret = buildSegments (sbDataID buf) $ zip [0..] $ sbBuf buf
                                     in do killRepeat <- liftIO $ repeatNTimes timerV (void $ spamPsh (last ret)) break  pshFreq pshRepeatParam 

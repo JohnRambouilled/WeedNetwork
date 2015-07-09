@@ -57,14 +57,14 @@ openTCPCommunication clbkGen timerV tO ref sE pR = do
 genTCPWriteBreakFun :: MVar Timer -> MVar Sender -> (WriteFun, BreakFun) -> (WriteFun, BreakFun)
 genTCPWriteBreakFun timerV sndV wbF = (writeFun, breakFun)
         where breakFun = BreakFun $ \d -> do keepL Important "BreakFun called"
-                                             runStateMVar sndV $ senderQueueSendBuf  timerV wbF kill $ BufKill d
+                                             runStateMVar sndV $ senderQueueSendBuf timerV wbF kill $ BufKill d
               writeFun = WriteFun $ \d -> runStateMVar sndV $ senderQueueDatagram timerV wbF kill d
               kill = do withMVar sndV _sKill 
                         void . runBreakFun (snd wbF) $ B.empty
 
 genTCPCallback :: MVar Timer -> MVar Sender -> MVar RecvBuf -> (WriteFun, BreakFun) -> (Callback, BrkClbck) -> (Callback, BrkClbck)
 genTCPCallback timerV sndV rcvV wbF clbks = (Callback clbk, BrkClbck brck)
-    where clbk = weedCallback timerV sndV rcvV clbks wbF -- $ genTCPWriteBreakFun timerV sndV wbF
+    where clbk = weedCallback timerV sndV rcvV clbks wbF 
           brck d = withMVar sndV _sKill >> (runBrkClbck (snd clbks) $ d)
 
 
