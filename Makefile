@@ -14,6 +14,7 @@ clean:
 	find -type f -name "*.dyn_hi" -delete
 	find -type f -name "*.dyn_o" -delete
 	find -type f -name "*.hi" -delete
+	find -type f -name "*.p_o" -delete
 	find -type f -name "*.o" -delete
 
 tests:

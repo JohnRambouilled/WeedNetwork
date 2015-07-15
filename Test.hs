@@ -10,6 +10,7 @@ import Control.Concurrent.STM.TVar
 import Data.List
 import Data.Binary
 import System.Random (randomIO)
+import Control.Monad.RWS.Lazy
 
 import Client.Class
 import Client.Crypto
@@ -30,6 +31,9 @@ import Log
 import Network.Socket
 import Crypto.Random
 
+
+type LogFunction = Log -> IO ()
+
 data TestClient = TestClient {client :: Client,
                               input :: TChan RawData,
                               run :: IO ()} 
@@ -49,11 +53,11 @@ type ClientBehaviour = Client -> SendFunction -> IO ()
 
 
 
-testFullGraph :: [ClientBehaviour] -> IO [TestClient]
-testFullGraph cL = newTest $ zipWith genNeigh [0..] cL
-    where genNeigh i bH = (filter (/=i) [0.. (length cL - 1)], bH)
+testFullGraph :: [ClientBehaviour] -> [LogFunction] -> IO [TestClient]
+testFullGraph cL lL = newTest $ zipWith3 genNeigh [0..] cL lL
+    where genNeigh i bH l = (filter (/=i) [0.. (length cL - 1)], bH, l)
 
-
+{-
 fullGraphMain :: Int -> IO ()
 fullGraphMain n = do testCL <- testFullGraph =<< mapM bhvL [1..n]
                      let dumpClients = concat <$> (forM testCL $ (fst <$>) . runStateT dumpClient . client)
@@ -63,7 +67,7 @@ fullGraphMain n = do testCL <- testFullGraph =<< mapM bhvL [1..n]
                      forM_ mVL readMVar
     where bhvL i = do lchRID <- randomIO :: IO Int
                       pure $ testBhvr [RessourceID . encode $ i] [RessourceID . encode $ 1 + mod lchRID n]
-
+-}
 
 testBhvr :: [RessourceID] -> [RessourceID] -> ClientBehaviour
 testBhvr sdR lchR c send = do introduceThread c send "Seed Hello"
@@ -78,11 +82,11 @@ testBhvr sdR lchR c send = do introduceThread c send "Seed Hello"
 
 
 
-testChaine :: [ClientBehaviour] -> IO [TestClient]
-testChaine cL = newTest $ zipWith genNeigh [0..] cL
-    where genNeigh i bh = if i == 0 then ([1], bh)
-                                    else if i + 1 == length cL then ([i - 1], bh)
-                                                               else ([i - 1, i + 1], bh)
+--testChaine :: [ClientBehaviour] -> IO [TestClient]
+--testChaine cL = newTest $ zipWith genNeigh [0..] cL
+ --   where genNeigh i bh = if i == 0 then ([1], bh)
+   --                                 else if i + 1 == length cL then ([i - 1], bh)
+     --                                                          else ([i - 1, i + 1], bh)
 
 
 
@@ -114,31 +118,31 @@ seedMain c send = do introduceThread c send "Seed Hello"
 relayMain :: ClientBehaviour
 relayMain c send = introduceThread c send "Relay hello"
 
-testBinaire :: ClientBehaviour -> ClientBehaviour -> IO [TestClient]
-testBinaire bh1 bh2 = newTest [ ([1],bh1), ([0], bh2) ] 
+testBinaire :: (ClientBehaviour, LogFunction) -> (ClientBehaviour, LogFunction) -> IO [TestClient]
+testBinaire (bh1,l1) (bh2,l2) = newTest [ ([1],bh1,l2), ([0], bh2,l2) ] 
 
 
-newTest :: [ ([Int], ClientBehaviour) ] -> IO [TestClient]
+newTest :: [ ([Int], ClientBehaviour, LogFunction) ] -> IO [TestClient]
 newTest cL = do keepLog TestLog Normal "building test"
                 tChanL <- atomically $ forM cL $ \c -> newTChan >>= (\tc -> pure (tc, c) )
                 gV <- newMVar =<< drgNew
                 tcL <- forM tChanL $ genTestC gV $ map fst tChanL
                 keepLog TestLog Normal "done"
                 pure tcL
-    where genTestC :: MVar RandomGen -> [TChan RawData] -> (TChan RawData, ([Int], ClientBehaviour)) -> IO TestClient
-          genTestC gV tChanL (tC,(nL, bhv)) = let send = genSendFun nL tChanL in
+    where genTestC :: MVar RandomGen -> [TChan RawData] -> (TChan RawData, ([Int], ClientBehaviour, LogFunction)) -> IO TestClient
+          genTestC gV tChanL (tC,(nL, bhv, logF)) = let send = genSendFun nL tChanL in
                                            do cl <- newTestClient gV send
                                               keepLog TestLog Normal "building testclient"
                                               tC' <- atomically $ dupTChan tC
-                                              pure $ TestClient cl tC' $ do clM <- runChildren $ runTestClient bhv tC send cl
+                                              pure $ TestClient cl tC' $ do clM <- runChildren $ runTestClient bhv tC send logF cl
                                                                             readMVar clM
           genSendFun :: [Int] -> [TChan RawData] -> SendFunction
           genSendFun nL tChanL p = do keepLog TestLog Normal $ "sending packet..." ++ showPacket p
                                       forM_ nL $ \i -> (atomically $ writeTChan (tChanL !! i) (encode p))
                                       pure True
             
-runTestClient :: ClientBehaviour -> TChan RawData -> SendFunction -> Client-> IO ()
-runTestClient bhv tc send cl = do
+runTestClient :: ClientBehaviour -> TChan RawData -> SendFunction -> LogFunction -> Client-> IO ()
+runTestClient bhv tc send logF cl = do
         tim <- runChildren $ startTimer (ctimer cl) (1000*1000*1)
         bhV <- runChildren $ bhv cl send 
         weed <- runChildren $ loop $ listenPacket
@@ -149,7 +153,10 @@ runTestClient bhv tc send cl = do
                                       Nothing -> keepLog TestLog Error "incorrect Packet received"
                                       Just pkt -> do keepLog TestLog Normal $ "received Packet : " ++ showPacket pkt
                                                      keepLog TestLog Normal . fst =<< runStateT dumpClient cl
-                                                     fst <$> runStateT (onPacket pkt) cl >>= mapM_ send              
+                                                     (ret,state',logs) <- runRWST onPacket pkt  cl
+                                                     logF logs
+						     mapM_ send (ret :: [Packet])
+						   
                                                      
 
 

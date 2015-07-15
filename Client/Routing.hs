@@ -2,6 +2,7 @@
 module Client.Routing where
 
 import Control.Monad.State hiding (put, get)
+import Control.Monad.Reader
 import Control.Concurrent
 import Data.Binary
 import Data.List
@@ -16,24 +17,27 @@ data Routing = Routing {relayCallback :: RoutingCB,
                         destCallback :: RoutingCB}
 type RoutingT = StateT Routing
 
-type RoutingCB = Behaviour Routing Request RoutingAnswer
+type RoutingCB = Behaviour Routing Request IO RoutingAnswer
 data RoutingAnswer = RoutingAnswer {routingTimeOut :: IO (),
                                     toRegister :: Maybe [DataCB],
                                     toRelay :: [Request]}
 
 instance Modules Routing Request RoutingAnswer where
-        onPacket req = if 1 + roadPosition req == roadLength req || roadPosition req == 0
-                            then join $ gets destCallback <*> pure req
-                            else join $ gets relayCallback <*> pure req
+        onPacket = ask >>= \req ->  if 1 + roadPosition req == roadLength req || roadPosition req == 0
+                            then join $ gets destCallback 
+                            else join $ gets relayCallback
 
 
 routingRelayCallback :: RoutingCB
-routingRelayCallback req =  return [RoutingAnswer (pure ()) (Just relayFun) [req] ]
-        where relayFun = [relayPipeMessage $ roadPosition req]
+routingRelayCallback  =  ask >>= \req -> let relayFun = [relayPipeMessage $ roadPosition req]
+                                        in return $ RoutingAnswer (pure ()) (Just relayFun) [req] 
+        where 
 
 relayPipeMessage :: Int -> DataCB
-relayPipeMessage n = DataCB hFun relayFun
-        where hFun p@(DataPacket kH _ (DataContent cnt)) = case decodeMaybe cnt of
+relayPipeMessage n = do 
+                        DataCB (ask >>= hFun) ( (:[]) <$> ask)
+        where hFun ::  Packet -> HashFunction Packet      
+              hFun p@(DataPacket kH _ (DataContent cnt)) = case decodeMaybe cnt of
                                                 Nothing -> do keepLog RoutingLog Error $ "[RELAY] Invalid data packet (decodeMaybe failed)"  
                                                               return Nothing
                                                 Just pm@(PipeData n' b dat) -> do keepLog RoutingLog Normal $ "[RELAY] New pipe data : " ++ show pm ++ " " ++ show n
@@ -49,18 +53,18 @@ relayPipeMessage n = DataCB hFun relayFun
                                                                            return $ Just (reqSourceHash kH req, 
                                                                                           p{introContent = IntroContent $ encode req{roadPosition = roadPosition req + 1}})
                                                                          else pure Nothing
+
               relay p pm = let pm' = pm{relayNumber = if (messageDirection pm) then 1 + relayNumber pm else (relayNumber pm) - 1 }
                                in p{datacontent = DataContent $ encode pm'}
-              relayFun = pure . pure
 pipeTimeOut :: DiffTime
 pipeTimeOut = 200
 pipeRefreshTO = 190 :: DiffTime
 
 
 
-routingCryptoCallback :: MVar Crypto -> MVar Timer -> PubKey -> PrivKey -> SourceID -> MVar Routing -> CryptoCB Packet Packet
-routingCryptoCallback cV tV pubK uK uID rV = genCryptoCallback cV tV pipeTimeOut rV inFun outFun
-    where inFun :: HashFunction Request
+routingCryptoCallback :: MVar Crypto -> MVar Timer -> PubKey -> PrivKey -> SourceID -> MVar Routing -> CryptoCB Packet [Packet]
+routingCryptoCallback cV tV pubK uK uID rV = genCryptoCallback cV tV pipeTimeOut rV (ask >>= inFun) outFun
+    where inFun :: Packet -> HashFunction Request
           inFun (Introduce kH _ _ (IntroContent d)) = case decodeMaybe d of
                                       Just req ->  let n = roadPosition req in
                                                   do keepLog RoutingLog Important $ "New req  : \n" ++ show req
@@ -77,8 +81,9 @@ routingCryptoCallback cV tV pubK uK uID rV = genCryptoCallback cV tV pipeTimeOut
                                       Nothing -> pure Nothing
           inFun _ = return Nothing
           checkRequest (Request n _ l r _ _ _) = (l == length r) && (n < l) && (n >= 0)
-          outFun :: Packet -> RoutingAnswer -> CryptoT IO (Maybe [CryptoAction], [Packet], IO())
-          outFun p (RoutingAnswer onTO regM rL) = --do pktL <- liftIO $ forM rL (\r -> forgePacket p r <$> genRnd)
+          outFun :: RoutingAnswer -> CryptoCB Packet (Maybe [CryptoAction], [Packet], IO())
+          outFun (RoutingAnswer onTO regM rL) = do --pktL <- liftIO $ forM rL (\r -> forgePacket p r <$> genRnd)
+                                                     p <- ask
                                                      return (map runDataCB <$> regM, map (forgePacket p) rL, onTO)
           forgePacket p r = p{introContent = IntroContent . encode $ signReq (keyID p) r}
           signReq kH r = let r' = r{roadPosition = roadPosition r + 1} in r'{neighborSignature = sign uK pubK $ reqNeighHash kH r'}

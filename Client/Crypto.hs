@@ -8,6 +8,8 @@ import Control.Monad.State
 import Data.List 
 import Data.Maybe
 import Control.Concurrent
+import Control.Monad.Reader
+import Control.Monad.RWS.Lazy
 
 import Client.Class
 import Client.Packet
@@ -28,33 +30,44 @@ import Client.Crypto.Crypto
 
   The time-Out is refreshed when an introducePacket is received from the registered key, then the callbacks are called.
 -}
-genCryptoCallback :: (Modules a p r) => MVar Crypto -> MVar Timer -> DiffTime -> MVar a -> HashFunction p -> (Packet -> r -> CryptoT IO (Maybe [CryptoAction], [Packet],IO ())) -> CryptoCB Packet Packet
-genCryptoCallback crypto timer ttl aV hF oF  = genCallback aV inFun outFun 
-        where inFun p = if checkIntroduce p then do ans <- maybeToList <$> checkHashFunction (key p) hF p
+--genCryptoCallback :: (Modules a p r) => MVar Crypto -> MVar Timer -> DiffTime -> MVar a -> HashFunction p -> (Packet -> r -> CryptoT IO (Maybe [CryptoAction], [Packet],IO ())) -> CryptoCB Packet Packet
+genCryptoCallback :: (Modules a p r) => MVar Crypto -> MVar Timer -> DiffTime -> MVar a -> HashFunction p 
+                                    -> (r -> CryptoCB Packet (Maybe [CryptoAction], [Packet], IO () ) ) 
+                                    -> CryptoCB Packet [Packet]
+genCryptoCallback crypto timer ttl aV hF oF  = ask >>= genCallback aV <$> inFun <*> outFun 
+        where --inFun :: (Modules a p r) => Packet -> Behaviour Crypto Packet IO p
+              inFun p = if checkIntroduce p then do ans <- maybeToList <$> checkHashFunction (key p) hF
                                                     keepLog CryptoLog Normal $ if null ans then "Fail hashFunction" else "calling cryptoCallback"
                                                     pure ans
                                           else (keepLog CryptoLog Normal "not a correct introduce") >> pure [] 
-              outFun p r = do (mDCBs, pL,onTimeOut) <- oF p r
+
+              outFun p rs = concat <$> mapM (\ri -> do (mDCBs ,pL,onTimeOut) <- oF ri
+                                                       outFun' p mDCBs pL onTimeOut) rs 
+              outFun' p mDCBs pL onTimeOut = do 
                               case mDCBs of
                                 Nothing -> (keepLog CryptoLog Normal "No callbacks to register") >> return pL
                                 Just dCBL -> do (refresh, free) <- liftIO $ registerTimerM timer ttl ((runStateMVar crypto $ unregisterKeyEntry ( keyID p)) >> return False)
-                                                let dCBL' = (\_ pkt  -> when (isIntroduce pkt) (liftIO refresh) >> pure []):dCBL
+                                                let dCBL' = (\_  ->  do pkt <- ask 
+                                                                        when (isIntroduce pkt) (liftIO refresh) >> pure []):dCBL
                                                 keepLog CryptoLog Important $  "crypto : register callback for key :" ++ show (keyID p)
                                                 registerDataCallback (keyID p) (key p) dCBL' (onTimeOut >> free) >> return pL
               checkIntroduce p = if isIntroduce p then pubKeyToHash (key p) == (runKeyHash $ keyID p) else False
 
 
 -- | genCryptoCallback where the callback-module's MVar is transmitted to the output-Function.
-genMCryptoCallback :: Modules a p r => MVar Crypto -> MVar Timer -> DiffTime -> MVar a -> HashFunction p -> (MVar a -> Packet -> r -> CryptoT IO (Maybe [CryptoAction], [Packet],IO ())) -> CryptoCB Packet Packet
+--genMCryptoCallback :: Modules a p r => MVar Crypto -> MVar Timer -> DiffTime -> MVar a -> HashFunction p -> (MVar a -> Packet -> r -> CryptoT IO (Maybe [CryptoAction], [Packet],IO ())) -> CryptoCB Packet Packet
+genMCryptoCallback :: (Modules a p r) => MVar Crypto -> MVar Timer -> DiffTime -> MVar a -> HashFunction p 
+                                     -> (MVar a -> r -> CryptoCB Packet (Maybe [CryptoAction], [Packet], IO () ) ) 
+                                     -> CryptoCB Packet [Packet]
 genMCryptoCallback crypto timer ttl aV hF oFV = genCryptoCallback crypto timer ttl aV hF (oFV aV)
 
 -- | Transform a DataCB in cryptoAction : check the signature of the packet with checkHashFunction and call the callback with the returned value.
 runDataCB :: DataCB -> CryptoAction
-runDataCB (DataCB hF clbk) (KeyEntry k _ _) p = do 
-        qM <- checkHashFunction k hF p
+runDataCB (DataCB hF clbk) (KeyEntry k _ _) = do 
+        qM <- checkHashFunction k hF
         case qM of
               Nothing -> pure []
-              Just q -> clbk q
+              Just q -> withRWST (\_ s -> (q,s)) $ clbk 
         
 
 

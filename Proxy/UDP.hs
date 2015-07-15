@@ -21,6 +21,7 @@ import Network.Socket hiding (sendTo, recvFrom)
 import Network.Socket.ByteString
 import qualified Data.ByteString.Lazy as B
 import Control.Monad.State hiding (get,put)
+import Control.Monad.Reader
 import qualified Control.Monad.State  as S (get)
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TVar
@@ -55,16 +56,17 @@ type ProxUDP = MapModule ProxUDPEntry SocketFile ProxPacket ProxRet
 
 {-| Writes everything into the pipe, according to the source specified in the hashmap |-}
 instance MapModules ProxUDPEntry SocketFile ProxPacket ProxRet where
-        packetKey (ProxPacket (SockAddrUnix sockfile) _) = do keepLog ProxyLog Normal $ "new packet from sock : " ++ sockfile
-                                                              S.get >>= keepLog ProxyLog Normal . show
-                                                              pure $ Just $ SocketFile sockfile
-        entryBehaviour _ = [\entry packet -> callback entry packet >> pure [ProxRet]]
-          where   callback :: ProxUDPEntry -> ProxPacket -> StateT ProxUDP IO () 
+        packetKey = ask >>= packetKey'
+           where packetKey' (ProxPacket (SockAddrUnix sockfile) _) = do keepLog ProxyLog Normal $ "new packet from sock : " ++ sockfile
+                                                                        S.get >>= keepLog ProxyLog Normal . show
+                                                                        pure $ Just $ SocketFile sockfile
+        entryBehaviour entry = [ask >>= callback entry >> pure [ProxRet]]
+          where   callback :: ProxUDPEntry -> ProxPacket -> MapBehaviour ProxUDPEntry SocketFile ProxPacket ProxRet IO () 
                   callback entry packet 
                     -- The socket has failed to read
                     |B.null (proxData packet) = liftIO $ proxKill entry 
                     -- The data has to be checked by the layer before sending
-                    |otherwise                = void $ buildProxCallback (proxUDPWrite entry) (proxUDPBreak entry)  (proxRefresh entry) (proxKill entry)  packet
+                    |otherwise                = void $ buildProxCallback (proxUDPWrite entry) (proxUDPBreak entry)  (proxRefresh entry) (proxKill entry) 
                             
 
 runProxUDP :: (MonadIO m) => MVar ProxUDP -> Client  -> StateT ProxUDP m Socket
@@ -81,7 +83,7 @@ runProxUDP proxyV client = do sIDsV <- liftIO $ atomically $ newTVar []
 startProxUDP :: MVar ProxUDP -> Client -> IO ()
 startProxUDP proxyV client = do s <- runStateMVar proxyV (runProxUDP proxyV client)
                                 withSocketsDo $ loop $ runServer s
-  where runServer :: Socket -> IO [ProxRet]
+  where runServer :: Socket -> IO ([ProxRet], Log)
         runServer s = do keepLog ProxyLog Normal "waiting for udp packet..."
                          (pkt,caddr@(SockAddrUnix fname)) <- recvFrom s 4096
                          keepLog ProxyLog Normal $ "[UDP PROXY] new udp packet from " ++ fname  ++ " : " ++ show pkt
@@ -92,14 +94,15 @@ startProxUDP proxyV client = do s <- runStateMVar proxyV (runProxUDP proxyV clie
 
 
 
-behaviour :: MVar ProxUDP -> MVar Sources -> MVar Timer -> Socket -> TVar [SourceID] -> MapBehaviour ProxUDPEntry SocketFile ProxPacket ProxRet
-behaviour proxyV sourcesV timerV sock sIDsV p@(ProxPacket src raw) = do keepLog ProxyLog Normal "Calling default behaviour"
-                                                                        case decodeOrFail raw of
+behaviour :: MVar ProxUDP -> MVar Sources -> MVar Timer -> Socket -> TVar [SourceID] -> MapCallback ProxUDPEntry SocketFile ProxPacket ProxRet
+behaviour p s t so sid = ask >>= behaviour' p s t so sid
+behaviour' proxyV sourcesV timerV sock sIDsV p@(ProxPacket src raw) = do keepLog ProxyLog Normal "Calling default behaviour"
+                                                                         case decodeOrFail raw of
                                                                           Left (_,_,msg) -> do keepLog ProxyLog Error $ "unable to parse InetPacket : " ++ msg ++ " (" ++ show (B.length raw) ++ " bytes)"
                                                                                                keepLog ProxyLog Error $ show raw 
                                                                                                pure [] 
                                                                           Right (_,_,inetPkt) -> registerCB inetPkt
-  where registerCB :: (MonadIO m) => InetPacket -> MapModuleT ProxUDPEntry SocketFile ProxPacket ProxRet m [ProxRet]
+  where registerCB :: (MonadIO m) => InetPacket -> MapBehaviour ProxUDPEntry SocketFile ProxPacket ProxRet m [ProxRet]
         registerCB (InetInit sc initMsg) = do keepLog ProxyLog Normal "chosing destinary"
                                               dest <- liftIO $ choseDest sourcesV sIDsV
                                               keepLog ProxyLog Normal  $ "[UDP PROXY] New InetInit !"
@@ -133,8 +136,9 @@ writeData wr br kill rd = do r <- runWriteFun wr rd
 
 
 {-| Writes everything from the socket into the pipe. InetInit may refresh the connection [TODO] control with hijacking sendto in the proxifier |-}
-buildProxCallback :: WriteFun -> BreakFun ->  IO () -> IO () -> MapBehaviour ProxUDPEntry SocketFile ProxPacket ProxRet
-buildProxCallback wr br refresh kill (ProxPacket src raw) = case decodeMaybe raw of
+buildProxCallback :: WriteFun -> BreakFun ->  IO () -> IO () -> MapCallback ProxUDPEntry SocketFile ProxPacket ProxRet
+buildProxCallback wf bf rf k = ask >>= buildProxCallback' wf bf rf k
+   where buildProxCallback' wr br refresh kill (ProxPacket src raw) = case decodeMaybe raw of
                                                                            Just (InetInit _ _ ) -> -- liftIO $ refresh >>  [TODO] No reason to refresh on arbitrary packets
                                                                                                   do keepLog ProxyLog Normal $ ("[UDP PROXY] InetInit received " ++ show (B.length raw) ++ " bytes from the socket. Writing into weed.") 
                                                                                                      liftIO $ writeData wr br kill (encode $ InetData raw)

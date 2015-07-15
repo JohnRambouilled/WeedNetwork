@@ -5,6 +5,7 @@ import Client.Class
 import Client.Crypto
 import Client.Packet
 import Control.Monad.State hiding (put,get)
+import Control.Monad.Reader
 import Data.Binary
 import Control.Concurrent.MVar
 import Data.ByteString.Lazy hiding (concat,map)
@@ -19,10 +20,11 @@ data Neighborhood = Neighborhood {nhCallbacks :: [DataCB]}
 newtype NeighRet = NeighRet {runNeighRet :: MVar Neighborhood -> CryptoAction}
 
 instance Modules Neighborhood NeighHello NeighRet where 
-        onPacket h = pure $ (:[]) $ NeighRet $ registeredCB
+        onPacket = pure $ NeighRet $ registeredCB
              where registeredCB :: MVar Neighborhood -> CryptoAction
-                   registeredCB mvar kE p = do val <- (liftIO $ (readMVar mvar :: IO Neighborhood))
-                                               concat <$> sequence (map (($p).($kE).runDataCB) $ nhCallbacks val) 
+                   registeredCB mvar kE = do 
+                                             val <- (liftIO $ (readMVar mvar :: IO Neighborhood))
+                                             concat <$> sequence (map (($kE).runDataCB) $ nhCallbacks val) 
 
 cryptoTTLmax = 250 :: DiffTime --TODO
 
@@ -30,13 +32,13 @@ registerNeighHelloCB :: (MonadIO m) => DataCB -> StateT Neighborhood m ()
 registerNeighHelloCB x = modify $ \s -> s {nhCallbacks = x:nhCallbacks s}
                                        
 
-neighCryptoCallback :: MVar Crypto -> MVar Timer -> MVar Neighborhood -> CryptoCB Packet Packet
-neighCryptoCallback crypto timer mv = genCryptoCallback crypto timer cryptoTTLmax mv inFun oFun
-  where inFun :: HashFunction NeighHello
+neighCryptoCallback :: MVar Crypto -> MVar Timer -> MVar Neighborhood -> CryptoCB Packet [Packet]
+neighCryptoCallback crypto timer mv = genCryptoCallback crypto timer cryptoTTLmax mv (ask >>= inFun) oFun
+  where inFun :: Packet -> HashFunction NeighHello
         inFun (Introduce kH k _ (IntroContent cnt)) = maybe (pure Nothing) (\nH -> case nH of
                                                                     NeighHello _  -> pure $ Just (encode (kH,k,cnt), nH)
                                                                     NeighClose -> unregisterKeyEntry kH >> return Nothing) (decodeMaybe cnt)
-        oFun _ r = return (Just [runNeighRet r $ mv], [], pure ())
+        oFun r = return (Just [runNeighRet r $ mv], [], pure ())
 
 
 instance Binary NeighHello where

@@ -3,79 +3,90 @@
 module Client.Class where
 
 import Control.Monad.State
+import Control.Monad.RWS.Lazy
 import Control.Concurrent
 import Data.Maybe
+import Data.Bifunctor
 import Data.List
 import Data.Tuple
 import qualified Data.Map as M
 
+import Log
 
-type Behaviour a p r = p -> StateT a IO [r]
-class Modules a p r where onPacket :: Behaviour a p r
+
+type Behaviour a p m r = RWST p Log a m r --p -> StateT a IO [r]
+class Modules a p r where onPacket :: Behaviour a p IO r
 
 
 data MapModule b k p r = MapModule {keyMap :: M.Map k b,
-                                    defaultBehaviour :: [MapBehaviour b k p r]}
+                                    defaultBehaviour :: [MapCallback b k p r]}
                                     
 instance Show k => Show (MapModule b k p r) where show = show . M.keys . keyMap
 
-type MapBehaviour b k p r = Behaviour (MapModule b k p r) p r
-        
-type MapModuleT b k p r = StateT (MapModule b k p r)
+type MapBehaviour b k p r m a = Behaviour (MapModule b k p r) p m a
+type MapCallback b k p r = MapBehaviour b k p r IO [r]
+
 
 class Ord k => MapModules b k p r where
-         packetKey :: MonadIO m => p -> MapModuleT b k p r m (Maybe k)
-         entryBehaviour :: b -> [b -> MapBehaviour b k p r]
+         packetKey :: (MonadIO m) => MapBehaviour b k p r m (Maybe k) --p -> MapModuleT b k p r m (Maybe k)
+         entryBehaviour :: b -> [MapCallback b k p r]
 
-instance MapModules b k p r => Modules (MapModule b k p r) p r where
-        onPacket p = join (maybe (return []) onKey <$> packetKey p)
+instance MapModules b k p r => Modules (MapModule b k p r) p [r] where
+        onPacket = do kM <- packetKey 
+                      case kM of Nothing -> pure []
+                                 Just k -> onKey k
             where onKey k = do bhVL <- fromMaybe <$> gets defaultBehaviour <*> ((runEntryBhv <$>) <$> mapGetEntry k)
                                runBehaviourList bhVL
-                  runEntryBhv b = map ($b) $ entryBehaviour b
-                  runBehaviourList bhVL = concat  <$> (sequence $ map ($p) bhVL)
+                  runEntryBhv b = entryBehaviour b
+                  runBehaviourList bhVL = concat  <$> sequence bhVL
 
 
-newMapModule :: [MapBehaviour b k p r] -> MapModule b k p r
+newMapModule :: [MapCallback b k p r] -> MapModule b k p r
 newMapModule defB = MapModule M.empty defB
 
-mapGetEntry :: (Monad m, Ord k) => k -> MapModuleT b k p r m (Maybe b)
+mapGetEntry :: (MonadState (MapModule b k p r) m, Ord k) => k -> m (Maybe b) --k -> MapModuleT b k p r m (Maybe b)
 mapGetEntry k = M.lookup k <$> gets keyMap
 
-removeMapBehaviour :: (Monad m, Ord k) => k -> MapModuleT b k p r m ()
+removeMapBehaviour :: (MonadState (MapModule b k p r) m, Ord k) =>  k -> m ()
 removeMapBehaviour k = modify $ \s -> s{keyMap = M.delete k $ keyMap s}
 
-insertMapBehaviour :: (Monad m, Ord k) => k -> b -> MapModuleT b k p r m ()
+insertMapBehaviour :: (MonadState (MapModule b k p r) m, Ord k) => k -> b -> m ()
 insertMapBehaviour k b = modify $ \s -> s{keyMap = M.insert k b $ keyMap s}
 
-insertMapBehaviourWith :: (Monad m, Ord k) => (b -> b -> b) -> k -> b -> MapModuleT b k p r m ()
+insertMapBehaviourWith :: (MonadState (MapModule b k p r) m, Ord k) => (b -> b -> b) -> k -> b -> m ()
 insertMapBehaviourWith f k b = modify $ \s -> s{keyMap = M.insertWith f k b $ keyMap s}
 
 
-modifyDefaultMapBehaviour :: Monad m => ([MapBehaviour b k p r] -> [MapBehaviour b k p r]) -> MapModuleT b k p r m ()
+modifyDefaultMapBehaviour :: MonadState (MapModule b k p r) m => ([MapCallback b k p r] -> [MapCallback b k p r]) -> m ()
 modifyDefaultMapBehaviour f = modify $ \s -> s{defaultBehaviour = f $ defaultBehaviour s}
 
 {-| Merges a list of mapbehaviours into a single one |-}
-joinMapBehaviour :: (MapModules b k p r) => [MapBehaviour b k p r] -> MapBehaviour b k p r
-joinMapBehaviour l pkt = Prelude.concat <$> mapM ($pkt) l
+joinMapBehaviour :: (MapModules b k p r) => [MapCallback b k p r] -> MapCallback b k p r
+joinMapBehaviour l = Prelude.concat <$> sequence l
 
+runRWSTMVar :: MVar a -> p -> RWST p w a IO b -> IO (b, w)
+runRWSTMVar aV p aRwst = modifyMVar aV  $ (mkTuple <$>) . (runRWST aRwst $ p)
+    where mkTuple (b, a, w) = (a, (b,w))
+          
 runStateMVar :: MVar a -> StateT a IO b -> IO b
-runStateMVar aV aS = modifyMVar aV  $ (swap <$>) . runStateT aS
+runStateMVar aV aS = modifyMVar aV $ (swap <$>) . runStateT aS
 
-runModule :: Modules a p r => MVar a -> p -> IO [r]
-runModule modV packet = runStateMVar modV $ onPacket packet
+runModule :: Modules a p r => MVar a -> p -> IO (r, Log)
+runModule modV packet = runRWSTMVar modV packet onPacket
+        --runStateMVar modV $ onPacket packet
 
-genCallback :: (Modules a p r, Modules b q s) => MVar b 
-                                             -> Behaviour a p q 
-                                             -> (p -> Behaviour a s r) 
-                                             -> Behaviour a p r
-genCallback bV f g p = do
-       qL <- f p
-       sL <- concat <$> sequence (map (liftIO . runModule bV) qL)
-       concat <$> (sequence $ map (g p) sL)
+genCallback :: (Modules a p r, Modules b q s) => MVar b
+                                             -> Behaviour a p IO [q]
+                                             -> ([s] -> Behaviour a p IO r) 
+                                             -> Behaviour a p IO r
+genCallback bV f g = do lst <- (liftIO . mapM (runModule bV) =<< f)
+                        let (rets,logs) = unzip lst 
+                        mapM_ tell logs
+                        g rets
  
 
 unregisterM :: (MapModules b k p r) => MVar (MapModule b k p r) -> k -> IO ()
-unregisterM mv key = modifyMVar_ mv $ \v -> snd <$> runStateT (removeMapBehaviour key) v
-
+unregisterM mv key = runStateMVar mv (removeMapBehaviour key)
+        
 
 

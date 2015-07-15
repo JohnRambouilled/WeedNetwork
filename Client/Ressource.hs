@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleContexts #-}
 module Client.Ressource where
 
 
@@ -9,11 +9,15 @@ import Client.Neighborhood
 import Log
 
 import Control.Monad.State hiding (get,put)
+import Control.Monad.Reader
+import Control.Monad.Writer
+import Data.Bifunctor
 import Control.Concurrent.MVar
 import Data.Binary
 import Data.ByteString.Lazy hiding (null,head,tail)
 import Data.Maybe
 import Data.Time hiding (DiffTime)
+import Data.Tuple
 import Timer
 import Crypto.Random
 
@@ -57,15 +61,16 @@ isAnswer = not . isResearch
 data RessourceEntry = RessourceEntry {runRessourceEntry :: [RessourceCB]}
 
 type RessourceModule = MapModule RessourceEntry RessourceID RessourcePacket RessourcePacket
-type RessourceCB = Behaviour RessourceModule RessourcePacket RessourcePacket
+type RessourceCB = Behaviour RessourceModule RessourcePacket IO [RessourcePacket]
 
 
 instance MapModules RessourceEntry RessourceID RessourcePacket RessourcePacket where
-        packetKey (Research rID _ _ _) = do keepLog RessourcesLog Normal $ "research for : " ++ show rID
-                                            pure . Just $ rID
-        packetKey (Answer crt _ _ _  _) = do keepLog RessourcesLog Normal $ "Answer for : " ++ show (cResID crt)
-                                             pure . Just $ cResID crt
-        entryBehaviour _ = [\b -> joinMapBehaviour $ runRessourceEntry b]
+        packetKey = ask >>= packetKey'
+            where packetKey' (Research rID _ _ _) = do keepLog RessourcesLog Normal $ "research for : " ++ show rID
+                                                       pure . Just $ rID
+                  packetKey' (Answer crt _ _ _  _) = do keepLog RessourcesLog Normal $ "Answer for : " ++ show (cResID crt)
+                                                        pure . Just $ cResID crt
+        entryBehaviour b = [joinMapBehaviour $ runRessourceEntry b]
 
 
 
@@ -76,14 +81,18 @@ instance MapModules RessourceEntry RessourceID RessourcePacket RessourcePacket w
 
 ressourceTimeOut = 200 :: DiffTime -- TODO
 
-runRessourceModule :: (Monad m) => MVar RessourceModule -> MVar Timer -> SourceID -> MapModuleT RessourceEntry RessourceID RessourcePacket RessourcePacket m ()
-runRessourceModule ress timer me = do modifyDefaultMapBehaviour $ \b -> (newDefaultBehaviour ress timer me):b
+runRessourceModule :: (MonadIO m) => MVar RessourceModule -> MVar Timer -> SourceID -> Behaviour RessourceModule RessourcePacket m ()
+runRessourceModule ress timer me = do ask >>= \packet -> modifyDefaultMapBehaviour $ \b -> (newDefaultBehaviour ress timer me packet):b
 
-newDefaultBehaviour :: MVar RessourceModule -> MVar Timer -> SourceID -> RessourceCB
-newDefaultBehaviour ress timer me pkt@(Research rID ttl road cnt)  = if ttl > 1 then do (refresh,_) <- liftIO (registerTimerM timer ressourceTimeOut (unregisterM ress rID >> pure True))
+ressourceDefaultBehaviour ::  MVar RessourceModule -> MVar Timer -> SourceID -> RessourceCB
+ressourceDefaultBehaviour r t m = ask >>= newDefaultBehaviour r t m
+
+newDefaultBehaviour :: MVar RessourceModule -> MVar Timer -> SourceID -> RessourcePacket ->  RessourceCB
+newDefaultBehaviour ress timer me pkt@(Research rID ttl road cnt)  = if ttl > 1  && ttl < ressourceTtlMax then do 
+                                                                                        (refresh,_) <- liftIO (registerTimerM timer ressourceTimeOut (unregisterM ress rID >> pure True))
                                                                                         insertMapBehaviour rID (entry refresh)
                                                                                         pure . maybeToList $ relayResearchPacket pkt else return []
-  where entry refresh = RessourceEntry [\pkt ->  if isAnswer pkt then liftIO refresh >> (pure . maybeToList $ relayAnswerPacket me pkt) else return []]
+  where entry refresh = RessourceEntry [ask >>= \pkt -> if isAnswer pkt then liftIO refresh >> (pure . maybeToList $ relayAnswerPacket me pkt) else return []]
         unreg = unregisterM ress rID
 newDefaultBehaviour _ _ _ _ = return []
 
@@ -94,8 +103,10 @@ checkCert (RessourceCert dhKey sKey time rID sig) (SourceID kH)  = runKeyHash kH
 
 {-| Accepts only researches if they have an empty road or a road where my user ID is on its top.
     Accepts only answers if they have a properly signed certificate. |-}
-ressourceHashFunction :: SourceID -> HashFunction RessourcePacket
-ressourceHashFunction me (DataPacket kID _ dc@(DataContent cnt)) = do 
+
+ressourceHashFunction me = ask >>= ressourceHashFunction' me
+ressourceHashFunction' :: SourceID -> Packet -> HashFunction RessourcePacket
+ressourceHashFunction' me (DataPacket kID _ dc@(DataContent cnt)) = do 
         keepLog RessourcesLog Normal $ "new Ressource packet"
         case decodeMaybe cnt of Just pkt@(Research rID ttl road cnt) -> if ressourceTtlMax >= ttl && ttl > 0 && checkRoad road then pure . Just $ (encode dc,pkt) 
                                                                                                                                else do keepLog RessourcesLog Normal "invalid Research"
@@ -105,7 +116,7 @@ ressourceHashFunction me (DataPacket kID _ dc@(DataContent cnt)) = do
                                                                                             pure Nothing
                                 Nothing -> (keepLog RessourcesLog Normal "invalid RessourcePacket") >> pure Nothing
         where checkRoad road = if null road then True else me == head road
-ressourceHashFunction _ _ = return Nothing
+ressourceHashFunction' _ _ = return Nothing
 
 relayResearchPacket:: RessourcePacket -> Maybe RessourcePacket
 relayResearchPacket (Research rID ttl road cnt) = if ttl > 1 then Just $ Research rID (ttl - 1) road' cnt
@@ -122,9 +133,9 @@ relayAnswerPacket _ _ = Nothing
 
 registerRessourceModule :: SourceID -> PrivKey -> PubKey -> MVar RessourceModule -> DataCB
 registerRessourceModule me uK pK mv = DataCB (ressourceHashFunction me) clbk --(ressourceHashFunction,clbk)
-  where clbk :: CryptoCB RessourcePacket Packet
-        clbk rP = (liftIO $ runModule mv rP) >>= mapM craftPacket
-        craftPacket :: (MonadIO m) => RessourcePacket -> CryptoT m Packet
+  where clbk :: CryptoCB RessourcePacket [Packet]
+        clbk = ask >>= \rP -> join $ (uncurry (>>) . swap . bimap (mapM craftPacket) tell) <$> (liftIO $ runModule mv rP) 
+        craftPacket :: (MonadIO m,MonadState Crypto m) => RessourcePacket ->  m Packet
         craftPacket resPkt = return $ DataPacket (keyHash me) (sign uK pK $ encode dc) dc
                                   where dc = DataContent $ encode resPkt
 
@@ -137,13 +148,14 @@ sendResearch prK pK uID rID ttl r d = let res = DataContent. encode $ Research r
 answerMaxFrequency = 100 :: DiffTime
 
 genRessourceCallback :: MVar Time -> PubKey -> PrivKey -> SourceID -> RessourceID -> RawData -> RessourceCB
-genRessourceCallback tV pK uK uID rID d p = if isResearch p then do keepLog RessourcesLog Important $ "received research for offered ressource : " ++ show rID
-                                                                    tM <- liftIO $ tryReadMVar tV
-                                                                    t' <- liftIO getTime
-                                                                    case tM of Nothing -> do liftIO $ putMVar tV t' 
-                                                                                             pure [sendAnswer t'] 
-                                                                               Just t -> if diffUTCTime t' t > answerMaxFrequency then do liftIO $ swapMVar tV t'
-                                                                                                                                          pure [sendAnswer t]
+genRessourceCallback tV pK uK uID rID d = do p <- ask
+                                             if isResearch p then do keepLog RessourcesLog Important $ "received research for offered ressource : " ++ show rID
+                                                                     tM <- liftIO $ tryReadMVar tV
+                                                                     t' <- liftIO getTime
+                                                                     case tM of Nothing -> do liftIO $ putMVar tV t' 
+                                                                                              pure [sendAnswer t'] 
+                                                                                Just t -> if diffUTCTime t' t > answerMaxFrequency then do liftIO $ swapMVar tV t'
+                                                                                                                                           pure [sendAnswer t]
                                                                                                                                      else pure []
                                                            else pure []
     where sendAnswer t = Answer (cert t) ressourceTtlMax [uID] uID d

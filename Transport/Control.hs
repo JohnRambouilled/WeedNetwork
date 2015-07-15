@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Transport.Control where
 
 {-| Protocol for receiving a given datagram :
@@ -18,6 +19,7 @@ import Control.Monad.State hiding (get, put)
 
 import Data.List.Ordered
 import Control.Concurrent.STM
+import Control.Monad.Writer
 import Control.Concurrent.STM.TVar
 import Data.Maybe
 import Data.Binary
@@ -102,5 +104,5 @@ instance Binary TrControlMessage where
                    1 -> TrAck <$> get
                    _ -> fail "invalid transport control message"
 
-keepL :: MonadIO m => LogStatus -> String -> m ()
+keepL :: (MonadWriter Log m , MonadIO m) => LogStatus -> String -> m ()
 keepL = keepLog TransportLog

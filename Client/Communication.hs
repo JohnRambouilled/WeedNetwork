@@ -1,10 +1,13 @@
-{-# LANGUAGE MultiParamTypeClasses,FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses,FunctionalDependencies, FlexibleContexts #-}
 module Client.Communication where
 
 import Control.Monad.State hiding (put, get)
 import qualified Control.Monad.State  as S (get)
+import Control.Monad.Reader
+import Control.Monad.Writer
 import Control.Concurrent
 import Data.Binary 
+import Data.Maybe
 import Data.List
 import qualified Data.Map as M
 
@@ -17,16 +20,17 @@ import Log
 
 
 type Communication = MapModule ComEntry ComID ComMessage () 
-type ComCB = Behaviour Communication ComMessage () 
-type ComT = StateT Communication
+type ComCB = Behaviour Communication ComMessage IO [()]
+--type ComT = StateT Communication
 
 data ComEntry = ComEntry {comCallback :: [ComCB]}
 
 instance MapModules ComEntry ComID ComMessage () where
-        packetKey cm = do keepLog CommunicationLog Normal $ "receivedComMess : " ++ show cm
-                          S.get >>= keepLog CommunicationLog Normal . show
-                          return . Just $ comID cm
-        entryBehaviour cE = map (\x -> (\_ -> x)) $ comCallback cE
+        packetKey = do cm <- ask
+                       keepLog CommunicationLog Normal $ "receivedComMess : " ++ show cm
+                       S.get >>= keepLog CommunicationLog Normal . show
+                       return . Just $ comID cm
+        entryBehaviour = comCallback
 
 
 
@@ -37,7 +41,7 @@ closeComIO :: MVar [ComID] -> MVar Communication -> ComID -> IO ()
 closeComIO fV cV cID = runStateMVar cV $ closeCom fV cID
                         
 
-closeCom :: MonadIO m => MVar [ComID] -> ComID -> ComT m ()
+closeCom :: (MonadState Communication m, MonadIO m) => MVar [ComID] -> ComID -> m ()
 closeCom fV cID =  do keepLog CommunicationLog Important $ "Closing communication : " ++ show cID
                       modify $ \s -> s{keyMap = M.delete cID $ keyMap s}
                       liftIO . modifyMVar_ fV $ pure .(++ [cID])
@@ -48,14 +52,15 @@ defaultComCallback :: Modules a p r => MVar a
                                    -> (ComMessage -> Maybe p)
                                    -> (ComID -> p -> r -> IO (Maybe ComCB))
                                    -> ComCB
-defaultComCallback mv iFun oFun p = case iFun p of
+defaultComCallback mv iFun oFun = do p <- ask
+                                     case iFun p of
                                         Nothing -> return []
                                         Just q -> do keepLog CommunicationLog Important $ "calling comCB"
-                                                     genCallback mv (pure . pure . pure $ q) (outFun q) p
-    where outFun q p r = do comCBM <- liftIO $ oFun (comID p) q r
-                            case comCBM of
-                              Nothing -> pure []
-                              Just cCB -> insertMapBehaviour (comID p) (ComEntry $ [cCB]) >> pure []
+                                                     genCallback mv (pure . pure $ q) (outFun q)
+    where outFun q rL = do p <- ask
+                           comCBL <- liftIO . (catMaybes <$>) $ mapM (oFun (comID p) q) rL
+                           insertMapBehaviour (comID p) (ComEntry $ comCBL)
+                           pure []
 
 
 
@@ -63,8 +68,8 @@ defaultComCallback mv iFun oFun p = case iFun p of
 
 
 genCommunicationCallback :: MVar Pipes -> MVar Communication -> Number -> RoadID -> DataCB
-genCommunicationCallback pV cV n0 rID = DataCB hFun clbk
-    where hFun :: HashFunction (Either ComMessage Packet)
+genCommunicationCallback pV cV n0 rID = DataCB (ask >>= hFun) (ask >>= clbk)
+    where hFun :: Packet -> HashFunction (Either ComMessage Packet)
           hFun (DataPacket kH _ (DataContent cnt)) = case decodeMaybe cnt of
                                         Nothing -> return Nothing
                                         Just (PipeData n b cm) -> if n == n0 then do keepLog CommunicationLog Normal $ "received pipeData on pipe : " ++ show kH 
@@ -83,8 +88,8 @@ genCommunicationCallback pV cV n0 rID = DataCB hFun clbk
                                                                                return $ Just (reqSourceHash kH req, 
                                                                                          Right p{introContent = IntroContent $ encode req{roadPosition = roadPosition req + 1}})
                                                                          else pure Nothing 
-          clbk :: CryptoCB (Either ComMessage Packet) Packet
-          clbk (Left cm) = do liftIO . forkIO $  (runModule cV cm :: IO [()]) >> pure ()
+          clbk :: Either ComMessage Packet -> CryptoCB (Either ComMessage Packet) [Packet]
+          clbk (Left cm) = do tell . snd =<< (liftIO $ (runModule cV cm :: IO ([()],Log)) )
                               return []
           clbk (Right pkt) = pure [pkt]
 

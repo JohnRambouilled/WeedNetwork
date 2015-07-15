@@ -1,7 +1,9 @@
-{-# LANGUAGE MultiParamTypeClasses,FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses,FunctionalDependencies, FlexibleContexts #-}
 module Client.Sources where
 
 import Control.Monad.State
+import Control.Monad.RWS.Lazy
+import Control.Monad.Reader
 import Control.Concurrent
 import Data.List
 import Data.Maybe
@@ -17,9 +19,8 @@ import Client.Communication
 import Log
 
 type Sources = MapModule SourceEntry SourceID Request SourceAnswer
-type SourceT = StateT Sources
 
-type SourceCB = MapBehaviour SourceEntry SourceID Request SourceAnswer
+type SourceCB = Behaviour Sources Request IO [SourceAnswer]
 data SourceAnswer = SourceAnswer { sourceAnsID :: SourceID,
                                    sourceAnswer :: Maybe (DataCB, MVar Pipes)} 
 
@@ -31,10 +32,11 @@ data SourceEntry =  SourceEntry {sourceID :: SourceID,
 instance Eq SourceEntry where sE == sE' = sourceID sE == sourceID sE'
 
 instance MapModules SourceEntry SourceID Request SourceAnswer where
-        packetKey (Request _ _ _ [] _ _ _ ) = return Nothing
-        packetKey req = return . Just  $ if 0 == roadPosition req then last $ road req
-                                                                 else head $ road req
-        entryBehaviour (SourceEntry sID pV _ cV) = [\_ r -> return [SourceAnswer sID $ Just (genCommunicationCallback pV cV (roadPosition r) $ roadToRoadID (road r), pV)]]
+        packetKey = do req <- ask
+                       if null $ road req then pure Nothing 
+                       else return . Just  $ if 0 == roadPosition req then last $ road req
+                                                                     else head $ road req
+        entryBehaviour (SourceEntry sID pV _ cV) = [ask >>= \r -> return [SourceAnswer sID $ Just (genCommunicationCallback pV cV (roadPosition r) $ roadToRoadID (road r), pV)]]
 
 sendToSource :: SourceEntry -> ComMessage -> IO Bool
 sendToSource sE cm = do (pL, pM) <- withMVar (sourcePipes sE) (pure . ((,) <$> pipesList <*> pipesMap))
@@ -54,10 +56,12 @@ removeSourceEntry sV sID d = modifyMVar_ sV $ \s -> do let (msE, kM) = M.updateL
                  breakPipes pM = do forM (pipesMap pM) $ ($d) . breakFun
                                     pure (Pipes M.empty [])
                  breakCom :: MVar Communication -> SourceEntry -> IO ()
-                 breakCom cV sE = do modifyMVar_ cV $ \s -> do liftIO $ execStateT (mapM (sendBrk sE)  $ M.assocs (keyMap s)) s
+                 breakCom cV sE = do modifyMVar_ cV $ \s -> do (mapM (sendBrk s sE)  $ M.assocs (keyMap s)) 
                                                                pure $ newMapModule []
-                 sendBrk sE (cID, ComEntry cCBL) = do sequence $ map ($ComExit cID (encode "source removed locally")) cCBL
-                                                      void . liftIO $ sendToSource sE $ ComExit cID (encode "source removed by peer")
+		 sendBrk :: Communication -> SourceEntry -> (ComID, ComEntry) -> IO ()
+                 sendBrk s sE (cID, ComEntry cCBL) = do --sequence $ map (local $ \_ -> ComExit cID (encode "source removed locally")) cCBL
+							runRWST (sequence cCBL) (ComExit cID $ encode "source removed locally") s 
+                                                        void . liftIO $ sendToSource sE $ ComExit cID (encode "source removed by peer")
                                                      
                                                        
 
@@ -65,12 +69,12 @@ removeSourceEntry sV sID d = modifyMVar_ sV $ \s -> do let (msE, kM) = M.updateL
 
 -- | Standard DestCallback for routing
 pipesRoutingCallback ::  PrivKey -> PubKey -> SendFunction -> MVar Sources -> RoutingCB
-pipesRoutingCallback uK pK send sV = genCallback sV inFun outFun
-    where inFun req = return [req]
-          outFun r (SourceAnswer sID sAnsM) = case sAnsM of
-                                                Nothing -> pure []
-                                                Just (dCB, pV) -> do (onBrk, pL) <- addNewPipe uK pK send pV r
-                                                                     return [RoutingAnswer (onBrk >> chkSource pV sID) (Just [dCB]) pL ]
+pipesRoutingCallback uK pK send sV = genCallback sV inFun ((head <$>) . mapM outFun . concat)
+    where inFun = pure <$> ask
+          outFun (SourceAnswer sID sAnsM) = case sAnsM of
+                                                Nothing -> pure $ RoutingAnswer (pure ()) Nothing []
+                                                Just (dCB, pV) -> do (onBrk, pL) <- addNewPipe uK pK send pV =<< ask
+                                                                     return $ RoutingAnswer (onBrk >> chkSource pV sID) (Just [dCB]) pL 
           chkSource pV sID = do b <- withMVar pV $ pure . null . pipesList
                                 if b then removeSourceEntry sV sID (encode ()) 
                                      else pure ()

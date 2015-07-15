@@ -2,6 +2,7 @@
 module Main where
 import Data.Binary
 import Data.ByteString.Lazy(empty, length)
+import Control.Monad.RWS.Lazy
 
 import Client.Crypto
 import Client.Packet
@@ -31,12 +32,16 @@ tcp_socketName = "testounet_tcp.socket"
 --main = runWeeds leechMain
 --main = runWeeds seedMain
 
-main = do testCL <- testBinaire leechMain seedMain -- testChaine [leechMain, relayMain, seedMain]
+main = do testCL <- testBinaire (leechMain, leechLog) (seedMain, seedLog) -- testChaine [leechMain, relayMain, seedMain]
           print "running test"
           let dumpClients = concat <$> (forM testCL $ (fst <$>) . runStateT dumpClient . client)
           repeatEach (ctimer . client $ head testCL) (putStrLn =<< dumpClients) 10 >> pure ()
           mVL <- forM testCL $ runChildren . run
           forM_ mVL readMVar
+   where leechLog ll = do putStrLn "# LEECH : " 
+			  forM_ ll $ \x -> putStrLn (show x ++ "\n          ")
+         seedLog ll  = do putStrLn "# SEED  : " 
+			  forM_ ll $ \x -> putStrLn (show x ++ "\n          ")
    
 
 --main = fullGraphMain 5
@@ -65,7 +70,12 @@ runWeeds c = do gV <- newMVar =<< drgNew--getSystemDRG
                                         case b of
                                                 Nothing -> keepLog ClientLog Normal "received unreadable packet"
                                                 Just pkt -> do keepLog ClientLog Normal "received packet!"
-                                                               fst <$> runStateT (onPacket pkt) client >>= mapM_ (writePacket sock)
+                                                               --fst <$> runStateT (onPacket pkt) client >>= mapM_ (writePacket sock)
+                                                               (ret,_,logs) <- runRWST onPacket pkt client
+							       forM logs print
+							       mapM_ (writePacket sock) (ret :: [Packet])
+
+                                                               
 
 
 

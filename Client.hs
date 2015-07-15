@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, ExistentialQuantification #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, FlexibleInstances, ExistentialQuantification #-}
 module Client where
 
 import Control.Monad.State
@@ -10,6 +10,9 @@ import Data.List
 import Data.Maybe
 import Data.Binary hiding (put, get)
 import Crypto.Random
+import Control.Monad.Reader
+import Control.Monad.Writer
+import Control.Monad.RWS.Lazy
 
 import Client.Class
 import Client.Communication
@@ -64,7 +67,7 @@ genClient gen uID privK pubK send = do  timerV <- newMVar $ Timer M.empty [1..]
                                         sourceV <- newMapMVar [pipesNewSourceCallback timerV seedComTimeOut protoV] 
                                         routV <- newMVar $ Routing routingRelayCallback $ pipesRoutingCallback privK pubK send sourceV
                                         resV <- newEmptyMVar 
-                                        putMVar resV $ newMapModule [newDefaultBehaviour resV timerV  uID]
+                                        putMVar resV $ newMapModule [ressourceDefaultBehaviour resV timerV  uID]
                                         neighV <- newMVar $ Neighborhood [registerRessourceModule uID privK pubK resV]
                                         cryptoV <- newEmptyMVar
                                         putMVar cryptoV $ newMapModule [neighCryptoCallback cryptoV timerV neighV, routingCryptoCallback cryptoV timerV pubK privK uID routV]
@@ -84,8 +87,8 @@ cleanSourceEntryList :: [SourceEntry] -> IO [SourceEntry]
 cleanSourceEntryList = filterM $ (flip withMVar $ pure . M.null . pipesMap) . sourcePipes
 
 connectToRessource :: Client -> TVar [SourceID] -> RoadChoice -> RessourceID -> IO ()
-connectToRessource c sV rC rID = insertRessourceEntry (cressource c) rID $ resCallback c $ csources c
-    where resCallback :: Client -> MVar Sources -> RessourceCB
+connectToRessource c sV rC rID = insertRessourceEntry (cressource c) rID $ resCallback c (csources c) =<< ask
+    where resCallback :: Client -> MVar Sources -> RessourcePacket -> RessourceCB
           resCallback _ _ (Research _ _ _ _) = pure [] --TODO : se mettre a relayer les réponses
           resCallback c srcV a@(Answer cert _ r sID d) = liftIO $ let uID = clientSourceID $ cidentity c
                                                                       r' = uID : r in
@@ -110,25 +113,27 @@ extractRoads sourcesV sID = do pipes <- getSourceEntry sourcesV sID >>= maybe (p
 
 
 openNewPipeIO :: Client -> DHPubKey -> Road -> RawData -> IO ()
-openNewPipeIO c k r d = runStateT (openNewPipe k r d) c >> pure ()
+openNewPipeIO c k r d = runRWST (openNewPipe k r d) () c >> pure ()
 
-openNewPipe :: MonadIO m => DHPubKey -> Road -> RawData -> ClientT m Bool 
+openNewPipe :: (MonadState Client m, MonadWriter Log m, MonadIO m) => DHPubKey -> Road -> RawData -> m Bool 
 openNewPipe dK r d = do (uK,uID, pK) <- (,,) <$> gets (privateKey . cidentity) <*> gets (clientSourceID . cidentity) <*> gets (publicKey . cidentity)
                         gV <- gets cRandomGen
                         (cryptoM, timerM, send) <- (,,) <$> gets ccrypto <*> gets ctimer <*> gets csender
                         liftIO . keepLog ClientLog Normal $ "generating new request"
                         (pipePrK, pipePK, req) <- liftIO $ genNewPipeRequest gV uK pK dK r d
                         let sendReq = sendRequest send cryptoM req pipePrK pipePK
-                        liftIO $ do _ <- repeatEach timerM (void sendReq) pipeRefreshTO 
-                                    sendReq
+                            sendReq' = runWriterT $ sendRequest send cryptoM req pipePrK pipePK
+                        liftIO $ repeatEach timerM (void sendReq') pipeRefreshTO 
+                        sendReq
 
 
 -- | Process a request (pass it to the cryptoModule), then send it on the network
-sendRequest :: SendFunction -> MVar Crypto -> Packet -> PrivKey -> PubKey -> IO Bool
+sendRequest :: (MonadWriter Log m, MonadIO m) => SendFunction -> MVar Crypto -> Packet -> PrivKey -> PubKey -> m Bool
 sendRequest send crypto p prK pK = do keepLog ClientLog Normal "Passing request to crypto"
-                                      reqL <- runModule crypto p 
+                                      (reqL, logs) <- liftIO $ runModule crypto p 
+                                      tell logs
                                       keepLog ClientLog Normal "Sending request"
-                                      head <$> mapM signAndSend reqL
+                                      head <$> (liftIO $ mapM signAndSend reqL)
    where signAndSend p = case decodeMaybe (runIntroContent $ introContent p) :: Maybe Request of
                                         Nothing -> pure False
                                         Just req -> send $ p{sig = sign prK pK $ reqSourceHash (keyID p) req}
@@ -139,9 +144,11 @@ genNeighHello i d = Introduce kID (publicKey i) (sign (privateKey i) (publicKey 
        where nHello = encode $ NeighHello d 
              kID = keyHash $ clientSourceID i
 
-instance Modules Client Packet Packet where
-        onPacket pkt = do cryptoM <- gets ccrypto
-                          liftIO $ runModule cryptoM pkt 
+instance Modules Client Packet [Packet] where
+        onPacket = do cryptoM <- gets ccrypto
+                      (pL, logs) <- ask >>= (liftIO . runModule cryptoM)
+                      tell logs
+                      pure pL
 
 
 dumpClient :: MonadIO m => ClientT m String

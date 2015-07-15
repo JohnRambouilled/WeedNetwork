@@ -1,8 +1,10 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Timer where
 
 
 import qualified Data.Map as M
 import Control.Monad.State hiding (put, get)
+import Control.Monad.Writer hiding (put, get)
 import Control.Concurrent.MVar
 import Control.Concurrent
 import Data.Tuple
@@ -48,12 +50,12 @@ registerTimer' ttl unreg = do (tM,tC) <- (,) <$> gets timerMap <*> (head <$> get
 
 registerTimerM :: MVar Timer
                -> DiffTime --The minimum time before calling the function
-               -> IO Bool -- the function called each time the entries expires. Returns True if it is needed to remove it.
+               -> IO (Bool) -- the function called each time the entries expires. Returns True if it is needed to remove it.
                -> IO (IO (),IO ()) -- The tuple (update function, free function)
 registerTimerM timerV ttl unreg = if ttl >= 0 then do (index,entry) <- modifyMVar timerV $ (swap <$>) . runStateT (registerTimer' ttl unreg)
                                                       pure (refreshFun index, freeFun index)
                                              else pure $ (pure (), pure ())
-        where refreshFun index = void $ runStateMVar timerV (refreshTimerEntry index)
+        where refreshFun index =  runStateMVar timerV (refreshTimerEntry index)
               freeFun index = void $ runStateMVar timerV (freeEntry index)
 
                                               
@@ -65,15 +67,15 @@ unregisterEntry index entry = do removePred <- liftIO (timerUnregister entry)
                                                else refreshTimerEntry index
 -}
 
-unregisterEntry :: MVar Timer -> Int -> TimerEntry -> IO ()
+unregisterEntry :: (MonadWriter Log m, MonadIO m) => MVar Timer -> Int -> TimerEntry -> m ()
 unregisterEntry timerV index entry = do 
                                         keepLog TimerLog Normal $ "[timer] entry " ++ show index ++ " has timed out. Calling the callback..."
-                                        removePred <- timerUnregister entry
-                                        if removePred then runStateMVar timerV (freeEntry index)
+                                        removePred <- liftIO $ timerUnregister entry
+                                        liftIO $ if removePred then runStateMVar timerV (freeEntry index)
                                                       else runStateMVar timerV (refreshTimerEntry index)
 
-freeEntry :: (MonadIO m) => Int -> TimerT m ()
-freeEntry index = liftIO (keepLog TimerLog Normal ("[timer] flushing entrie : " ++ show index)) >>
+freeEntry :: (MonadIO m, MonadWriter Log m) => Int -> TimerT m ()
+freeEntry index = (keepLog TimerLog Normal ("[timer] flushing entrie : " ++ show index)) >>
                   freeEntries >> freeIndex
         where freeIndex = modify $ \s -> s{timerCount = index:timerCount s}
               freeEntries = modify $ \s->s{timerMap = M.delete index (timerMap s)}

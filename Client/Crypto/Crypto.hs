@@ -18,18 +18,22 @@ import Client.Crypto.Module
 import Client.Class
 import Client.Packet
 import Data.Binary
+import Control.Monad.Reader
+import Control.Monad.Writer
 import Log
 
 
 type RandomGen = ChaChaDRG
 
+
 hashF :: B.ByteString -> Digest SHA1
 hashF = hashlazy
 
 -- | Apply the hashFunction on the Packet. If a tupple (hash, value) is returned, check the signature for the given key and the hash, and return value if correct.
-checkHashFunction :: PubKey -> HashFunction p -> Packet -> CryptoT IO (Maybe p)
-checkHashFunction k hF p = do
-        tM <-  hF p
+checkHashFunction :: PubKey -> HashFunction p -> CryptoCB Packet (Maybe p)
+checkHashFunction k hF = do
+        p <- ask
+        tM <-  hF 
         case tM of
             Nothing -> (keepLog CryptoLog Normal "hashFunction returned nothing") >> pure Nothing
             Just (h, q) -> if checkSignature k (sig p) h 
@@ -44,7 +48,7 @@ pubKeyToHash :: (Show a, Binary a) => a -> Hash
 pubKeyToHash a = computeHash . encode $ a
    where computeHash x = B.take keyHashByteSize . B.reverse . B.fromStrict . convert $ hashF x
 -- | Look for the Key in the map, and check the signature. Return False if the keyHash is unkown, or if the signature is not valid.
-cryptoCheckSig :: (MonadIO m) => KeyHash -> Sig -> Hash -> CryptoT m Bool
+cryptoCheckSig :: (MonadIO m, MonadWriter Log m, MonadState Crypto m) => KeyHash -> Sig -> Hash -> m Bool
 cryptoCheckSig kH s h = do keepLog CryptoLog Normal $ "[cryptoCheckSig] :: checking signature for keyID : " ++ show kH
                            maybe (pure False) (\k -> pure $ checkSignature (pubKey k) s h) =<< (mapGetEntry kH) --return True
 
@@ -83,9 +87,9 @@ generateKeyPair g = --
                                   pure (PubKey $ S.toPublic sK, PrivKey sK))
         
 
-genKeyPairMVar :: DRG gen => MVar gen -> IO (PubKey, PrivKey)
+genKeyPairMVar :: (MonadWriter Log m, MonadIO m, DRG gen) => MVar gen -> m (PubKey, PrivKey)
 genKeyPairMVar gV = do keepLog CryptoLog Important "Generating Key pair"
-                       keysF <- modifyMVar gV (pure . generateKeyPair)
+                       keysF <- liftIO $ modifyMVar gV (pure . generateKeyPair)
                        keepLog CryptoLog Normal "Done"
                        case keysF of
                               CryptoFailed e -> do keepLog CryptoLog Error $ "error generating key-pair : " ++ show e
