@@ -3,6 +3,7 @@ module Client.Pipes where
 
 import Control.Monad.State hiding (put, get)
 import qualified Control.Monad.State  as S (get)
+import Control.Monad.Writer
 import Control.Concurrent
 import Data.Binary 
 import Data.List
@@ -53,7 +54,7 @@ genNewPipeRequest gV uK pK destK r d = do dhP <- generateDHPrivKey gV
                                           pure (priv, pub, Introduce kH pub (sign priv pub $ reqSourceHash kH req) $ IntroContent $ encode req)
 
 
-addNewPipe :: MonadIO m => PrivKey -> PubKey -> SendFunction -> MVar Pipes -> Request -> m (IO (), [Request] )
+addNewPipe :: LogIO m => PrivKey -> PubKey -> SendFunction -> MVar Pipes -> Request -> m (IOLog (), [Request] )
 addNewPipe uK pK send pV r = if roadPosition r == 0 then case decodeMaybe (encryptedPrivKey r) of
                                                         Nothing -> pure (pure (), [])
                                                         Just (kH, (pP, (prK, pK))) -> let r' = r{encryptedPrivKey = encode (pP :: DHPubKey)} in
@@ -65,11 +66,11 @@ addNewPipe uK pK send pV r = if roadPosition r == 0 then case decodeMaybe (encry
                                                                       let (prK, pK) = fromJust $ (exctractKey pP =<< privKeyToDHPrivKey uK)
                                                                           kH = KeyHash $ pubKeyToHash pK
                                                                       insertPipe (kH, prK, pK) False r >>= \onTO -> pure (onTO, [])
-    where insertPipe :: MonadIO m => (KeyHash, PrivKey, PubKey) -> Bool -> Request -> m (IO ())
-          insertPipe k b r = liftIO $ modifyMVar pV $ insertPipeEntry k b r
-          insertPipeEntry (kH, prK, pK) b r pM = do keepLog SourcesLog Important $ "Inserting pipe entry for pipe : " ++ (show . roadToRoadID $ road r) 
+    where insertPipe :: LogIO m => (KeyHash, PrivKey, PubKey) -> Bool -> Request -> m (IOLog ())
+          insertPipe k b r = do keepLog SourcesLog Important $ "Inserting pipe entry for pipe : " ++ (show . roadToRoadID $ road r) 
                                                                                    ++ "on Road : " ++ (show $ road r)
-                                                    let n = if b then (roadPosition r + 1) else (roadPosition r -1)
+                                liftIO $ modifyMVar pV $ insertPipeEntry k b r
+          insertPipeEntry (kH, prK, pK) b r pM = do let n = if b then (roadPosition r + 1) else (roadPosition r -1)
                                                     specs <- genRoadSpecs (requestTime r) (road r)
                                                     pure (pM{pipesMap = M.insert rID (PipesEntry specs
                                                                            (genWriteFunction b kH prK pK n)

@@ -20,14 +20,14 @@ import Timer
 import Log
 import Control.Monad.Reader
 
-newtype Callback = Callback {runCallback :: RawData -> IO ()}
-newtype BrkClbck = BrkClbck {runBrkClbck :: RawData -> IO ()}
-newtype WriteFun = WriteFun {runWriteFun :: RawData -> IO Bool}
-newtype BreakFun = BreakFun {runBreakFun :: RawData -> IO Bool}
+newtype Callback = Callback {runCallback :: RawData -> IOLog ()}
+newtype BrkClbck = BrkClbck {runBrkClbck :: RawData -> IOLog ()}
+newtype WriteFun = WriteFun {runWriteFun :: RawData -> IOLog Bool}
+newtype BreakFun = BreakFun {runBreakFun :: RawData -> IOLog Bool}
 
 
 type Protocol = MapModule ProtoEntry ProtoID ProtoRequest ProtoCallback
-newtype ProtoCallback = ProtoCallback  {runProtoCallback :: RawData -> (WriteFun, BreakFun) -> IO (Maybe (Callback, BrkClbck))}
+newtype ProtoCallback = ProtoCallback  {runProtoCallback :: RawData -> (WriteFun, BreakFun) -> IOLog (Maybe (Callback, BrkClbck))}
 
 data ProtoEntry = ProtoEntry {protoCallback :: ProtoCallback}
 
@@ -42,54 +42,56 @@ instance MapModules ProtoEntry ProtoID ProtoRequest ProtoCallback where
 leechTimeOut = 150 :: DiffTime
 leechRefreshTime = 140 :: DiffTime
 
-openCommunication :: ((WriteFun, BreakFun) -> IO (Callback, BrkClbck))
+openCommunication :: ((WriteFun, BreakFun) -> IOLog (Callback, BrkClbck))
                     -> MVar Timer -> DiffTime -> DiffTime
                     -> SourceEntry -> ProtoRequest
-                    -> IO (WriteFun, BreakFun)
+                    -> IOLog (WriteFun, BreakFun)
 openCommunication clbkGen tV timeOut refreshTime sE  = openCom clbkGen genRefrKill sE
   where genRefrKill cID = do (ref, kill) <- registerTimerM tV timeOut (closeComIO fV cV cID >> pure True)
-                             killRep <- repeatEach tV (void $ sendToSource sE $ ComInit cID $ encode "PING") refreshTime
+                             killRep <- repeatEach tV (void $ liftIO $ sendToSource sE $ ComInit cID $ encode "PING") refreshTime
                              pure (ref, kill >> killRep)
         (fV, cV) = ((,) <$> sourceFreeComID <*> sourceCommunication) sE
 
 
-openCommunicationTO :: ((WriteFun, BreakFun) -> IO (Callback, BrkClbck))
+openCommunicationTO :: ((WriteFun, BreakFun) -> IOLog (Callback, BrkClbck))
                     -> MVar Timer -> DiffTime
                     -> SourceEntry -> ProtoRequest
-                    -> IO (WriteFun, BreakFun)
+                    -> IOLog (WriteFun, BreakFun)
 openCommunicationTO clbkGen tV timeOut sE = openCom clbkGen genRefrKill sE
   where genRefrKill cID = registerTimerM tV timeOut (closeComIO fV cV cID >> pure True)
         (fV, cV) = ((,) <$> sourceFreeComID <*> sourceCommunication) sE
 
-openCom :: ((WriteFun, BreakFun) -> IO (Callback, BrkClbck))
-                    -> (ComID -> IO (IO (), IO ()))
+openCom :: ((WriteFun, BreakFun) -> IOLog (Callback, BrkClbck))
+                    -> (ComID -> IO (IOLog (), IOLog ()))
                     -> SourceEntry -> ProtoRequest
-                    -> IO (WriteFun, BreakFun)
+                    -> IOLog (WriteFun, BreakFun)
 openCom clbkGen toKill sE@(SourceEntry sID _ fV cV) pR  = do
         keepLog ProtocolLog Important $ "OpenCommunication called for source : " ++ show sID
-        cID <- modifyMVar fV $ pure . (\s -> (tail s, head s))
-        (refresh, kill) <- toKill cID
+        cID <- liftIO $ modifyMVar fV $ pure . (\s -> (tail s, head s))
+        (refresh, kill) <- liftIO $ toKill cID
         let wbF = genWriteBreakFun kill sE cID
             comI = ComInit cID $ encode pR
         keepLog ProtocolLog Normal $ "sending ComINIT : " ++ show comI
-        keepLog ProtocolLog Normal . ("Comlist : " ++) =<< withMVar cV (pure . show)
-        ret <- sendToSource sE comI
+        keepLog ProtocolLog Normal . ("Comlist : " ++) =<< (liftIO $ withMVar cV (pure . show))
+        ret <- liftIO $ sendToSource sE comI
         if ret then do keepLog ProtocolLog Normal $ "generating Callbacks"
-                       clbks <- liftIO $ clbkGen wbF
-                       insertComCallback cV cID $ ask >>= \comMsg -> stdCallback refresh kill clbks comMsg
+                       clbks <- clbkGen wbF
+                       insertComCallback cV cID $ ask >>= \comMsg -> stdCallback fV refresh kill clbks comMsg
                else do keepLog ProtocolLog Error "fail to send comINIT"
                        kill
         pure wbF
-      where stdCallback :: IO () -> IO () -> (Callback, BrkClbck) -> ComMessage -> ComCB
-            stdCallback _ _ (clbk,_) (ComData _ d) = do void . liftIO . forkIO $ runCallback  clbk  $ d
-                                                        pure []
-            stdCallback _ kill (_, brk) (ComExit cID d) = do closeCom fV cID
-                                                             liftIO $ kill
-                                                             void . liftIO . forkIO $ runBrkClbck brk d
-                                                             pure []
-            stdCallback refresh _ (_,_) (ComInit cID d) = do keepLog ProtocolLog Error $ "ComInit on used comID (Leech) refreshing entry " ++ show cID
-                                                             liftIO $ refresh
-                                                             pure []
+
+
+stdCallback :: MVar [ComID] -> IOLog () -> IOLog () -> (Callback, BrkClbck) -> ComMessage -> ComCB
+stdCallback _ _ _ (clbk,_) (ComData _ d) = do liftLog $ runCallback  clbk  $ d
+                                              pure []
+stdCallback fV _ kill (_, brk) (ComExit cID d) = do closeCom fV cID
+                                                    liftLog $ kill
+                                                    liftLog $ runBrkClbck brk d
+                                                    pure []
+stdCallback _ refresh _ (_,_) (ComInit cID d) = do keepLog ProtocolLog Error $ "ComInit on used comID (Leech) refreshing entry " ++ show cID
+                                                   liftLog $ refresh
+                                                   pure []
 
 
 
@@ -98,16 +100,16 @@ openCom clbkGen toKill sE@(SourceEntry sID _ fV cV) pR  = do
 genProtoCallback :: MVar Timer -> DiffTime -> MVar Protocol -> SourceEntry -> ComCB
 genProtoCallback tV timeOut pv sE@(SourceEntry  _ _ fV cV) = defaultComCallback pv inFun outFun
     where inFun = decodeMaybe . comContent :: ComMessage -> Maybe ProtoRequest
-          outFun :: ComID -> ProtoRequest -> [ProtoCallback] -> IO (Maybe ComCB)
-          outFun cID pR r = do (refresh, kill) <- registerTimerM tV timeOut (closeComIO fV cV cID >> pure True)
+          outFun :: ComID -> ProtoRequest -> [ProtoCallback] -> IOLog (Maybe ComCB)
+          outFun cID pR r = do (refresh, kill) <- liftIO $ registerTimerM tV timeOut (closeComIO fV cV cID >> pure True)
                                let (wF,bF) = genWriteBreakFun kill sE cID
-                               cbkM <- liftIO $ (runProtoCallback $ head r) (protoContent pR) (wF,bF) --Warning head
+                               cbkM <- liftLog $ (runProtoCallback $ head r) (protoContent pR) (wF,bF) --Warning head
                                case cbkM of
                                 Nothing -> do runBreakFun bF $ encode "unable to open connection"
                                               return Nothing
                                 Just (clbk, brk) -> do liftIO $ modifyMVar_ fV $ pure . delete cID
-                                                       return . Just $ ask >>= comClbck refresh kill clbk brk
-          comClbck refresh kill clbk brk cm = do
+                                                       return . Just $ ask >>= stdCallback fV (liftLog refresh) (liftLog kill) (clbk, brk)
+{-          comClbck refresh kill clbk brk cm = do
                        case cm of ComData _ d -> liftIO $ do keepLog ProtocolLog Normal $ "running callback on message : " ++ show cm
                                                              void . forkIO $ runCallback clbk $ d
                                   ComExit cID d -> do closeCom fV cID
@@ -119,6 +121,7 @@ genProtoCallback tV timeOut pv sE@(SourceEntry  _ _ fV cV) = defaultComCallback 
                                                           liftIO $ sendToSource sE c
                                                           liftIO $ refresh
                        pure []
+-}
 
 -- | Standard defaultCallback for pipes : creates a new communication module and return the corresponding callback
 pipesNewSourceCallback :: MVar Timer -> DiffTime -> MVar Protocol -> SourceCB
@@ -138,14 +141,14 @@ pipesNewSourceCallback tV timeOut protoV = do
 
 
 
-genWriteBreakFun :: IO () -> SourceEntry -> ComID -> (WriteFun, BreakFun)
+genWriteBreakFun :: IOLog () -> SourceEntry -> ComID -> (WriteFun, BreakFun)
 genWriteBreakFun kill sE@(SourceEntry sID _ fV cV) cID  = (WriteFun wrFun, BreakFun brFun)
     where wrFun d = do keepLog CommunicationLog Normal $ "sending ComMessage to source : " ++ show sID ++ " on Com : " ++ show cID
-                       sendToSource sE $ ComData cID d
+                       liftIO $ sendToSource sE $ ComData cID d
           brFun d = do closeComIO fV cV cID
                        kill
                        keepLog CommunicationLog Important $ "[Communication] Sending ComExit  to source : " ++ show sID ++ " on Com : " ++ show cID
-                       sendToSource sE $ ComExit cID d
+                       liftIO $ sendToSource sE $ ComExit cID d
 
 
 

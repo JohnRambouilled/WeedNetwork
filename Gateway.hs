@@ -10,6 +10,7 @@ import Client
 import Transport.MetaModule
 
 import Control.Monad
+import Control.Monad.Writer
 import Control.Monad.State hiding (put,get)
 import Data.Binary
 import Data.Binary.Get
@@ -30,7 +31,7 @@ inetUDPProtoID = ProtoID $ encode "www:UDP"
 localAddr :: IO Word32
 localAddr = inet_addr "127.0.0.1"
 
-
+keepL = keepLog GatewayLog
 
 data InetPacket = InetInit SockConf RawData
                 | InetData RawData
@@ -54,63 +55,69 @@ inetUDPProtoCallback = ProtoCallback $ \rd (wr,br) ->  maybe (pure Nothing) (onI
 --onInetInitPacket = ProtoCallback $ \rd (wr,br) -> do 
 --                                                    maybe (pure Nothing) (onInetInitPacket' wr br) (decodeMaybe rd)
 
-onInetInitPacket :: SocketType -> WriteFun -> BreakFun -> InetPacket -> IO (Maybe (Callback, BrkClbck))
+onInetInitPacket :: SocketType -> WriteFun -> BreakFun -> InetPacket -> IOLog (Maybe (Callback, BrkClbck))
 onInetInitPacket sctype' wr br (InetInit (InternetSockConf sctype scaddr scdport) raw) | sctype == sctype' = buildGatewayCallback 
                                                                                         | otherwise = pure Nothing
-    where buildGatewayCallback = do lcaddr <- localAddr
-                                    ("[GATEWAY] connecting to " ++) <$> inet_ntoa scaddr >>= keepLog GatewayLog Normal
-                                     >>runDuplexerThread wr br sctype (SockAddrInet (PortNum $ swapEndian scdport) scaddr) raw
+    where buildGatewayCallback = do lcaddr <- liftIO localAddr
+                                    ("[GATEWAY] connecting to " ++) <$> liftIO (inet_ntoa scaddr) >>= keepLog GatewayLog Normal
+                                    runDuplexerThread wr br sctype (SockAddrInet (PortNum $ swapEndian scdport) scaddr) raw
                                           
 onInetInitPacket _ _ _ _ = return Nothing
 
 {-| Routes from the internet socket to the comID |-}
-runDuplexerThread :: WriteFun -> BreakFun -> SocketType -> SockAddr -> RawData -> IO (Maybe (Callback, BrkClbck))
-runDuplexerThread wr br socktype sockaddr raw = handle evalException (startDuplexer wr br socktype sockaddr raw >>= uncurry genRet)
-    where genRet s pid = pure $ Just (Callback $ gatewayCallback pid br s, BrkClbck $ pure $ killThread pid)
-          evalException :: IOException -> IO (Maybe a)
-          evalException err = keepLog GatewayLog Error ("[GATEWAY] duplexerThread couldn't be started : " ++ show err) >> return Nothing
+runDuplexerThread :: WriteFun -> BreakFun -> SocketType -> SockAddr -> RawData -> IOLog (Maybe (Callback, BrkClbck))
+runDuplexerThread wr br socktype sockaddr raw = handle' evalException (startDuplexer wr br socktype sockaddr raw >>= uncurry genRet)
+    where genRet s pid = pure $ Just (Callback $ gatewayCallback pid br s, BrkClbck $ pure $ liftIO $ killThread pid)
+          handle' f a = do (r,w) <- liftIO $ handle (runWriterT . f) (runWriterT a)
+                           tell w >> pure r
+          evalException :: IOException -> IOLog (Maybe a)
+          evalException err = keepL Error ("[GATEWAY] duplexerThread couldn't be started : " ++ show err) >> return Nothing
 
 
-startDuplexer :: WriteFun -> BreakFun -> SocketType -> SockAddr -> RawData -> IO (Socket,ThreadId)
+startDuplexer :: WriteFun -> BreakFun -> SocketType -> SockAddr -> RawData -> IOLog (Socket,ThreadId)
 startDuplexer wr br socktype sockaddr raw = do keepLog GatewayLog Normal "[GATEWAY] Creating socket"
-                                               s <- socket AF_INET socktype defaultProtocol
+                                               s <- liftIO $ socket AF_INET socktype defaultProtocol
                                                keepLog GatewayLog Normal "[GATEWAY] Connecting"
-                                               connect s sockaddr
+                                               liftIO $ connect s sockaddr
                                                keepLog GatewayLog Normal $ "[GATEWAY] Sending payload (" ++ show (Data.ByteString.Lazy.length raw) ++ " bytes)"
                                                when (not $ Data.ByteString.Lazy.null raw) $
-                                                       void $ send s $ toStrict raw
+                                                       void . liftIO $ send s $ toStrict raw
                                                keepLog GatewayLog Normal "[GATEWAY] Launching Duplexer"
-                                               pid <- forkFinally (runDuplexer True wr br s) (pure $ close s)
+                                               pid <- liftIO $ forkFinally (runDuplexer True wr br s) (pure $ close s)
                                                keepLog GatewayLog Normal "[GATEWAY] Returning Callbacks"
                                                return (s,pid)
 
-
 runDuplexer :: Bool -> WriteFun -> BreakFun -> Socket -> IO ()
-runDuplexer ignoreInit wr br s = do raw <- fromStrict <$> Network.Socket.ByteString.recv s 4096
-                                    keepLog GatewayLog Normal ("[UNIX] New data from a socket (" ++ show (Data.ByteString.Lazy.length raw) ++ ")")
-                                    if Data.ByteString.Lazy.null raw then void $ runBreakFun br raw
-                                                                     else do b <- case decodeMaybe raw of
-                                                                                Just (InetInit _ _) -> if ignoreInit == False then runWriteFun wr raw
-                                                                                                                            else runWriteFun wr (encode $ InetData raw)
-                                                                                Nothing             -> runWriteFun wr (encode $ InetData raw)
-                                                                             if b then runDuplexer ignoreInit wr br s else return ()
+runDuplexer ignoreInit wr br s =  do raw <- fromStrict <$> Network.Socket.ByteString.recv s 4096
+                                     (c,l) <- runWriterT $ runDuplexer' raw
+                                     tell l
+                                     if c then runDuplexer ignoreInit wr br s else return ()
+  where runDuplexer' :: RawData -> IOLog Bool
+        runDuplexer' raw = do keepLog GatewayLog Normal ("[UNIX] New data from a socket (" ++ show (Data.ByteString.Lazy.length raw) ++ ")")
+                              if Data.ByteString.Lazy.null raw then runBreakFun br raw
+                                                               else case decodeMaybe raw of
+                                                                    Just (InetInit _ _) -> if ignoreInit == False then runWriteFun wr raw
+                                                                                                                else runWriteFun wr (encode $ InetData raw)
+                                                                    Nothing             -> runWriteFun wr (encode $ InetData raw)
+                                                                                
 
 
 
 
 {-| Routes from the comID to the internet socket |-}
-gatewayCallback :: ThreadId ->  BreakFun -> Socket -> RawData -> IO ()
+gatewayCallback :: ThreadId ->  BreakFun -> Socket -> RawData -> IOLog ()
 gatewayCallback pID br s pkt = do keepLog GatewayLog Normal ("[WEED] New data from a comID :"{- ++ BC.unpack pkt-}) 
-                                  --maybe (print "failed to decode") (gatewayCallback' pID br s) (decodeMaybe pkt)
                                   case decodeOrFail pkt of
-                                            Left (_, _ ,e) -> print e
+                                            Left (_, _ ,e) -> keepL Error $ "fail to decode InetPacket : " ++ e
                                             Right (_, _, r) -> gatewayCallback' pID br s r 
-gatewayCallback' :: ThreadId -> BreakFun -> Socket -> InetPacket -> IO ()
+gatewayCallback' :: ThreadId -> BreakFun -> Socket -> InetPacket -> IOLog ()
 gatewayCallback' pID br s (InetData raw) = do keepLog GatewayLog Normal "[INETDATA]"
-                                              r <- send s $ toStrict raw
+                                              r <- liftIO $ send s $ toStrict raw
                                               keepLog GatewayLog Normal $ "[WEED] Writing " ++ show r ++ " bytes into the socket."
 gatewayCallback' pID br s (InetClose raw) = do keepLog GatewayLog Normal "[INETCLOSE]"
-                                               void $ killThread pID >> keepLog GatewayLog Normal ("[GATEWAY] InetClose received. Closing comID") >> runBreakFun br raw
+                                               liftIO $ killThread pID 
+                                               keepLog GatewayLog Normal ("[GATEWAY] InetClose received. Closing comID") 
+                                               --void $ runBreakFun br raw
 gatewayCallback' _ _ _ (InetInit _ _) = pure ()
 
 

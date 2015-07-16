@@ -1,9 +1,10 @@
-{-# LANGUAGE MultiParamTypeClasses,FunctionalDependencies, GADTs, FlexibleContexts, FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses,FunctionalDependencies, GADTs, FlexibleContexts, FlexibleInstances, UndecidableInstances #-}
 
 module Client.Class where
 
 import Control.Monad.State
 import Control.Monad.RWS.Lazy
+import Control.Monad.Writer
 import Control.Concurrent
 import Data.Maybe
 import Data.Bifunctor
@@ -13,6 +14,8 @@ import qualified Data.Map as M
 
 import Log
 
+class (MonadState b a, LogIO a) => SW b a 
+instance (MonadState b a, LogIO a) => SW b a
 
 type Behaviour a p m r = RWST p Log a m r --p -> StateT a IO [r]
 class Modules a p r where onPacket :: Behaviour a p IO r
@@ -67,7 +70,16 @@ joinMapBehaviour l = Prelude.concat <$> sequence l
 runRWSTMVar :: MVar a -> p -> RWST p w a IO b -> IO (b, w)
 runRWSTMVar aV p aRwst = modifyMVar aV  $ (mkTuple <$>) . (runRWST aRwst $ p)
     where mkTuple (b, a, w) = (a, (b,w))
-          
+ 
+runSWMVar :: LogIO m => MVar a -> RWST () Log a IO b -> m b
+runSWMVar aV f = do (b,l) <- liftIO $ runRWSTMVar aV () f
+                    tell l >> pure b
+
+modifySWMVar :: LogIO m => MVar a -> (a -> IOLog (a,b)) -> m b
+modifySWMVar aV f = do (b,l) <- liftIO . modifyMVar aV $ (mkTuple <$>) . runWriterT . f
+                       tell l >> pure b
+    where mkTuple ((a,b),l) = (a,(b,l))
+         
 runStateMVar :: MVar a -> StateT a IO b -> IO b
 runStateMVar aV aS = modifyMVar aV $ (swap <$>) . runStateT aS
 

@@ -32,7 +32,7 @@ import Client.Crypto.Crypto
 -}
 --genCryptoCallback :: (Modules a p r) => MVar Crypto -> MVar Timer -> DiffTime -> MVar a -> HashFunction p -> (Packet -> r -> CryptoT IO (Maybe [CryptoAction], [Packet],IO ())) -> CryptoCB Packet Packet
 genCryptoCallback :: (Modules a p r) => MVar Crypto -> MVar Timer -> DiffTime -> MVar a -> HashFunction p 
-                                    -> (r -> CryptoCB Packet (Maybe [CryptoAction], [Packet], IO () ) ) 
+                                    -> (r -> CryptoCB Packet (Maybe [CryptoAction], [Packet], IOLog () ) ) 
                                     -> CryptoCB Packet [Packet]
 genCryptoCallback crypto timer ttl aV hF oF  = ask >>= genCallback aV <$> inFun <*> outFun 
         where --inFun :: (Modules a p r) => Packet -> Behaviour Crypto Packet IO p
@@ -46,18 +46,19 @@ genCryptoCallback crypto timer ttl aV hF oF  = ask >>= genCallback aV <$> inFun 
               outFun' p mDCBs pL onTimeOut = do 
                               case mDCBs of
                                 Nothing -> (keepLog CryptoLog Normal "No callbacks to register") >> return pL
-                                Just dCBL -> do (refresh, free) <- liftIO $ registerTimerM timer ttl ((runStateMVar crypto $ unregisterKeyEntry ( keyID p)) >> return False)
+                                Just dCBL -> do (refresh, free) <- liftIO $ registerTimerM timer ttl ((liftIO $ runRWSTMVar crypto () $ unregisterKeyEntry ( keyID p)) >> return False)
                                                 let dCBL' = (\_  ->  do pkt <- ask 
-                                                                        when (isIntroduce pkt) (liftIO refresh) >> pure []):dCBL
+                                                                        when (isIntroduce pkt) $ liftLog refresh 
+                                                                        pure []):dCBL
                                                 keepLog CryptoLog Important $  "crypto : register callback for key :" ++ show (keyID p)
-                                                registerDataCallback (keyID p) (key p) dCBL' (onTimeOut >> free) >> return pL
+                                                registerDataCallback (keyID p) (key p) dCBL' (onTimeOut >> liftLog free) >> return pL
               checkIntroduce p = if isIntroduce p then pubKeyToHash (key p) == (runKeyHash $ keyID p) else False
 
 
 -- | genCryptoCallback where the callback-module's MVar is transmitted to the output-Function.
 --genMCryptoCallback :: Modules a p r => MVar Crypto -> MVar Timer -> DiffTime -> MVar a -> HashFunction p -> (MVar a -> Packet -> r -> CryptoT IO (Maybe [CryptoAction], [Packet],IO ())) -> CryptoCB Packet Packet
 genMCryptoCallback :: (Modules a p r) => MVar Crypto -> MVar Timer -> DiffTime -> MVar a -> HashFunction p 
-                                     -> (MVar a -> r -> CryptoCB Packet (Maybe [CryptoAction], [Packet], IO () ) ) 
+                                     -> (MVar a -> r -> CryptoCB Packet (Maybe [CryptoAction], [Packet], IOLog () ) ) 
                                      -> CryptoCB Packet [Packet]
 genMCryptoCallback crypto timer ttl aV hF oFV = genCryptoCallback crypto timer ttl aV hF (oFV aV)
 

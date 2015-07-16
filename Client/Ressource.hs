@@ -89,10 +89,10 @@ ressourceDefaultBehaviour r t m = ask >>= newDefaultBehaviour r t m
 
 newDefaultBehaviour :: MVar RessourceModule -> MVar Timer -> SourceID -> RessourcePacket ->  RessourceCB
 newDefaultBehaviour ress timer me pkt@(Research rID ttl road cnt)  = if ttl > 1  && ttl < ressourceTtlMax then do 
-                                                                                        (refresh,_) <- liftIO (registerTimerM timer ressourceTimeOut (unregisterM ress rID >> pure True))
+                                                                                        (refresh,_) <- liftIO (registerTimerM timer ressourceTimeOut (liftIO (unregisterM ress rID) >> pure True))
                                                                                         insertMapBehaviour rID (entry refresh)
                                                                                         pure . maybeToList $ relayResearchPacket pkt else return []
-  where entry refresh = RessourceEntry [ask >>= \pkt -> if isAnswer pkt then liftIO refresh >> (pure . maybeToList $ relayAnswerPacket me pkt) else return []]
+  where entry refresh = RessourceEntry [ask >>= \pkt -> if isAnswer pkt then liftLog refresh >> (pure . maybeToList $ relayAnswerPacket me pkt) else return []]
         unreg = unregisterM ress rID
 newDefaultBehaviour _ _ _ _ = return []
 

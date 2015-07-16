@@ -18,7 +18,7 @@ data Routing = Routing {relayCallback :: RoutingCB,
 type RoutingT = StateT Routing
 
 type RoutingCB = Behaviour Routing Request IO RoutingAnswer
-data RoutingAnswer = RoutingAnswer {routingTimeOut :: IO (),
+data RoutingAnswer = RoutingAnswer {routingTimeOut :: IOLog (),
                                     toRegister :: Maybe [DataCB],
                                     toRelay :: [Request]}
 
@@ -81,7 +81,7 @@ routingCryptoCallback cV tV pubK uK uID rV = genCryptoCallback cV tV pipeTimeOut
                                       Nothing -> pure Nothing
           inFun _ = return Nothing
           checkRequest (Request n _ l r _ _ _) = (l == length r) && (n < l) && (n >= 0)
-          outFun :: RoutingAnswer -> CryptoCB Packet (Maybe [CryptoAction], [Packet], IO())
+          outFun :: RoutingAnswer -> CryptoCB Packet (Maybe [CryptoAction], [Packet], IOLog ())
           outFun (RoutingAnswer onTO regM rL) = do --pktL <- liftIO $ forM rL (\r -> forgePacket p r <$> genRnd)
                                                      p <- ask
                                                      return (map runDataCB <$> regM, map (forgePacket p) rL, onTO)

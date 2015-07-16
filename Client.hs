@@ -48,14 +48,14 @@ data Client = Client {cidentity :: Identity,
 type ClientT = StateT Client
 
 
-offerRessourceID :: Client -> RessourceID -> RawData -> IO ()
-offerRessourceID c rID d =  do tV <- newEmptyMVar
+offerRessourceID :: Client -> RessourceID -> RawData -> IOLog ()
+offerRessourceID c rID d =  do tV <- liftIO newEmptyMVar
                                insertRessourceEntry (cressource c) rID $ genRessourceCallback tV uK pK sID rID d
          where (Identity sID pK uK) = cidentity c    
 
 
-insertRessourceEntry :: MVar RessourceModule -> RessourceID -> RessourceCB -> IO ()
-insertRessourceEntry rM rID rCB = runStateMVar rM $ insertMapBehaviourWith mergeRE rID . RessourceEntry $ pure  rCB
+insertRessourceEntry :: MVar RessourceModule -> RessourceID -> RessourceCB -> IOLog ()
+insertRessourceEntry rM rID rCB = runSWMVar rM $ insertMapBehaviourWith mergeRE rID . RessourceEntry $ pure  rCB
     where mergeRE (RessourceEntry l1) (RessourceEntry l2) = RessourceEntry (l1++l2)
 
 
@@ -75,51 +75,54 @@ genClient gen uID privK pubK send = do  timerV <- newMVar $ Timer M.empty [1..]
                                         pure $ Client cID gen send timerV cryptoV neighV resV routV sourceV protoV
         where newMapMVar = newMVar . newMapModule
 
-insertProtoCallback :: Client -> ProtoID -> ProtoCallback -> IO ()
+insertProtoCallback :: Client -> ProtoID -> ProtoCallback -> IOLog ()
 insertProtoCallback c rID pCB = do keepLog ClientLog Important "insertion d'un protoCallback"
-                                   modifyMVar_ (cprotocol c) $ liftIO . (snd <$>) . runStateT (insertMapBehaviour rID $ ProtoEntry pCB)
+                                   runSWMVar (cprotocol c) $ insertMapBehaviour rID $ ProtoEntry pCB
+                                   --modifyMVar_ (cprotocol c) $ liftIO . (snd <$>) . runStateT (insertMapBehaviour rID $ ProtoEntry pCB)
 
 
 
-newtype RoadChoice = RoadChoice {choseRoad :: Road -> SourceID -> RessourceCert -> RawData -> IO Bool}
+newtype RoadChoice = RoadChoice {choseRoad :: Road -> SourceID -> RessourceCert -> RawData -> IOLog Bool}
 
 cleanSourceEntryList :: [SourceEntry] -> IO [SourceEntry]
 cleanSourceEntryList = filterM $ (flip withMVar $ pure . M.null . pipesMap) . sourcePipes
 
-connectToRessource :: Client -> TVar [SourceID] -> RoadChoice -> RessourceID -> IO ()
+connectToRessource :: Client -> TVar [SourceID] -> RoadChoice -> RessourceID -> IOLog ()
 connectToRessource c sV rC rID = insertRessourceEntry (cressource c) rID $ resCallback c (csources c) =<< ask
     where resCallback :: Client -> MVar Sources -> RessourcePacket -> RessourceCB
           resCallback _ _ (Research _ _ _ _) = pure [] --TODO : se mettre a relayer les réponses
-          resCallback c srcV a@(Answer cert _ r sID d) = liftIO $ let uID = clientSourceID $ cidentity c
-                                                                      r' = uID : r in
-                                                                  do keepLog ClientLog Normal $ "answer received on road : " ++ show r' ++ " calling roadChoice"
-                                                                     (atomically . writeTVar sV) =<< (filterM  ((isJust <$>) . extractRoads (csources c))) =<< (atomically $ readTVar sV)
-                                                                     b <- (choseRoad rC) r' sID cert d
-                                                                     if b then do keepLog ClientLog Important $ "interesting road, opening pipe..."
-                                                                                  forkIO $ openNewPipeIO c (cResSourceDHKey cert) r' d -- TODO :c'est vraiment utile de se passer de la data?
-                                                                                  keepLog ClientLog Normal $ "Pipe opened, registering the source"
-                                                                                  atomically $ (readTVar sV >>= (writeTVar sV) . nub . (sID :))
-                                                                                  pure . maybeToList $ relayAnswerPacket uID a
-                                                                          else pure . maybeToList $ relayAnswerPacket uID a
+          resCallback c srcV a@(Answer cert _ r sID d) = let uID = clientSourceID $ cidentity c
+                                                             r' = uID : r 
+                                                         in do keepLog ClientLog Normal $ "answer received on road : " ++ show r' ++ " calling roadChoice"
+                                                               (liftIO . atomically $ readTVar sV)
+                                                                 >>= (filterM  ((isJust <$>) . liftLog . extractRoads (csources c)))
+                                                                 >>= (liftIO . atomically . writeTVar sV)
+                                                               b <- liftLog $ (choseRoad rC) r' sID cert d
+                                                               if b then do keepLog ClientLog Important $ "interesting road, opening pipe..."
+                                                                            liftLog $ openNewPipeIO c (cResSourceDHKey cert) r' d -- TODO :c'est vraiment utile de se passer de la data?
+                                                                            keepLog ClientLog Normal $ "Pipe opened, registering the source"
+                                                                            liftIO . atomically $ (readTVar sV >>= (writeTVar sV) . nub . (sID :))
+                                                                            pure . maybeToList $ relayAnswerPacket uID a
+                                                                    else pure . maybeToList $ relayAnswerPacket uID a
                                                                           
 
-extractRoads :: MVar Sources -> SourceID -> IO (Maybe [RoadID])
+extractRoads :: MVar Sources -> SourceID -> IOLog (Maybe [RoadID])
 extractRoads sourcesV sID = do pipes <- getSourceEntry sourcesV sID >>= maybe (pure Nothing) (pure . Just . sourcePipes)  
                                if isNothing pipes then return Nothing
                                                   --else (Just . map (roadID . roadSpecs) . M.elems) <$> readMVar (fromJust pipes)
-                                                  else Just . pipesList <$> readMVar (fromJust pipes)
+                                                  else Just . pipesList <$> (liftIO . readMVar . fromJust $ pipes)
 --                              pipes <- (sourcePipes . fromJust) <$> getSourceEntry sourcesV sID   
 
 
 
-openNewPipeIO :: Client -> DHPubKey -> Road -> RawData -> IO ()
+openNewPipeIO :: Client -> DHPubKey -> Road -> RawData -> IOLog ()
 openNewPipeIO c k r d = runRWST (openNewPipe k r d) () c >> pure ()
 
-openNewPipe :: (MonadState Client m, MonadWriter Log m, MonadIO m) => DHPubKey -> Road -> RawData -> m Bool 
+openNewPipe :: (SW Client m) => DHPubKey -> Road -> RawData -> m Bool 
 openNewPipe dK r d = do (uK,uID, pK) <- (,,) <$> gets (privateKey . cidentity) <*> gets (clientSourceID . cidentity) <*> gets (publicKey . cidentity)
                         gV <- gets cRandomGen
                         (cryptoM, timerM, send) <- (,,) <$> gets ccrypto <*> gets ctimer <*> gets csender
-                        liftIO . keepLog ClientLog Normal $ "generating new request"
+                        keepLog ClientLog Normal $ "generating new request"
                         (pipePrK, pipePK, req) <- liftIO $ genNewPipeRequest gV uK pK dK r d
                         let sendReq = sendRequest send cryptoM req pipePrK pipePK
                             sendReq' = runWriterT $ sendRequest send cryptoM req pipePrK pipePK

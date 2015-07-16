@@ -1,11 +1,28 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, UndecidableInstances #-}
 module Log where
 import Control.Monad.State
 import Control.Monad.Writer
+import Control.Monad.RWS.Lazy
 import Data.List
 import Data.Time
 
 type Log = [LogMsg]
+
+printLog :: Log -> IO ()
+--printLog logs = forM logs putStrLn . ("\t" ++) . show
+printLog =  putStrLn . unlines . map (("\t"++).show)
+
+class (MonadWriter Log m, MonadIO m) => LogIO m
+--class alias LogIO m = (MonadWriter Log m, MonadIO m)
+--instance (MonadIO m) => LogIO (RWST p Log s m)
+type IOLog = WriterT Log IO
+
+instance (MonadWriter Log m, MonadIO m) => LogIO m
+
+liftLog :: LogIO m => IOLog a -> m a
+liftLog a = do (r, l) <- liftIO $ runWriterT a
+               tell l
+               pure r
 
 data LogMsg = LogMsg {logStatus :: LogStatus,
                       logModule :: ModuleName,

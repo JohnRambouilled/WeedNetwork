@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell,MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell,MultiParamTypeClasses, FlexibleContexts #-}
 module Transport.Sender where
 
 import Data.Binary hiding (get)
@@ -23,13 +23,14 @@ data SendBuf = SendBuf { sbDataID :: DatagramID,
 
 
 data Sender = Sender {_sToSend :: [SendBuf],
-                      _sKill :: IO (),
+                      _sKill :: IOLog (),
                       _sCurrentDatagram :: DatagramID}
 
 makeLenses ''Sender
 
 
-senderQueueDatagram :: (MonadIO m) => MVar Timer ->  (WriteFun, BreakFun) -> IO () -> RawData -> StateT Sender m Bool
+
+senderQueueDatagram :: (SW Sender m) => MVar Timer ->  (WriteFun, BreakFun) -> IOLog () -> RawData -> m Bool
 senderQueueDatagram timerV wF break raw  = do curID <- use sCurrentDatagram
                                               keepL Normal $ "adding new Datagram to queue : " ++ show curID
                                               sCurrentDatagram += 1
@@ -37,7 +38,7 @@ senderQueueDatagram timerV wF break raw  = do curID <- use sCurrentDatagram
     where raws = fragData raw
 
 
-senderQueueSendBuf :: (MonadIO m) => MVar Timer ->  (WriteFun, BreakFun) -> IO () -> SendBuf -> StateT Sender m Bool
+senderQueueSendBuf :: (SW Sender m) => MVar Timer ->  (WriteFun, BreakFun) -> IOLog () -> SendBuf -> m Bool
 senderQueueSendBuf timerV wF break buf = do toSend <- use sToSend
                                             keepL Normal "adding buffer to queue"
                                             sToSend .= toSend ++ [buf]
@@ -73,9 +74,9 @@ onControlMessage bufID buf (TrAck dID) = if dID == bufID then Nothing
                                                         else Just []
 
 
-senderSendBuf :: (MonadIO m) => MVar Timer -> SendBuf -> (WriteFun, BreakFun) -> IO () -> StateT Sender m [TrSegment]
+senderSendBuf :: (SW Sender m) => MVar Timer -> SendBuf -> (WriteFun, BreakFun) -> IOLog () -> m [TrSegment]
 senderSendBuf _ (BufKill d) (_,bF) break = do keepL Important "[senderSendBuf] BufKill received, closing communication."
-                                              liftIO $ (runBreakFun bF $ d) >> break  
+                                              liftLog $ (runBreakFun bF $ d) >> break  
                                               pure []
 senderSendBuf timerV buf (wF,_) break = let ret = buildSegments (sbDataID buf) $ zip [0..] $ sbBuf buf
                                     in do killRepeat <- liftIO $ repeatNTimes timerV (void $ spamPsh (last ret)) break  pshFreq pshRepeatParam 
@@ -92,7 +93,7 @@ fragData raw = fst $ until (B.null . snd) f ([],raw)
   where f (frags,rest) = let (nfrag,nrest) = B.splitAt fragSize rest
                          in (frags ++ [nfrag],nrest)
 
-sendTRSegment :: MonadIO m => WriteFun -> TrSegment -> m Bool
-sendTRSegment wF = liftIO . runWriteFun wF . encode . TransportSeg
+sendTRSegment :: LogIO m => WriteFun -> TrSegment -> m Bool
+sendTRSegment wF = liftLog . runWriteFun wF . encode . TransportSeg
 
 

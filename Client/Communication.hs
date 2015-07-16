@@ -34,14 +34,14 @@ instance MapModules ComEntry ComID ComMessage () where
 
 
 
-insertComCallback :: MVar Communication -> ComID -> ComCB -> IO ()
-insertComCallback cV cID clbk = modifyMVar_ cV $ \s -> pure s{keyMap = M.insert cID (ComEntry [clbk]) $ keyMap s}
+insertComCallback :: MVar Communication -> ComID -> ComCB -> IOLog ()
+insertComCallback cV cID clbk = liftIO $ modifyMVar_ cV $ \s -> pure s{keyMap = M.insert cID (ComEntry [clbk]) $ keyMap s}
 
-closeComIO :: MVar [ComID] -> MVar Communication -> ComID -> IO ()
-closeComIO fV cV cID = runStateMVar cV $ closeCom fV cID
+closeComIO :: MVar [ComID] -> MVar Communication -> ComID -> IOLog ()
+closeComIO fV cV cID = runSWMVar cV $ closeCom fV cID
                         
 
-closeCom :: (MonadState Communication m, MonadIO m) => MVar [ComID] -> ComID -> m ()
+closeCom :: (MonadState Communication m, LogIO m) => MVar [ComID] -> ComID -> m ()
 closeCom fV cID =  do keepLog CommunicationLog Important $ "Closing communication : " ++ show cID
                       modify $ \s -> s{keyMap = M.delete cID $ keyMap s}
                       liftIO . modifyMVar_ fV $ pure .(++ [cID])
@@ -50,7 +50,7 @@ closeCom fV cID =  do keepLog CommunicationLog Important $ "Closing communicatio
 
 defaultComCallback :: Modules a p r => MVar a 
                                    -> (ComMessage -> Maybe p)
-                                   -> (ComID -> p -> r -> IO (Maybe ComCB))
+                                   -> (ComID -> p -> r -> IOLog (Maybe ComCB))
                                    -> ComCB
 defaultComCallback mv iFun oFun = do p <- ask
                                      case iFun p of
@@ -58,7 +58,7 @@ defaultComCallback mv iFun oFun = do p <- ask
                                         Just q -> do keepLog CommunicationLog Important $ "calling comCB"
                                                      genCallback mv (pure . pure $ q) (outFun q)
     where outFun q rL = do p <- ask
-                           comCBL <- liftIO . (catMaybes <$>) $ mapM (oFun (comID p) q) rL
+                           comCBL <- liftLog . (catMaybes <$>) $ mapM (oFun (comID p) q) rL
                            insertMapBehaviour (comID p) (ComEntry $ comCBL)
                            pure []
 

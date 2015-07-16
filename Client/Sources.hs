@@ -45,13 +45,13 @@ sendToSource sE cm = do (pL, pM) <- withMVar (sourcePipes sE) (pure . ((,) <$> p
 
 
 
-getSourceEntry :: MVar Sources -> SourceID -> IO (Maybe SourceEntry)
-getSourceEntry sV sID = withMVar sV $ pure . M.lookup sID . keyMap
+getSourceEntry :: MVar Sources -> SourceID -> IOLog (Maybe SourceEntry)
+getSourceEntry sV sID = liftIO $ withMVar sV $ pure . M.lookup sID . keyMap
 
-removeSourceEntry :: MVar Sources -> SourceID -> RawData -> IO () 
-removeSourceEntry sV sID d = modifyMVar_ sV $ \s -> do let (msE, kM) = M.updateLookupWithKey (pure $ pure Nothing) sID $ keyMap s
-                                                       maybe (pure ()) (breakComAndPipes) msE
-                                                       pure s{keyMap = kM}
+removeSourceEntry :: MVar Sources -> SourceID -> RawData -> IOLog () 
+removeSourceEntry sV sID d = liftIO $ modifyMVar_ sV $ \s -> do let (msE, kM) = M.updateLookupWithKey (pure $ pure Nothing) sID $ keyMap s
+                                                                maybe (pure ()) (breakComAndPipes) msE
+                                                                pure s{keyMap = kM}
            where breakComAndPipes sE@(SourceEntry _ pV iV cV) = breakCom cV sE >> modifyMVar_ pV breakPipes >> modifyMVar_ iV (pure $ pure [])
                  breakPipes pM = do forM (pipesMap pM) $ ($d) . breakFun
                                     pure (Pipes M.empty [])
@@ -75,7 +75,7 @@ pipesRoutingCallback uK pK send sV = genCallback sV inFun ((head <$>) . mapM out
                                                 Nothing -> pure $ RoutingAnswer (pure ()) Nothing []
                                                 Just (dCB, pV) -> do (onBrk, pL) <- addNewPipe uK pK send pV =<< ask
                                                                      return $ RoutingAnswer (onBrk >> chkSource pV sID) (Just [dCB]) pL 
-          chkSource pV sID = do b <- withMVar pV $ pure . null . pipesList
+          chkSource pV sID = do b <- liftIO $ withMVar pV $ pure . null . pipesList
                                 if b then removeSourceEntry sV sID (encode ()) 
                                      else pure ()
 
