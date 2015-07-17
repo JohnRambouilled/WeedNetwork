@@ -118,11 +118,10 @@ repeatNTimes timerV act end freq ntimes = do initTime <- getTime
                                              snd <$> registerTimerM timerV freq act'
 
 
-startTimer :: MVar Timer -> Int -> IO ()
-startTimer timer checkfreq = do putStrLn $ "Starting Timercheck : "  
-                                runWriterT (checkTimeOut timer) >>= printLog . snd
-                                putStrLn "End of Timercheck"
-                                threadDelay checkfreq >> startTimer timer checkfreq
+startTimer :: LogFunction -> MVar Timer -> Int -> IO ()
+startTimer logf timer checkfreq = do logf $ [LogMsg Normal TimerLog "\n\n Starting timer check"]
+                                     runWriterT (checkTimeOut timer) >>= logf . snd
+                                     threadDelay checkfreq >> startTimer logf timer checkfreq
 
 instance Binary UTCTime where
     put (UTCTime d h) = put (fromEnum d) >> put (fromEnum h)

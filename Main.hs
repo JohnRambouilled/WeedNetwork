@@ -32,21 +32,20 @@ tcp_socketName = "testounet_tcp.socket"
 --main = runWeeds leechMain
 --main = runWeeds seedMain
 
-main = do testCL <- testBinaire (leechMain, leechLog) (seedMain, seedLog) -- testChaine [leechMain, relayMain, seedMain]
+main = do testCL <- testBinaire (leechMain leechLog, leechLog) (seedMain seedLog, seedLog) -- testChaine [leechMain, relayMain, seedMain]
           print "running test"
           let dumpClients = concat <$> (forM testCL $ (fst <$>) . runStateT dumpClient . client)
-          repeatEach (ctimer . client $ head testCL) (putStrLn =<< dumpClients) 10 >> pure ()
+          repeatEach (ctimer . client $ head testCL) (liftIO . putStrLn =<< dumpClients) 10 >> pure ()
           mVL <- forM testCL $ runChildren . run
           forM_ mVL readMVar
    where leechLog ll = do putStrLn "# LEECH : " 
-			  forM_ ll $ \x -> putStrLn (show x ++ "\n          ")
+                          forM_ ll $ \x -> putStrLn (show x ++ "\n          ")
          seedLog ll  = do putStrLn "# SEED  : " 
-			  forM_ ll $ \x -> putStrLn (show x ++ "\n          ")
-   
-
+                          forM_ ll $ \x -> putStrLn (show x ++ "\n          ")
+                          pure ()
 --main = fullGraphMain 5
                     
-
+{-
 runWeeds :: ClientBehaviour -> IO ()
 runWeeds c = do gV <- newMVar =<< drgNew--getSystemDRG
                 (pubkey,privkey) <- genKeyPairMVar gV
@@ -59,7 +58,7 @@ runWeeds c = do gV <- newMVar =<< drgNew--getSystemDRG
                 tim <- runChildren $ startTimer (ctimer client) 1
                 -- Launching the specifieds actions
                 srvc <- runChildren $ c client $ writePacket sock
-                repeatEach (ctimer client) (putStrLn =<< fst <$> runStateT dumpClient client) 10 >> pure ()
+                repeatEach (ctimer client) (liftIO . putStrLn =<< fst <$> runStateT dumpClient client) 10 >> pure ()
                 -- Starts the networks
                 weed <- runChildren $ loop $ listenPacket client sock
                 -- Waits for childrens
@@ -77,7 +76,7 @@ runWeeds c = do gV <- newMVar =<< drgNew--getSystemDRG
 
                                                                
 
-
+-}
 
 runChildren :: IO () -> IO (MVar ())
 runChildren x = do r <- newEmptyMVar

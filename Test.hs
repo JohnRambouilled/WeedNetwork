@@ -2,6 +2,7 @@
 module Test where
 
 import Control.Monad.State
+import Control.Monad.Writer
 import Control.Concurrent
 import qualified Data.Map as M
 import qualified Data.ByteString.Lazy as B
@@ -22,7 +23,7 @@ import Client.Neighborhood
 import Client.Pipes
 import Proxy.TCP
 import Proxy.UDP
-import Gateway
+import Gateway hiding (keepL)
 import Client.Protocol
 import Timer
 import Client
@@ -32,7 +33,6 @@ import Network.Socket
 import Crypto.Random
 
 
-type LogFunction = Log -> IO ()
 
 data TestClient = TestClient {client :: Client,
                               input :: TChan RawData,
@@ -41,11 +41,11 @@ data TestClient = TestClient {client :: Client,
 
 
 
-newTestClient ::  MVar RandomGen -> SendFunction -> IO Client
+newTestClient ::  MVar RandomGen -> SendFunction -> IOLog Client
 newTestClient gV send = do (pubkey,privkey) <- genKeyPairMVar gV
                            keepLog TestLog Normal "Creating client"
                            let me = SourceID $ KeyHash $ pubKeyToHash pubkey
-                           genClient gV me privkey pubkey send
+                           liftIO $ genClient gV me privkey pubkey send
 
 
 
@@ -67,7 +67,6 @@ fullGraphMain n = do testCL <- testFullGraph =<< mapM bhvL [1..n]
                      forM_ mVL readMVar
     where bhvL i = do lchRID <- randomIO :: IO Int
                       pure $ testBhvr [RessourceID . encode $ i] [RessourceID . encode $ 1 + mod lchRID n]
--}
 
 testBhvr :: [RessourceID] -> [RessourceID] -> ClientBehaviour
 testBhvr sdR lchR c send = do introduceThread c send "Seed Hello"
@@ -79,6 +78,7 @@ testBhvr sdR lchR c send = do introduceThread c send "Seed Hello"
     where testProtoCallback d (wF, bF) = do keepLog TestLog Important "Protocallback called"
                                             pure $ Just (Callback $ \d -> void (runWriteFun wF $ d), BrkClbck $ \_ -> pure ()) 
           
+-}
 
 
 
@@ -91,70 +91,78 @@ testBhvr sdR lchR c send = do introduceThread c send "Seed Hello"
 
 
 tcp_socketName = "testounet_tcp.socket"
-leechMain :: ClientBehaviour  
-leechMain c send = do introduceThread c send "Leech Hello"
-                      keepLog TestLog Normal "enregistrement de la répétition de recherche"
-                      keepLog TestLog Normal "démarrage du proxy "
-                      repeatEach (ctimer c) (void $ sendRes c send inetRessourceID) 5
-                      forkIO $ startProxy tcp_socketName Stream c
-                      udpProx <- newMVar $ newMapModule []
-                      void $ forkIO $ startProxUDP udpProx c
+leechMain :: LogFunction -> ClientBehaviour  
+leechMain logf c send = do  introduceThread c send "Leech Hello"
+                            logf $ [LogMsg Normal TestLog "enregistrement de la répétition de recherche"]
+                            logf $ [LogMsg Normal TestLog "démarrage du proxy "]
+                            repeatEach (ctimer c) (void . liftIO $ sendRes c send inetRessourceID) 5
+                            forkIO $ startProxy logf tcp_socketName Stream c
+                            udpProx <- newMVar $ newMapModule []
+                            void $ forkIO $ startProxUDP logf udpProx c
 
 
 sendRes :: Client -> SendFunction -> RessourceID -> IO Bool
 sendRes c send rID = send $ sendResearch prK pK uID rID 10 [] B.empty
    where (uID, prK, pK) = (keyHash . clientSourceID $ cidentity c, privateKey $ cidentity c, publicKey $ cidentity c) 
 
-seedMain :: ClientBehaviour 
-seedMain c send = do introduceThread c send "Seed Hello"
+seedMain :: LogFunction -> ClientBehaviour 
+seedMain logf c send = logf . snd =<< runWriterT (do
+                     liftIO $ introduceThread c send "Seed Hello"
                      keepLog TestLog Normal "Enregistrement du callback de ressource"  
                      offerRessourceID c inetRessourceID $ encode "C'est de la bonne"
                      keepLog TestLog Normal "Enregistrement du protocallback UDP"  
-                     insertProtoCallback c inetUDPProtoID inetUDPProtoCallback
+                     insertProtoCallback c inetUDPProtoID $ inetUDPProtoCallback logf
                      keepLog TestLog Normal "Enregistrement du protocallback TCP"  
-                     insertProtoCallback c inetTCPProtoID $ inetTCPProtoCallback c
+                     insertProtoCallback c inetTCPProtoID $ inetTCPProtoCallback logf c)
 
 
 relayMain :: ClientBehaviour
 relayMain c send = introduceThread c send "Relay hello"
 
 testBinaire :: (ClientBehaviour, LogFunction) -> (ClientBehaviour, LogFunction) -> IO [TestClient]
-testBinaire (bh1,l1) (bh2,l2) = newTest [ ([1],bh1,l2), ([0], bh2,l2) ] 
+testBinaire (bh1,l1) (bh2,l2) = newTest [ ([1],bh1,l1), ([0], bh2,l2) ] 
 
 
 newTest :: [ ([Int], ClientBehaviour, LogFunction) ] -> IO [TestClient]
-newTest cL = do keepLog TestLog Normal "building test"
+newTest cL = do --keepLog TestLog Normal "building test"
                 tChanL <- atomically $ forM cL $ \c -> newTChan >>= (\tc -> pure (tc, c) )
                 gV <- newMVar =<< drgNew
                 tcL <- forM tChanL $ genTestC gV $ map fst tChanL
-                keepLog TestLog Normal "done"
+                --keepLog TestLog Normal "done"
                 pure tcL
     where genTestC :: MVar RandomGen -> [TChan RawData] -> (TChan RawData, ([Int], ClientBehaviour, LogFunction)) -> IO TestClient
-          genTestC gV tChanL (tC,(nL, bhv, logF)) = let send = genSendFun nL tChanL in
-                                           do cl <- newTestClient gV send
-                                              keepLog TestLog Normal "building testclient"
+          genTestC gV tChanL (tC,(nL, bhv, logF)) = let send = genSendFun logF nL tChanL in
+                                           do (cl,l) <- runWriterT $ newTestClient gV send
+                                              logF $ LogMsg Normal TestLog "building testclient" : l
                                               tC' <- atomically $ dupTChan tC
                                               pure $ TestClient cl tC' $ do clM <- runChildren $ runTestClient bhv tC send logF cl
                                                                             readMVar clM
-          genSendFun :: [Int] -> [TChan RawData] -> SendFunction
-          genSendFun nL tChanL p = do keepLog TestLog Normal $ "sending packet..." ++ showPacket p
-                                      forM_ nL $ \i -> (atomically $ writeTChan (tChanL !! i) (encode p))
-                                      pure True
-            
+          genSendFun :: LogFunction -> [Int] -> [TChan RawData] -> SendFunction
+          genSendFun logf nL tChanL p = do  logf [LogMsg Normal TestLog $ "sending packet..." ++ showPacket p]
+                                            forM_ nL $ \i -> (atomically $ writeTChan (tChanL !! i) (encode p))
+                                            pure True
+
+keepL = (:[]) . LogMsg Normal TestLog            
+
 runTestClient :: ClientBehaviour -> TChan RawData -> SendFunction -> LogFunction -> Client-> IO ()
-runTestClient bhv tc send logF cl = do
-        tim <- runChildren $ startTimer (ctimer cl) (1000*1000*1)
+runTestClient bhv tc send logf cl = do
+        print "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        logf [LogMsg Normal TestLog "qdlkjMDSOVB"]
+        logf . keepL $ "Starting timer : "
+        tim <- runChildren $ startTimer logf (ctimer cl) (1000*1000*1)
+        logf . keepL $ "Runing behaviour : "
         bhV <- runChildren $ bhv cl send 
+        logf . keepL $ "Starting sniffer : "
         weed <- runChildren $ loop $ listenPacket
         forM_ [weed,tim,bhV] $ readMVar
           where loop f = f >> loop f
                 listenPacket = do a <- atomically $ readTChan tc 
                                   case decodeMaybe a :: Maybe Packet of
-                                      Nothing -> keepLog TestLog Error "incorrect Packet received"
-                                      Just pkt -> do keepLog TestLog Normal $ "received Packet : " ++ showPacket pkt
-                                                     keepLog TestLog Normal . fst =<< runStateT dumpClient cl
+                                      Nothing -> logf [LogMsg Error TestLog "incorrect Packet received"]
+                                      Just pkt -> do logf [LogMsg Normal TestLog $ "received Packet : " ++ showPacket pkt]
+                                                     (\m -> logf [LogMsg Normal TestLog m]) . show . fst =<< runStateT dumpClient cl
                                                      (ret,state',logs) <- runRWST onPacket pkt  cl
-                                                     logF logs
+                                                     logf logs
 						     mapM_ send (ret :: [Packet])
 						   
                                                      
@@ -190,9 +198,9 @@ runChildren x = do r <- newEmptyMVar
                    return r
 
 introduceThread :: (Binary a, Show a) => Client -> SendFunction -> a -> IO ()
-introduceThread c send d = do send . genNeighHello (cidentity c) $ encode d
-                              repeatEach (ctimer c) (do print $ "sending NeighHello from : " ++ (show . clientSourceID $ cidentity c) ++ "  " ++ (show d)
-                                                        send  . genNeighHello (cidentity c) $ encode d
+introduceThread c send d = do liftIO $ send . genNeighHello (cidentity c) $ encode d
+                              repeatEach (ctimer c) (do --liftIO . print $ "sending NeighHello from : " ++ (show . clientSourceID $ cidentity c) ++ "  " ++ (show d)
+                                                        liftIO . send  . genNeighHello (cidentity c) $ encode d
                                                         pure ()) 5 >> pure ()
 
 

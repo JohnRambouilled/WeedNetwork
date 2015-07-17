@@ -33,8 +33,8 @@ udpSocketFile = "testounet_udp.socket"
 data ProxUDPEntry = ProxUDPEntry {proxUDPWrite :: WriteFun,
                                   proxUDPBreak :: BreakFun,
 
-                                  proxRefresh :: IO (),
-                                  proxKill    :: IO (),
+                                  proxRefresh :: IOLog (),
+                                  proxKill    :: IOLog (),
                                   
                                   proxSockConf :: SockConf}
 newtype SocketFile = SocketFile String
@@ -64,30 +64,32 @@ instance MapModules ProxUDPEntry SocketFile ProxPacket ProxRet where
           where   callback :: ProxUDPEntry -> ProxPacket -> MapBehaviour ProxUDPEntry SocketFile ProxPacket ProxRet IO () 
                   callback entry packet 
                     -- The socket has failed to read
-                    |B.null (proxData packet) = liftIO $ proxKill entry 
+                    |B.null (proxData packet) = liftLog $ proxKill entry 
                     -- The data has to be checked by the layer before sending
                     |otherwise                = void $ buildProxCallback (proxUDPWrite entry) (proxUDPBreak entry)  (proxRefresh entry) (proxKill entry) 
                             
 
-runProxUDP :: (MonadIO m) => MVar ProxUDP -> Client  -> StateT ProxUDP m Socket
-runProxUDP proxyV client = do sIDsV <- liftIO $ atomically $ newTVar []
-                              liftIO $ connectToRessource client sIDsV (proxyRoadChoice (csources client) sIDsV) inetRessourceID
-                              s <- liftIO initSock 
-                              modifyDefaultMapBehaviour $ \l -> behaviour proxyV (csources client) (ctimer client) s sIDsV:l
-                              return s
+runProxUDP :: (SW ProxUDP m) => LogFunction -> MVar ProxUDP -> Client  -> m Socket
+runProxUDP lf proxyV client = do sIDsV <- liftIO $ atomically $ newTVar []
+                                 liftLog $ connectToRessource lf client sIDsV (proxyRoadChoice (csources client) sIDsV) inetRessourceID
+                                 s <- liftIO initSock 
+                                 modifyDefaultMapBehaviour $ \l -> behaviour proxyV (csources client) (ctimer client) s sIDsV:l
+                                 return s
         where initSock = do s <- socket AF_UNIX Datagram 0
                             bindSocket s $ SockAddrUnix udpSocketFile 
 --                            c_set_block $ fdSocket s
                             return s
 
-startProxUDP :: MVar ProxUDP -> Client -> IO ()
-startProxUDP proxyV client = do s <- runStateMVar proxyV (runProxUDP proxyV client)
-                                withSocketsDo $ loop $ runServer s
-  where runServer :: Socket -> IO ([ProxRet], Log)
-        runServer s = do keepLog ProxyLog Normal "waiting for udp packet..."
+startProxUDP :: LogFunction -> MVar ProxUDP -> Client -> IO ()
+startProxUDP logf proxyV client = do (s,l) <- runRWSTMVar proxyV () (runProxUDP logf proxyV client)
+                                     logf l
+                                     withSocketsDo $ loop $ runServer s
+  where runServer :: Socket -> IO [ProxRet]
+        runServer s = do logf [LogMsg Normal ProxyLog "waiting for udp packet..."]
                          (pkt,caddr@(SockAddrUnix fname)) <- recvFrom s 4096
-                         keepLog ProxyLog Normal $ "[UDP PROXY] new udp packet from " ++ fname  ++ " : " ++ show pkt
-                         runModule proxyV $ ProxPacket caddr (B.fromStrict pkt)
+                         logf [LogMsg Normal ProxyLog $ "[UDP PROXY] new udp packet from " ++ fname  ++ " : " ++ show pkt]
+                         (a,l) <- runModule proxyV $ ProxPacket caddr (B.fromStrict pkt)
+                         logf l >> pure a
         loop f = f >> loop f
                                                                                 
                               
@@ -102,17 +104,17 @@ behaviour' proxyV sourcesV timerV sock sIDsV p@(ProxPacket src raw) = do keepLog
                                                                                                keepLog ProxyLog Error $ show raw 
                                                                                                pure [] 
                                                                           Right (_,_,inetPkt) -> registerCB inetPkt
-  where registerCB :: (MonadIO m) => InetPacket -> MapBehaviour ProxUDPEntry SocketFile ProxPacket ProxRet m [ProxRet]
+  where --registerCB :: (MonadIO m) => InetPacket -> MapBehaviour ProxUDPEntry SocketFile ProxPacket ProxRet m [ProxRet]
         registerCB (InetInit sc initMsg) = do keepLog ProxyLog Normal "chosing destinary"
-                                              dest <- liftIO $ choseDest sourcesV sIDsV
+                                              dest <- liftLog $ choseDest sourcesV sIDsV
                                               keepLog ProxyLog Normal  $ "[UDP PROXY] New InetInit !"
                                               let sockfile = addrToFilename src
                                               if isNothing dest then do keepLog ProxyLog Error $ "[UDP PROXY] No roads available..."
                                                                         pure []
-                                                                else do (refresh,killTO) <- liftIO $ registerTimerM timerV udpTimeOut (unregisterProxySocket sockfile >> return True)
+                                                                else do (refresh,killTO) <- liftIO $ registerTimerM timerV udpTimeOut (liftLog (unregisterProxySocket sockfile) >> return True)
 --                                                                        (refresh,killTO) <- liftIO $ registerTimerM timerV udpTimeOut (unregisterProxySocket sockfile >> return True)
                                                                         let killTO' = unregisterM proxyV sockfile >> killTO
-                                                                        (wr,br) <- liftIO $ openCommunicationTO (buildPipeCallback sock src killTO' sc)
+                                                                        (wr,br) <- liftLog $ openCommunicationTO (buildPipeCallback sock src killTO' sc)
                                                                                                              timerV leechTimeOut --leechRefreshTime
                                                                                                              (fromJust dest) $ ProtoRequest inetUDPProtoID raw
                                                                         insertMapBehaviour sockfile $ ProxUDPEntry wr br refresh killTO' sc
@@ -120,41 +122,41 @@ behaviour' proxyV sourcesV timerV sock sIDsV p@(ProxPacket src raw) = do keepLog
                                                                         return []
         registerCB _ = return []
         -- TODO l'entrée est clean deux fois si timedout
-        unregisterProxySocket sockfile = runStateMVar proxyV $ do entry <- mapGetEntry sockfile
-                                                                  let sfile (SocketFile f) = f
-                                                                  keepLog ProxyLog Normal $ "[UDP PROXY] Entry timed out, CLOSING  " ++ (sfile sockfile)
-                                                                  when (isJust entry) $ do
-                                                                          liftIO $ runBreakFun (proxUDPBreak $ fromJust entry) $ B.empty
+        unregisterProxySocket sockfile = runSWMVar proxyV $ do entry <- mapGetEntry sockfile
+                                                               let sfile (SocketFile f) = f
+                                                               keepLog ProxyLog Normal $ "[UDP PROXY] Entry timed out, CLOSING  " ++ (sfile sockfile)
+                                                               when (isJust entry) $ do
+                                                                          liftLog $ runBreakFun (proxUDPBreak $ fromJust entry) $ B.empty
                                                                           removeMapBehaviour sockfile
-                                                                  when (isNothing entry) $ keepLog ProxyLog Error $ "[UDP PROXY] Key not found :" ++ sfile sockfile
+                                                               when (isNothing entry) $ keepLog ProxyLog Error $ "[UDP PROXY] Key not found :" ++ sfile sockfile
 
 
 
-writeData :: WriteFun -> BreakFun -> IO () -> RawData -> IO [ProxRet]
+writeData :: WriteFun -> BreakFun -> IOLog () -> RawData -> IOLog [ProxRet]
 writeData wr br kill rd = do r <- runWriteFun wr rd
                              if r then pure [] else runBreakFun br B.empty >> kill >> pure []
 
 
 {-| Writes everything from the socket into the pipe. InetInit may refresh the connection [TODO] control with hijacking sendto in the proxifier |-}
-buildProxCallback :: WriteFun -> BreakFun ->  IO () -> IO () -> MapCallback ProxUDPEntry SocketFile ProxPacket ProxRet
+buildProxCallback :: WriteFun -> BreakFun ->  IOLog () -> IOLog () -> MapCallback ProxUDPEntry SocketFile ProxPacket ProxRet
 buildProxCallback wf bf rf k = ask >>= buildProxCallback' wf bf rf k
    where buildProxCallback' wr br refresh kill (ProxPacket src raw) = case decodeMaybe raw of
                                                                            Just (InetInit _ _ ) -> -- liftIO $ refresh >>  [TODO] No reason to refresh on arbitrary packets
                                                                                                   do keepLog ProxyLog Normal $ ("[UDP PROXY] InetInit received " ++ show (B.length raw) ++ " bytes from the socket. Writing into weed.") 
-                                                                                                     liftIO $ writeData wr br kill (encode $ InetData raw)
+                                                                                                     liftLog $ writeData wr br kill (encode $ InetData raw)
                                                                            _ -> keepLog ProxyLog Normal ("[UDP PROXY] received " ++ show (B.length raw) ++ " bytes from the socket. Writing into weed.") 
-                                                                                >> liftIO (writeData wr br kill (encode $ InetData raw ))
+                                                                                >> liftLog (writeData wr br kill (encode $ InetData raw ))
                                                                                        
 
 {-| Writes everything from the pipe into the udp socket |-}
-buildPipeCallback :: Socket -> SockAddr -> IO () -> SockConf -> (WriteFun,BreakFun) -> IO (Callback,BrkClbck)
+buildPipeCallback :: Socket -> SockAddr -> IOLog () -> SockConf -> (WriteFun,BreakFun) -> IOLog (Callback,BrkClbck)
 buildPipeCallback sock addr kill sc (wr,br) = pure (Callback normalCallback, BrkClbck closeCallback)
   where normalCallback pkt = case decodeMaybe pkt of
                                 Nothing -> return ()
                                 Just (InetInit _ rd) -> return () --TODO
                                 Just (InetData rd) -> do 
                                                         -- ret <- sendTo sock (B.toStrict rd) addr
-                                                         ret <- sendTo sock (B.toStrict $ encode $ ProxAns sc rd) addr
+                                                         ret <- liftIO $ sendTo sock (B.toStrict $ encode $ ProxAns sc rd) addr
                                                          keepLog ProxyLog Normal $ "[UDP PROXY] New data from weed to socket " ++ show addr ++" (" ++ show ret ++ " bytes) - " ++ show ((fromIntegral $ B.length rd)::Word64)
                                 Just (InetClose rd) -> void $ --sendTo sock (B.toStrict rd) addr >>  
                                                              runBreakFun br B.empty >> kill

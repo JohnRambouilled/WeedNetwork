@@ -12,6 +12,7 @@ import Control.Concurrent.STM.TVar
 import Control.Monad.State
 import Data.Binary
 import Control.Monad
+import Control.Monad.Writer hiding (listen)
 import Data.Maybe
 import Data.List 
 
@@ -41,7 +42,7 @@ data Proxy = Proxy {proxySources :: TVar [SourceEntry]}
 proxyRoadChoice :: MVar Sources -> TVar [SourceID] -> RoadChoice
 proxyRoadChoice sourcesV sIDsV  = RoadChoice roadC
   where roadC road sID cert raw = do 
-                                     sIDs <- atomically $ readTVar sIDsV
+                                     sIDs <- liftIO . atomically $ readTVar sIDsV
                                      keepLog ProxyLog Normal $ "[Roads] : RoadChoice on road : " ++ show (roadToRoadID road)
                                      keepLog ProxyLog Normal $ "[Roads] : Registered roads are : " ++ show sIDs
                                      if length sIDs < nbSourcesMax 
@@ -50,64 +51,64 @@ proxyRoadChoice sourcesV sIDsV  = RoadChoice roadC
                                                 True -> extractRoads sourcesV sID >>= maybe (pure False) (pure . (roadToRoadID road `notElem`))
                                          else return False
 
-
                                                                                 
-choseDest :: MVar Sources -> TVar [SourceID] -> IO (Maybe SourceEntry)
-choseDest sourcesV sIDs = (atomically $ safeHead <$> readTVar sIDs) >>= maybe (pure Nothing) (getSourceEntry sourcesV)  
+choseDest :: MVar Sources -> TVar [SourceID] -> IOLog (Maybe SourceEntry)
+choseDest sourcesV sIDs = (liftIO . atomically $ safeHead <$> readTVar sIDs) >>= maybe (pure Nothing) (getSourceEntry sourcesV)  
   where safeHead [] = Nothing
         safeHead (x:_) = Just x
 
+{-
 
 {-| Opens a new communication if the socket supplies a well-formed InetInit. |-}
-onNewConnection :: MVar Timer -> MVar Sources -> TVar [SourceID] -> Socket -> IO ()
-onNewConnection timerV sourcesV sIDs s = do 
+onNewConnection :: LogFunction -> MVar Timer -> MVar Sources -> TVar [SourceID] -> Socket -> IOLog ()
+onNewConnection f timerV sourcesV sIDs s = do 
                                      keepLog ProxyLog Normal "NEW CONNECTION !!!"
-                                     raw <- recv s 4096
+                                     raw <- liftIO $ recv s 4096
                                      keepLog ProxyLog Normal $ "[PROXY] received " ++ show (BS.length raw) ++ " bytes."
-                                     liftIO $ case (decodeOrFail (B.fromStrict raw) :: Either _ (_,_,InetPacket)) of
-                                                      Left err -> print err
-                                                      Right (_,offset,v) -> keepLog ProxyLog Normal ("[DECODEORFAIL] consumed bytes = " ++ show offset) >> return ()
- 
                                      case decodeMaybe (B.fromStrict raw) :: Maybe InetPacket of
                                         Just pkt@(InetInit sc _) -> do
-                                               
-                                                                      keepLog ProxyLog Normal =<< dumpSockConf "[UNIX] new pkt decoded" sc
+                                                                      keepLog ProxyLog Normal =<< liftIO (dumpSockConf "[UNIX] new pkt decoded" sc)
                                                                       dest <- choseDest sourcesV sIDs
-                                                                      if (isNothing dest) then close s
+                                                                      if (isNothing dest) then liftIO $ close s
                                                                         else void $ openTCPCommunication buildCallbacks timerV leechTimeOut leechRefreshTime
                                                                                                       (fromJust dest) $ ProtoRequest inetTCPProtoID (encode pkt)
                                         _ -> do --case decodeOrFail (B.fromStrict raw) of
                                                --     Right (_,_,a) -> do pkt <- pure a :: IO InetPacket
                                                --                         close s
                                                --     Left (_,_,msg) -> do keepLog ProxyLog Error $ "erreur decode packet : " ++ msg
-                                                close s
+                                                liftIO $ close s
         where
-              buildCallbacks (wr,br) = do pID <- forkFinally (runDuplexer False wr br s) (pure $ close s) 
-                                          return (Callback $ gatewayCallback pID br s, BrkClbck $ \_ -> killThread pID)
+              buildCallbacks (wr,br) = do pID <- liftIO $ forkFinally (runDuplexer f False wr br s) (pure $ close s) 
+                                          return (Callback $ gatewayCallback pID br s, BrkClbck $ \_ -> (liftIO $ killThread pID))
 
 
 
 
-runProxy :: String -> SocketType -> Client -> TVar [SourceID] -> IO ()
-runProxy socketFileName sockType client sIDs = do  keepLog ProxyLog Normal "PROXY : connectToRessource"
-                                                   connectToRessource client sIDs (proxyRoadChoice (csources client) sIDs) inetRessourceID
-                                                   keepLog ProxyLog Normal  "PROXY : ouverture de la socket"
-                                                   s <- socket AF_UNIX sockType 0
-                                                   keepLog ProxyLog Normal "PROXY : bind"
-                                                   bindSocket s $ SockAddrUnix socketFileName
-                                                   keepLog ProxyLog Normal "PROXY : listen"
-                                                   listen s 5 
-                                                   keepLog ProxyLog Normal "PROXY : loop"
-                                                   loop $ case sockType of
-                                                              Stream -> tcpServer s
-                                                              Datagram -> return () -- TODO
-                                                              _ -> return ()
+runProxy' :: String -> SocketType -> Client -> TVar [SourceID] -> IOLog Socket
+runProxy' socketFileName sockType client sIDs = do  keepLog ProxyLog Normal "PROXY : connectToRessource"
+                                                    connectToRessource client sIDs (proxyRoadChoice (csources client) sIDs) inetRessourceID
+                                                    keepLog ProxyLog Normal  "PROXY : ouverture de la socket"
+                                                    s <- liftIO $ socket AF_UNIX sockType 0
+                                                    keepLog ProxyLog Normal "PROXY : bind"
+                                                    liftIO $ bindSocket s $ SockAddrUnix socketFileName
+                                                    keepLog ProxyLog Normal "PROXY : listen"
+                                                    liftIO $ listen s 5 
+                                                    keepLog ProxyLog Normal "PROXY : loop"
+                                                    pure s
+
+runProxy :: LogFunction -> String -> SocketType -> Client -> TVar [SourceID] -> IO ()
+runProxy f fn st c sIDs = do (s,l) <- runWriterT $ runProxy' fn st c sIDs
+                             f l
+                             loop $ case st of
+                                            Stream -> tcpServer s
+                                            Datagram -> return () -- TODO
+                                            _ -> return ()
         where loop f = f >> loop f
               tcpServer s = do 
                             (cSock,cAddr) <- accept s
-                            onNewConnection (ctimer client) (csources client) sIDs cSock
+                            f . snd =<< runWriterT (onNewConnection f (ctimer c) (csources c) sIDs cSock)
 
 
 
-startProxy :: String -> SocketType -> Client -> IO ()
-startProxy socketFileName sockType client = atomically (newTVar []) >>= runProxy socketFileName sockType client 
+startProxy :: LogFunction -> String -> SocketType -> Client -> IO ()
+startProxy f socketFileName sockType client = atomically (newTVar []) >>= runProxy f socketFileName sockType client -}

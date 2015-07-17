@@ -8,6 +8,8 @@ import Data.Time
 
 type Log = [LogMsg]
 
+type LogFunction = Log -> IO ()
+
 printLog :: Log -> IO ()
 --printLog logs = forM logs putStrLn . ("\t" ++) . show
 printLog =  putStrLn . unlines . map (("\t"++).show)
@@ -21,8 +23,7 @@ instance (MonadWriter Log m, MonadIO m) => LogIO m
 
 liftLog :: LogIO m => IOLog a -> m a
 liftLog a = do (r, l) <- liftIO $ runWriterT a
-               tell l
-               pure r
+               tell l >> pure r
 
 data LogMsg = LogMsg {logStatus :: LogStatus,
                       logModule :: ModuleName,
@@ -38,13 +39,13 @@ data ModuleName = CryptoLog | NeighborLog | RessourcesLog | RoutingLog |  Source
 
 keepLog :: MonadWriter Log m => ModuleName -> LogStatus -> String -> m ()
 keepLog m st msg = case m of
---                        CryptoLog -> printLog
---                        CommunicationLog -> printLog
---                        ProtocolLog -> printLog
+                        CryptoLog -> printLog
+                        CommunicationLog -> printLog
+                        ProtocolLog -> printLog
                         ProxyLog -> printLog
                         GatewayLog -> printLog
---                        ClientLog -> printLog
---                        TestLog -> printLog
+                        ClientLog -> printLog
+                        TestLog -> printLog
                         TransportLog -> printLog
                         _ -> case st of
                                Normal -> pure ()

@@ -14,8 +14,8 @@ import qualified Data.Map as M
 
 import Log
 
-class (MonadState b a, LogIO a) => SW b a 
-instance (MonadState b a, LogIO a) => SW b a
+class (MonadState s m, LogIO m) => SW s m
+instance (MonadState s m, LogIO m) => SW s m
 
 type Behaviour a p m r = RWST p Log a m r --p -> StateT a IO [r]
 class Modules a p r where onPacket :: Behaviour a p IO r
@@ -97,8 +97,8 @@ genCallback bV f g = do lst <- (liftIO . mapM (runModule bV) =<< f)
                         g rets
  
 
-unregisterM :: (MapModules b k p r) => MVar (MapModule b k p r) -> k -> IO ()
-unregisterM mv key = runStateMVar mv (removeMapBehaviour key)
+unregisterM :: (MapModules b k p r, LogIO m) => MVar (MapModule b k p r) -> k -> m ()
+unregisterM mv key = runSWMVar mv (removeMapBehaviour key)
         
 
 

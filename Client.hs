@@ -87,20 +87,21 @@ newtype RoadChoice = RoadChoice {choseRoad :: Road -> SourceID -> RessourceCert 
 cleanSourceEntryList :: [SourceEntry] -> IO [SourceEntry]
 cleanSourceEntryList = filterM $ (flip withMVar $ pure . M.null . pipesMap) . sourcePipes
 
-connectToRessource :: Client -> TVar [SourceID] -> RoadChoice -> RessourceID -> IOLog ()
-connectToRessource c sV rC rID = insertRessourceEntry (cressource c) rID $ resCallback c (csources c) =<< ask
+connectToRessource :: LogFunction -> Client -> TVar [SourceID] -> RoadChoice -> RessourceID -> IOLog ()
+connectToRessource lf c sV rC rID = insertRessourceEntry (cressource c) rID $ resCallback c (csources c) =<< ask
     where resCallback :: Client -> MVar Sources -> RessourcePacket -> RessourceCB
           resCallback _ _ (Research _ _ _ _) = pure [] --TODO : se mettre a relayer les réponses
           resCallback c srcV a@(Answer cert _ r sID d) = let uID = clientSourceID $ cidentity c
                                                              r' = uID : r 
                                                          in do keepLog ClientLog Normal $ "answer received on road : " ++ show r' ++ " calling roadChoice"
+                                                               liftIO . print $ "calling roadChoice: "
                                                                (liftIO . atomically $ readTVar sV)
                                                                  >>= (filterM  ((isJust <$>) . liftLog . extractRoads (csources c)))
                                                                  >>= (liftIO . atomically . writeTVar sV)
                                                                b <- liftLog $ (choseRoad rC) r' sID cert d
-                                                               if b then do keepLog ClientLog Important $ "interesting road, opening pipe..."
-                                                                            liftLog $ openNewPipeIO c (cResSourceDHKey cert) r' d -- TODO :c'est vraiment utile de se passer de la data?
-                                                                            keepLog ClientLog Normal $ "Pipe opened, registering the source"
+                                                               if b then do keepLog ClientLog Important $ "interesting road, opening pipe in a different thread"
+                                                                            liftIO . forkIO $ openNewPipeIO lf c (cResSourceDHKey cert) r' d 
+                                                                            keepLog ClientLog Normal $ "registering the source"
                                                                             liftIO . atomically $ (readTVar sV >>= (writeTVar sV) . nub . (sID :))
                                                                             pure . maybeToList $ relayAnswerPacket uID a
                                                                     else pure . maybeToList $ relayAnswerPacket uID a
@@ -115,8 +116,8 @@ extractRoads sourcesV sID = do pipes <- getSourceEntry sourcesV sID >>= maybe (p
 
 
 
-openNewPipeIO :: Client -> DHPubKey -> Road -> RawData -> IOLog ()
-openNewPipeIO c k r d = runRWST (openNewPipe k r d) () c >> pure ()
+openNewPipeIO :: LogFunction -> Client -> DHPubKey -> Road -> RawData -> IO ()
+openNewPipeIO lf c k r d = runRWST (openNewPipe k r d) () c >>= \(_,_,l) -> lf l
 
 openNewPipe :: (SW Client m) => DHPubKey -> Road -> RawData -> m Bool 
 openNewPipe dK r d = do (uK,uID, pK) <- (,,) <$> gets (privateKey . cidentity) <*> gets (clientSourceID . cidentity) <*> gets (publicKey . cidentity)
