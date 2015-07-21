@@ -36,7 +36,7 @@ onControlPacket timerV wrBrkFun break pkt = do buffers <-  use sToSend
                                                                                 use sKill >>= liftLog
                                                                                 if null rest
                                                                                   then keepL Normal "Datagram queue empty" >> pure []
-                                                                                  else do keepL Normal "Sending the next datagram" >> senderSendBuf timerV (head rest) wrBrkFun break
+                                                                                  else do keepL Normal "Sending the next datagram" >> senderSendBuf timerV (head rest) wrBrkFun 
                                                                                   
 
 
@@ -57,8 +57,8 @@ openTCPCommunication clbkGen timerV tO ref sE pR = do
 genTCPWriteBreakFun :: MVar Timer -> MVar Sender -> (WriteFun, BreakFun) -> (WriteFun, BreakFun)
 genTCPWriteBreakFun timerV sndV wbF = (writeFun, breakFun)
         where breakFun = BreakFun $ \d -> do keepL Important "BreakFun called"
-                                             runSWMVar sndV $ senderQueueSendBuf timerV wbF kill $ BufKill d
-              writeFun = WriteFun $ \d -> runSWMVar sndV $ senderQueueDatagram timerV wbF kill d
+                                             runSWMVar sndV $ senderQueueSendBuf timerV wbF $ BufKill d
+              writeFun = WriteFun $ \d -> runSWMVar sndV $ senderQueueDatagram timerV wbF d
               kill = do sndr <- _sKill =<< (liftIO $ readMVar sndV)
                         void . runBreakFun (snd wbF) $ B.empty
 

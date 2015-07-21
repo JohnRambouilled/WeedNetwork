@@ -30,22 +30,22 @@ makeLenses ''Sender
 
 
 
-senderQueueDatagram :: (SW Sender m) => MVar Timer ->  (WriteFun, BreakFun) -> IOLog () -> RawData -> m Bool
-senderQueueDatagram timerV wF break raw  = do curID <- use sCurrentDatagram
-                                              keepL Normal $ "adding new Datagram to queue : " ++ show curID
-                                              sCurrentDatagram += 1
-                                              senderQueueSendBuf timerV wF break $ SendBuf (curID + 1) raws
+senderQueueDatagram :: (SW Sender m) => MVar Timer ->  (WriteFun, BreakFun) -> RawData -> m Bool
+senderQueueDatagram timerV wF raw  = do curID <- use sCurrentDatagram
+                                        keepL Normal $ "adding new Datagram to queue : " ++ show curID
+                                        senderQueueSendBuf timerV wF $ SendBuf (curID + 1) raws
     where raws = fragData raw
 
 
-senderQueueSendBuf :: (SW Sender m) => MVar Timer ->  (WriteFun, BreakFun) -> IOLog () -> SendBuf -> m Bool
-senderQueueSendBuf timerV wF break buf = do toSend <- use sToSend
-                                            keepL Normal "adding buffer to queue"
-                                            sToSend .= toSend ++ [buf]
-                                            if null toSend 
+senderQueueSendBuf :: (SW Sender m) => MVar Timer ->  (WriteFun, BreakFun) -> SendBuf -> m Bool
+senderQueueSendBuf timerV wF buf = do toSend <- use sToSend
+                                      keepL Normal "adding buffer to queue"
+                                      sToSend .= toSend ++ [buf]
+                                      sCurrentDatagram += 1
+                                      if null toSend 
                                                 then do keepL Normal "No datagram in the buffer, sending new datagram"
-                                                        and `fmap` (senderSendBuf timerV buf wF break >>= mapM (sendTRSegment $ fst wF))
-                                                else do keepL Normal "Datagram added to queue"
+                                                        and `fmap` (senderSendBuf timerV buf wF >>= mapM (sendTRSegment $ fst wF))
+                                                else do keepL Normal  $ "Datagram added to queue (" ++ show (length toSend + 1) ++ " left)."
                                                         return True
 
 
@@ -74,17 +74,20 @@ onControlMessage bufID buf (TrAck dID) = if dID == bufID then Nothing
                                                         else Just []
 
 
-senderSendBuf :: (SW Sender m) => MVar Timer -> SendBuf -> (WriteFun, BreakFun) -> IOLog () -> m [TrSegment]
-senderSendBuf _ (BufKill d) (_,bF) break = do keepL Important "[senderSendBuf] BufKill received, closing communication."
-                                              liftLog $ (runBreakFun bF $ d) >> break  
-                                              pure []
-senderSendBuf timerV buf (wF,_) break = let ret = buildSegments (sbDataID buf) $ zip [0..] $ sbBuf buf
-                                    in do killRepeat <- liftIO $ repeatNTimes timerV (void $ spamPsh (last ret)) break  pshFreq pshRepeatParam 
+senderSendBuf :: (SW Sender m) => MVar Timer -> SendBuf -> (WriteFun, BreakFun) -> m [TrSegment]
+senderSendBuf _ (BufKill d) (_,bF) = do keepL Important "[senderSendBuf] BufKill received, closing communication."
+                                        liftLog $ (runBreakFun bF $ d)  
+                                        gets _sKill >>= liftLog
+                                        pure []
+senderSendBuf timerV buf (wF,bF) = let ret = buildSegments (sbDataID buf) $ zip [0..] $ sbBuf buf
+                                    in do kill <- gets _sKill
+                                          killRepeat <- liftIO $ repeatNTimes timerV (void $ spamPsh (last ret)) (break kill)  pshFreq pshRepeatParam 
                                           keepL Normal "[senderSendBuf] Sending Datagramm"
                                           bufs <- use sToSend
                                           sKill .= killRepeat
                                           return ret
         where pshFreq = 5
+              break k = (runBreakFun bF $ encode "Time-Out") >> liftLog k
               pshRepeatParam = 3
               spamPsh payload = sendTRSegment wF payload
 

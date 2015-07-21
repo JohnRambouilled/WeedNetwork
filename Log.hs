@@ -12,7 +12,8 @@ type LogFunction = Log -> IO ()
 
 printLog :: Log -> IO ()
 --printLog logs = forM logs putStrLn . ("\t" ++) . show
-printLog =  putStrLn . unlines . map (("\t"++).show)
+printLog [] = pure ()
+printLog ll = putStrLn . unlines . map (("\t"++).show) $ ll 
 
 class (MonadWriter Log m, MonadIO m) => LogIO m
 --class alias LogIO m = (MonadWriter Log m, MonadIO m)
@@ -37,15 +38,15 @@ data ModuleName = CryptoLog | NeighborLog | RessourcesLog | RoutingLog |  Source
                 | ProxyLog | GatewayLog | ClientLog | TestLog | TransportLog
   deriving Show
 
-keepLog :: MonadWriter Log m => ModuleName -> LogStatus -> String -> m ()
+keepLog :: LogIO m => ModuleName -> LogStatus -> String -> m ()
 keepLog m st msg = case m of
-                        CryptoLog -> printLog
-                        CommunicationLog -> printLog
-                        ProtocolLog -> printLog
-                        ProxyLog -> printLog
-                        GatewayLog -> printLog
-                        ClientLog -> printLog
-                        TestLog -> printLog
+--                        CryptoLog -> printLog
+--                        CommunicationLog -> printLog
+--                        ProtocolLog -> printLog
+--                        ProxyLog -> printLog
+--                        GatewayLog -> printLog
+--                        ClientLog -> printLog
+--                        TestLog -> printLog
                         TransportLog -> printLog
                         _ -> case st of
                                Normal -> pure ()

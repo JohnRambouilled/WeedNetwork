@@ -35,7 +35,6 @@ keepL = keepLog GatewayLog
 
 data InetPacket = InetInit SockConf RawData
                 | InetData RawData
-                | InetClose RawData
 
 {-| Disjunction between remote and locally stored services. -}
 data SockConf = InternetSockConf {scType    :: SocketType,
@@ -94,7 +93,7 @@ runDuplexer f ignoreInit wr br s =  do raw <- fromStrict <$> Network.Socket.Byte
                                        if c then runDuplexer f ignoreInit wr br s else return ()
   where runDuplexer' :: RawData -> IOLog Bool
         runDuplexer' raw = do keepLog GatewayLog Normal ("[UNIX] New data from a socket (" ++ show (Data.ByteString.Lazy.length raw) ++ ")")
-                              if Data.ByteString.Lazy.null raw then runBreakFun br raw
+                              if Data.ByteString.Lazy.null raw then runBreakFun br raw >> pure False
                                                                else case decodeMaybe raw of
                                                                     Just (InetInit _ _) -> if ignoreInit == False then runWriteFun wr raw
                                                                                                                 else runWriteFun wr (encode $ InetData raw)
@@ -112,12 +111,19 @@ gatewayCallback pID br s pkt = do keepLog GatewayLog Normal ("[WEED] New data fr
                                             Right (_, _, r) -> gatewayCallback' pID br s r 
 gatewayCallback' :: ThreadId -> BreakFun -> Socket -> InetPacket -> IOLog ()
 gatewayCallback' pID br s (InetData raw) = do keepLog GatewayLog Normal "[INETDATA]"
-                                              r <- liftIO $ send s $ toStrict raw
+                                              liftIO $ Prelude.putStrLn "[PRINTF_ GATEWAY] inet data received"
+                                              r <- handle' evalException (liftIO $ void $ send s $ toStrict raw)
                                               keepLog GatewayLog Normal $ "[WEED] Writing " ++ show r ++ " bytes into the socket."
-gatewayCallback' pID br s (InetClose raw) = do keepLog GatewayLog Normal "[INETCLOSE]"
+    where handle' f a = do (r,w) <- liftIO $ handle (runWriterT . f) (runWriterT a)
+                           tell w >> pure r
+          evalException :: IOException -> IOLog ()
+          evalException err = keepL Error ("!!!!!!!!!!!!!!!!!!!!!![DUPLEXER] Send has failed" ++ show err) >> void (runBreakFun br BC.empty)
+
+{-gatewayCallback' pID br s (InetClose raw) = do keepLog GatewayLog Normal "[INETCLOSE]"
                                                liftIO $ killThread pID 
                                                keepLog GatewayLog Normal ("[GATEWAY] InetClose received. Closing comID") 
                                                --void $ runBreakFun br raw
+-}
 gatewayCallback' _ _ _ (InetInit _ _) = pure ()
 
 
@@ -141,13 +147,13 @@ instance Binary SockConf where
 --                                         _ -> return Datagram --fail ""
 instance Binary InetPacket where
         put (InetData rd) = putWord8 1 >> putLazyByteString rd
-        put (InetClose rd) = putWord8 2 >> putLazyByteString rd
+ --       put (InetClose rd) = putWord8 2 >> putLazyByteString rd
         put (InetInit conf raw) = putWord8 3 >> put conf >> putLazyByteString raw
 
         get = do w <- getWord8
                  case w of
                    1 -> InetData <$> getRemainingLazyByteString
-                   2 -> InetClose <$> getRemainingLazyByteString
+--                   2 -> InetClose <$> getRemainingLazyByteString
                    3 -> InetInit <$> get <*>  getRemainingLazyByteString
                    _ -> fail $ "Not a correct InetPacket : " ++ show w
 

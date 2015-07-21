@@ -1,5 +1,5 @@
 all: Main.hs obj/ethernet.o obj/receiver.o obj/udp.o
-	ghc -threaded obj/ethernet.o obj/receiver.o obj/udp.o --make Main.hs
+	ghc -threaded -rtsopts obj/ethernet.o obj/receiver.o obj/udp.o --make Main.hs
 
 obj/ethernet.o: Sniffer/ethernet.c Sniffer/ethernet.h
 	gcc -fPIC -c Sniffer/ethernet.c -o obj/ethernet.o

@@ -48,7 +48,7 @@ openCommunication :: ((WriteFun, BreakFun) -> IOLog (Callback, BrkClbck))
                     -> IOLog (WriteFun, BreakFun)
 openCommunication clbkGen tV timeOut refreshTime sE  = openCom clbkGen genRefrKill sE
   where genRefrKill cID = do (ref, kill) <- registerTimerM tV timeOut (closeComIO fV cV cID >> pure True)
-                             killRep <- repeatEach tV (void $ liftIO $ sendToSource sE $ ComInit cID $ encode "PING") refreshTime
+                             killRep <- repeatEach tV (ref >> (void $ liftIO $ sendToSource sE $ ComInit cID $ encode "PING")) refreshTime
                              pure (ref, kill >> killRep)
         (fV, cV) = ((,) <$> sourceFreeComID <*> sourceCommunication) sE
 
@@ -89,7 +89,7 @@ stdCallback fV _ kill (_, brk) (ComExit cID d) = do closeCom fV cID
                                                     liftLog $ kill
                                                     liftLog $ runBrkClbck brk d
                                                     pure []
-stdCallback _ refresh _ (_,_) (ComInit cID d) = do keepLog ProtocolLog Error $ "ComInit on used comID (Leech) refreshing entry " ++ show cID
+stdCallback _ refresh _ (_,_) (ComInit cID d) = do keepLog ProtocolLog Normal $ "ComInit on used comID refreshing entry " ++ show cID
                                                    liftLog $ refresh
                                                    pure []
 

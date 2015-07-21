@@ -21,7 +21,9 @@ import Client.Sources
 import Client.Ressource
 import Client.Neighborhood
 import Client.Pipes
+import Proxy.RoadChoice
 import Proxy.TCP
+import Proxy.Socks
 import Proxy.UDP
 import Gateway hiding (keepL)
 import Client.Protocol
@@ -96,7 +98,8 @@ leechMain logf c send = do  introduceThread c send "Leech Hello"
                             logf $ [LogMsg Normal TestLog "enregistrement de la répétition de recherche"]
                             logf $ [LogMsg Normal TestLog "démarrage du proxy "]
                             repeatEach (ctimer c) (void . liftIO $ sendRes c send inetRessourceID) 5
-                            forkIO $ startProxy logf tcp_socketName Stream c
+                            forkIO $ startProxTCP logf tcp_socketName Stream c
+                            forkIO $ startProxSocks logf Stream c
                             udpProx <- newMVar $ newMapModule []
                             void $ forkIO $ startProxUDP logf udpProx c
 
@@ -149,7 +152,7 @@ runTestClient bhv tc send logf cl = do
         print "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         logf [LogMsg Normal TestLog "qdlkjMDSOVB"]
         logf . keepL $ "Starting timer : "
-        tim <- runChildren $ startTimer logf (ctimer cl) (1000*1000*1)
+        tim <- runChildren $ startTimer (pure $ pure ()) (ctimer cl) (1000*1000*1)
         logf . keepL $ "Runing behaviour : "
         bhV <- runChildren $ bhv cl send 
         logf . keepL $ "Starting sniffer : "

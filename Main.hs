@@ -12,7 +12,7 @@ import Client.Sources
 import Client.Protocol
 import Gateway
 import Client.Class
-import Proxy
+import Proxy.TCP
 import Timer
 import Log
 import Test hiding (runChildren, introduceThread)
@@ -38,12 +38,10 @@ main = do testCL <- testBinaire (leechMain leechLog, leechLog) (seedMain seedLog
           repeatEach (ctimer . client $ head testCL) (liftIO . putStrLn =<< dumpClients) 10 >> pure ()
           mVL <- forM testCL $ runChildren . run
           forM_ mVL readMVar
-   where leechLog ll = do putStrLn "# LEECH : " 
-                          forM_ ll $ \x -> putStrLn (show x ++ "\n          ")
-         seedLog ll  = do putStrLn "# SEED  : " 
-                          forM_ ll $ \x -> putStrLn (show x ++ "\n          ")
-                          pure ()
---main = fullGraphMain 5
+   where leechLog = pL "Leech : " 
+         seedLog  = pL "Seed  : "
+         pL _ [] = pure ()
+         pL name ll  =  forM_ ll $ \x -> putStrLn $ name ++ "\t" ++ show x--main = fullGraphMain 5
                     
 {-
 runWeeds :: ClientBehaviour -> IO ()

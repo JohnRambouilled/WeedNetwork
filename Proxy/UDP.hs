@@ -6,7 +6,7 @@ import Client.Class
 import Client.Protocol
 import Client.Packet
 import Gateway
-import Proxy
+import Proxy.RoadChoice
 import Timer
 import Client.Sources
 import Client
@@ -158,8 +158,8 @@ buildPipeCallback sock addr kill sc (wr,br) = pure (Callback normalCallback, Brk
                                                         -- ret <- sendTo sock (B.toStrict rd) addr
                                                          ret <- liftIO $ sendTo sock (B.toStrict $ encode $ ProxAns sc rd) addr
                                                          keepLog ProxyLog Normal $ "[UDP PROXY] New data from weed to socket " ++ show addr ++" (" ++ show ret ++ " bytes) - " ++ show ((fromIntegral $ B.length rd)::Word64)
-                                Just (InetClose rd) -> void $ --sendTo sock (B.toStrict rd) addr >>  
-                                                             runBreakFun br B.empty >> kill
+--                                Just (InetClose rd) -> void $ --sendTo sock (B.toStrict rd) addr >>  
+--                                                             runBreakFun br B.empty >> kill
 
         closeCallback _ = kill
 
