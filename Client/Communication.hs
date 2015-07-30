@@ -21,6 +21,7 @@ import Log
 
 type Communication = MapModule ComEntry ComID ComMessage () 
 type ComCB = Behaviour Communication ComMessage IO [()]
+type ComS a = Behaviour Communication ComMessage IO a
 --type ComT = StateT Communication
 
 data ComEntry = ComEntry {comCallback :: [ComCB]}
@@ -50,7 +51,7 @@ closeCom fV cID =  do keepLog CommunicationLog Important $ "Closing communicatio
 
 defaultComCallback :: Modules a p r => MVar a 
                                    -> (ComMessage -> Maybe p)
-                                   -> (ComID -> p -> r -> IOLog (Maybe ComCB))
+                                   -> (ComID -> p -> r -> ComS (Maybe ComCB))
                                    -> ComCB
 defaultComCallback mv iFun oFun = do p <- ask
                                      case iFun p of
@@ -58,7 +59,7 @@ defaultComCallback mv iFun oFun = do p <- ask
                                         Just q -> do keepLog CommunicationLog Important $ "calling comCB"
                                                      genCallback mv (pure . pure $ q) (outFun q)
     where outFun q rL = do p <- ask
-                           comCBL <- liftLog . (catMaybes <$>) $ mapM (oFun (comID p) q) rL
+                           comCBL <- (catMaybes <$>) $ mapM (oFun (comID p) q) rL
                            insertMapBehaviour (comID p) (ComEntry $ comCBL)
                            pure []
 

@@ -7,7 +7,7 @@ import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import Control.Concurrent
 import Control.Concurrent.STM
-import Control.Concurrent.STM.TVar
+import Control.Concurrent.MVar
 import Control.Monad.State
 import Control.Monad.Writer hiding (listen)
 import Data.Binary
@@ -32,10 +32,10 @@ import Proxy.RoadChoice
 
 tcpSocksPort = 1080 ::Word16
 
-data Proxy = Proxy {proxySources :: TVar [SourceEntry]}
+data Proxy = Proxy {proxySources :: MVar [SourceEntry]}
 
 {-| Opens a new communication if the socket supplies a well-formed InetInit. |-}
-onNewConnection :: LogFunction -> MVar Timer -> MVar Sources -> TVar [SourceID] -> Socket -> IOLog ()
+onNewConnection :: LogFunction -> MVar Timer -> MVar Sources -> MVar [SourceID] -> Socket -> IOLog ()
 onNewConnection logf timerV sourcesV sIDs s = do 
                                      keepLog ProxyLog Normal "NEW CONNECTION !!!"
 --                                     raw <- recv s 4096
@@ -56,9 +56,9 @@ onNewConnection logf timerV sourcesV sIDs s = do
 
 
 
-runProxy :: LogFunction -> SocketType -> Client -> TVar [SourceID] -> IOLog Socket
-runProxy logf sockType client sIDs = do  keepLog ProxyLog Normal "PROXY : connectToRessource"
-                                         connectToRessource logf client sIDs (proxyRoadChoice (csources client) sIDs) inetRessourceID
+runProxy :: LogFunction -> SocketType -> Client -> MVar [SourceID] -> IOLog Socket
+runProxy logf sockType client sIDs = do  --keepLog ProxyLog Normal "PROXY : connectToRessource"
+                                         --connectToRessource logf client sIDs (proxyRoadChoice (csources client) sIDs) inetRessourceID
                                          keepLog ProxyLog Normal  "PROXY : ouverture de la socket"
                                          s <- liftIO $ socket AF_INET sockType 0
                                          liftIO $ setSocketOption s ReuseAddr 1
@@ -71,8 +71,8 @@ runProxy logf sockType client sIDs = do  keepLog ProxyLog Normal "PROXY : connec
 
 
 
-startProxSocks :: LogFunction -> SocketType -> Client -> IO ()
-startProxSocks logf sockType client = do sIDs <- atomically $ newTVar []
+startProxSocks :: LogFunction -> SocketType -> Client -> MVar [SourceID] -> IO ()
+startProxSocks logf sockType client sIDs = do
                                          (s,logs) <- runWriterT (runProxy logf sockType client sIDs)
                                          logf logs
                                          loop $ case sockType of

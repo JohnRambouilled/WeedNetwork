@@ -24,7 +24,7 @@ import Control.Monad.State hiding (get,put)
 import Control.Monad.Reader
 import qualified Control.Monad.State  as S (get)
 import Control.Concurrent.STM
-import Control.Concurrent.STM.TVar
+import Control.Concurrent.MVar
 import Control.Concurrent.MVar
 
 udpTimeOut = 120 --TODO
@@ -69,9 +69,9 @@ instance MapModules ProxUDPEntry SocketFile ProxPacket ProxRet where
                     |otherwise                = void $ buildProxCallback (proxUDPWrite entry) (proxUDPBreak entry)  (proxRefresh entry) (proxKill entry) 
                             
 
-runProxUDP :: (SW ProxUDP m) => LogFunction -> MVar ProxUDP -> Client  -> m Socket
-runProxUDP lf proxyV client = do sIDsV <- liftIO $ atomically $ newTVar []
-                                 liftLog $ connectToRessource lf client sIDsV (proxyRoadChoice (csources client) sIDsV) inetRessourceID
+runProxUDP :: (SW ProxUDP m) => LogFunction -> MVar ProxUDP -> Client  -> MVar [SourceID] -> m Socket
+runProxUDP lf proxyV client sIDsV = do 
+                                 --liftLog $ connectToRessource lf client sIDsV (proxyRoadChoice (csources client) sIDsV) inetRessourceID
                                  s <- liftIO initSock 
                                  modifyDefaultMapBehaviour $ \l -> behaviour proxyV (csources client) (ctimer client) s sIDsV:l
                                  return s
@@ -80,10 +80,10 @@ runProxUDP lf proxyV client = do sIDsV <- liftIO $ atomically $ newTVar []
 --                            c_set_block $ fdSocket s
                             return s
 
-startProxUDP :: LogFunction -> MVar ProxUDP -> Client -> IO ()
-startProxUDP logf proxyV client = do (s,l) <- runRWSTMVar proxyV () (runProxUDP logf proxyV client)
-                                     logf l
-                                     withSocketsDo $ loop $ runServer s
+startProxUDP :: LogFunction -> MVar ProxUDP -> Client -> MVar [SourceID] -> IO ()
+startProxUDP logf proxyV client sIDsV = do (s,l) <- runRWSTMVar proxyV () (runProxUDP logf proxyV client sIDsV)
+                                           logf l
+                                           withSocketsDo $ loop $ runServer s
   where runServer :: Socket -> IO [ProxRet]
         runServer s = do logf [LogMsg Normal ProxyLog "waiting for udp packet..."]
                          (pkt,caddr@(SockAddrUnix fname)) <- recvFrom s 4096
@@ -96,7 +96,7 @@ startProxUDP logf proxyV client = do (s,l) <- runRWSTMVar proxyV () (runProxUDP 
 
 
 
-behaviour :: MVar ProxUDP -> MVar Sources -> MVar Timer -> Socket -> TVar [SourceID] -> MapCallback ProxUDPEntry SocketFile ProxPacket ProxRet
+behaviour :: MVar ProxUDP -> MVar Sources -> MVar Timer -> Socket -> MVar [SourceID] -> MapCallback ProxUDPEntry SocketFile ProxPacket ProxRet
 behaviour p s t so sid = ask >>= behaviour' p s t so sid
 behaviour' proxyV sourcesV timerV sock sIDsV p@(ProxPacket src raw) = do keepLog ProxyLog Normal "Calling default behaviour"
                                                                          case decodeOrFail raw of

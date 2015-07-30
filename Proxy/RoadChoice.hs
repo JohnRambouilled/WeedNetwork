@@ -20,21 +20,21 @@ inetRessourceID = RessourceID $ encode "www"
 
 
 {-| Always keeps k roads to the internet |-}
-proxyRoadChoice :: MVar Sources -> TVar [SourceID] -> RoadChoice
+proxyRoadChoice :: MVar Sources -> MVar [SourceID] -> RoadChoice
 proxyRoadChoice sourcesV sIDsV  = RoadChoice roadC
   where roadC road sID cert raw = do 
-                                     sIDs <- liftIO . atomically $ readTVar sIDsV
+                                     sIDs <- liftIO $ readMVar sIDsV
                                      keepLog ProxyLog Normal $ "[Roads] : RoadChoice on road : " ++ show (roadToRoadID road)
                                      keepLog ProxyLog Normal $ "[Roads] : Registered roads are : " ++ show sIDs
                                      if length sIDs < nbSourcesMax 
                                          then case sID `elem` sIDs of
                                                 False -> pure True
-                                                True -> extractRoads sourcesV sID >>= maybe (pure False) (pure . (roadToRoadID road `notElem`))
+                                                True -> maybe False (roadToRoadID road `notElem`) <$> extractRoads sourcesV sID
                                          else return False
 
                                                                                 
-choseDest :: MVar Sources -> TVar [SourceID] -> IOLog (Maybe SourceEntry)
-choseDest sourcesV sIDs = (liftIO . atomically $ safeHead <$> readTVar sIDs) >>= maybe (pure Nothing) (getSourceEntry sourcesV)  
+choseDest :: MVar Sources -> MVar [SourceID] -> IOLog (Maybe SourceEntry)
+choseDest sourcesV sIDs = (liftIO $ safeHead <$> readMVar sIDs) >>= maybe (pure Nothing) (getSourceEntry sourcesV)  
   where safeHead [] = Nothing
         safeHead (x:_) = Just x
 

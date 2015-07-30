@@ -31,7 +31,7 @@ data Proxy = Proxy {proxySources :: TVar [SourceEntry]}
 
 
 {-| Opens a new communication if the socket supplies a well-formed InetInit. |-}
-onNewConnection :: LogFunction -> MVar Timer -> MVar Sources -> TVar [SourceID] -> Socket -> IOLog ()
+onNewConnection :: LogFunction -> MVar Timer -> MVar Sources -> MVar [SourceID] -> Socket -> IOLog ()
 onNewConnection f timerV sourcesV sIDs s = do 
                                      keepLog ProxyLog Normal "NEW CONNECTION !!!"
                                      raw <- liftIO $ recv s 4096
@@ -55,9 +55,9 @@ onNewConnection f timerV sourcesV sIDs s = do
 
 
 
-runProxy' :: LogFunction -> String -> SocketType -> Client -> TVar [SourceID] -> IOLog Socket
-runProxy' lf socketFileName sockType client sIDs = do  keepLog ProxyLog Normal "PROXY : connectToRessource"
-                                                       connectToRessource lf client sIDs (proxyRoadChoice (csources client) sIDs) inetRessourceID
+runProxy' :: LogFunction -> String -> SocketType -> Client -> MVar [SourceID] -> IOLog Socket
+runProxy' lf socketFileName sockType client sIDs = do  --keepLog ProxyLog Normal "PROXY : connectToRessource"
+                                                       --connectToRessource lf client sIDs (proxyRoadChoice (csources client) sIDs) inetRessourceID
                                                        keepLog ProxyLog Normal  "PROXY : ouverture de la socket"
                                                        s <- liftIO $ socket AF_UNIX sockType 0
                                                        keepLog ProxyLog Normal "PROXY : bind"
@@ -67,7 +67,7 @@ runProxy' lf socketFileName sockType client sIDs = do  keepLog ProxyLog Normal "
                                                        keepLog ProxyLog Normal "PROXY : loop"
                                                        pure s
 
-runProxy :: LogFunction -> String -> SocketType -> Client -> TVar [SourceID] -> IO ()
+runProxy :: LogFunction -> String -> SocketType -> Client -> MVar [SourceID] -> IO ()
 runProxy f fn st c sIDs = do (s,l) <- runWriterT $ runProxy' f fn st c sIDs
                              f l
                              loop $ case st of
@@ -81,5 +81,5 @@ runProxy f fn st c sIDs = do (s,l) <- runWriterT $ runProxy' f fn st c sIDs
 
 
 
-startProxTCP :: LogFunction -> String -> SocketType -> Client -> IO ()
-startProxTCP f socketFileName sockType client = atomically (newTVar []) >>= runProxy f socketFileName sockType client 
+startProxTCP :: LogFunction -> String -> SocketType -> Client -> MVar [SourceID] -> IO ()
+startProxTCP = runProxy 

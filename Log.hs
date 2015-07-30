@@ -41,13 +41,14 @@ data ModuleName = CryptoLog | NeighborLog | RessourcesLog | RoutingLog |  Source
 keepLog :: LogIO m => ModuleName -> LogStatus -> String -> m ()
 keepLog m st msg = case m of
 --                        CryptoLog -> printLog
---                        CommunicationLog -> printLog
---                        ProtocolLog -> printLog
---                        ProxyLog -> printLog
---                        GatewayLog -> printLog
+                        CommunicationLog -> printLog
+                        ProtocolLog -> printLog
+                        ProxyLog -> printLog
+                        GatewayLog -> printLog
 --                        ClientLog -> printLog
 --                        TestLog -> printLog
                         TransportLog -> printLog
+                        SourcesLog -> printLog
                         _ -> case st of
                                Normal -> pure ()
                                _ -> pure () --

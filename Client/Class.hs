@@ -79,7 +79,11 @@ modifySWMVar :: LogIO m => MVar a -> (a -> IOLog (a,b)) -> m b
 modifySWMVar aV f = do (b,l) <- liftIO . modifyMVar aV $ (mkTuple <$>) . runWriterT . f
                        tell l >> pure b
     where mkTuple ((a,b),l) = (a,(b,l))
-         
+
+modifySWMVar_ :: LogIO m => MVar a -> (a -> IOLog a) -> m ()
+modifySWMVar_ aV f = modifySWMVar aV f'
+    where f' a = (,) <$> f a <*> pure ()
+
 runStateMVar :: MVar a -> StateT a IO b -> IO b
 runStateMVar aV aS = modifyMVar aV $ (swap <$>) . runStateT aS
 

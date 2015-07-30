@@ -98,10 +98,13 @@ leechMain logf c send = do  introduceThread c send "Leech Hello"
                             logf $ [LogMsg Normal TestLog "enregistrement de la répétition de recherche"]
                             logf $ [LogMsg Normal TestLog "démarrage du proxy "]
                             repeatEach (ctimer c) (void . liftIO $ sendRes c send inetRessourceID) 5
-                            forkIO $ startProxTCP logf tcp_socketName Stream c
-                            forkIO $ startProxSocks logf Stream c
+                            sIDsV <- newMVar []
+                            (_,connectLogs) <- runWriterT $ connectToRessource logf c sIDsV (proxyRoadChoice (csources c) sIDsV ) inetRessourceID 
+                            logf connectLogs
+                            forkIO $ startProxTCP logf tcp_socketName Stream c sIDsV
+                            forkIO $ startProxSocks logf Stream c sIDsV
                             udpProx <- newMVar $ newMapModule []
-                            void $ forkIO $ startProxUDP logf udpProx c
+                            void $ forkIO $ startProxUDP logf udpProx c sIDsV 
 
 
 sendRes :: Client -> SendFunction -> RessourceID -> IO Bool

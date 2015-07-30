@@ -3,7 +3,7 @@ module Main where
 import Data.Binary
 import Data.ByteString.Lazy(empty, length)
 import Control.Monad.RWS.Lazy
-
+import Control.Monad.Writer
 import Client.Crypto
 import Client.Packet
 import Client.Ressource
@@ -43,38 +43,39 @@ main = do testCL <- testBinaire (leechMain leechLog, leechLog) (seedMain seedLog
          pL _ [] = pure ()
          pL name ll  =  forM_ ll $ \x -> putStrLn $ name ++ "\t" ++ show x--main = fullGraphMain 5
                     
-{-
+
 runWeeds :: ClientBehaviour -> IO ()
 runWeeds c = do gV <- newMVar =<< drgNew--getSystemDRG
-                (pubkey,privkey) <- genKeyPairMVar gV
+                ((pubkey,privkey),keyLogs) <- runWriterT $ genKeyPairMVar gV
+                printLog keyLogs
                 let me = SourceID $ KeyHash $ pubKeyToHash pubkey
                 sock <- newRawSocket
                 -- Initialize the client
                 client <- genClient gV me privkey pubkey $ \d -> do putStrLn $ "sending packet : " ++ (show . Data.ByteString.Lazy.length $ encode d)
                                                                     writePacket sock d
                 -- Initialize the ctimer - checks every 10 seconds [TODO]
-                tim <- runChildren $ startTimer (ctimer client) 1
+                tim <- runChildren $ startTimer (pure $ pure ()) (ctimer client) 1
                 -- Launching the specifieds actions
                 srvc <- runChildren $ c client $ writePacket sock
                 repeatEach (ctimer client) (liftIO . putStrLn =<< fst <$> runStateT dumpClient client) 10 >> pure ()
                 -- Starts the networks
                 weed <- runChildren $ loop $ listenPacket client sock
                 -- Waits for childrens
-                forM_ [weed,tim,srvc] $ readMVar
+                forM_ [weed,tim,srvc] readMVar
     where loop f = f >> loop f
           listenPacket client sock = do
                                         b <- waitForPkt sock
                                         case b of
-                                                Nothing -> keepLog ClientLog Normal "received unreadable packet"
-                                                Just pkt -> do keepLog ClientLog Normal "received packet!"
+                                                Nothing -> print "received unreadable packet"
+                                                Just pkt -> do print "received packet!"
                                                                --fst <$> runStateT (onPacket pkt) client >>= mapM_ (writePacket sock)
                                                                (ret,_,logs) <- runRWST onPacket pkt client
-							       forM logs print
+							       forM_ logs print
 							       mapM_ (writePacket sock) (ret :: [Packet])
 
                                                                
 
--}
+
 
 runChildren :: IO () -> IO (MVar ())
 runChildren x = do r <- newEmptyMVar

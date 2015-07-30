@@ -34,9 +34,6 @@ data ProtoEntry = ProtoEntry {protoCallback :: ProtoCallback}
 instance MapModules ProtoEntry ProtoID ProtoRequest ProtoCallback where
         packetKey = Just . protoID <$> ask
         entryBehaviour = pure . pure . pure . protoCallback
-		    -- = pure . flip . pure . pure . pure . pure . protoCallback
-                    -- = pure . pure . pure . pure . pure . protoCallback   <- [TODO] expliquer pourquoi ça marche aussi!
-                --Heeeuuu, t'es sure? ghc a l'air content
 
 
 leechTimeOut = 150 :: DiffTime
@@ -98,30 +95,28 @@ stdCallback _ refresh _ (_,_) (ComInit cID d) = do keepLog ProtocolLog Normal $ 
 
 
 genProtoCallback :: MVar Timer -> DiffTime -> MVar Protocol -> SourceEntry -> ComCB
-genProtoCallback tV timeOut pv sE@(SourceEntry  _ _ fV cV) = defaultComCallback pv inFun outFun
+genProtoCallback tV timeOut pv sE@(SourceEntry  sID _ fV cV) = defaultComCallback pv inFun outFun
     where inFun = decodeMaybe . comContent :: ComMessage -> Maybe ProtoRequest
-          outFun :: ComID -> ProtoRequest -> [ProtoCallback] -> IOLog (Maybe ComCB)
+          outFun :: ComID -> ProtoRequest -> [ProtoCallback] -> ComS (Maybe ComCB)
           outFun cID pR r = do (refresh, kill) <- liftIO $ registerTimerM tV timeOut (closeComIO fV cV cID >> pure True)
+                               liftIO . print $ "Calling Protocallback ****************************************"
                                let (wF,bF) = genWriteBreakFun kill sE cID
                                cbkM <- liftLog $ (runProtoCallback $ head r) (protoContent pR) (wF,bF) --Warning head
+                               liftIO . print $ "Protocallback Called ****************************************"
                                case cbkM of
-                                Nothing -> do runBreakFun bF $ encode "unable to open connection"
+                                Nothing -> do liftIO . print $ "fail protocalback!"
+                                              --runBreakFun bF $ encode "unable to open connection"
+                                              liftLog kill
+                                              closeCom fV cID
+                                              keepLog CommunicationLog Important $ "[Communication] fail protocallback, ComExit to : " ++ show sID ++ " on Com : " ++ show cID
+                                              liftIO $ sendToSource sE $ ComExit cID $ encode "unable to open communication"
+                                              liftIO . print $ "zougy zougy"
                                               return Nothing
-                                Just (clbk, brk) -> do liftIO $ modifyMVar_ fV $ pure . delete cID
+                                Just (clbk, brk) -> do liftIO . print $ "zp,fzp,vzpod,vfzpof,zpofzfj,kzsd,zvckplsd,vcvcsdklcn,"
+                                                       liftIO $ modifyMVar_ fV $ pure . delete cID
+                                                       liftIO . print $ "zp,fzp,vzpod,vfzpof,zpofzfj,kzsd,zvckplsd,vcvc,"
                                                        return . Just $ ask >>= stdCallback fV (liftLog refresh) (liftLog kill) (clbk, brk)
-{-          comClbck refresh kill clbk brk cm = do
-                       case cm of ComData _ d -> liftIO $ do keepLog ProtocolLog Normal $ "running callback on message : " ++ show cm
-                                                             void . forkIO $ runCallback clbk $ d
-                                  ComExit cID d -> do closeCom fV cID
-                                                      liftIO $ kill
-                                                      keepLog ProtocolLog Important $ "calling breakCallback on message : " ++ show cm
-                                                      S.get >>= keepLog CommunicationLog Normal . show
-                                                      liftIO . void . forkIO $ runBrkClbck brk $ d
-                                  c@(ComInit cID _) -> do keepLog ProtocolLog Error $ "ComInit on used comID (Seed) refreshing entry " ++ show cID
-                                                          liftIO $ sendToSource sE c
-                                                          liftIO $ refresh
-                       pure []
--}
+
 
 -- | Standard defaultCallback for pipes : creates a new communication module and return the corresponding callback
 pipesNewSourceCallback :: MVar Timer -> DiffTime -> MVar Protocol -> SourceCB
