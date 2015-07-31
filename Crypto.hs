@@ -28,6 +28,7 @@ data DataPacket = DataPacket  {datakeyID :: KeyHash, dataSig :: Signature, dataC
 
 checkSig _ _ _ = True
 sign _ _ = 0
+decrypt _ = id
 computeHashFromKey _ = 0
 
 
