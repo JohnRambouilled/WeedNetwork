@@ -19,9 +19,9 @@ type SourceID = KeyHash
 type ComID = Int
 
 data PipeEntry = PipeEntry {pePubKey :: PipePubKey,
-                            pePrivKey :: PipePrivKey}
+                            writeFun :: Handler PipeMessage}
 
-data ComEntry = ComEntry {ceFire :: ComCalback}
+data ComEntry = ComEntry {ceFire :: ComCallback}
 data Communication = Communication { comMap :: M.Map ComID ComEntry,
                                      currentComID :: ComID }
 
@@ -32,13 +32,15 @@ type SourceMap = M.Map SourceID SourceEntry
 
 data SourceOrder = SourceAdd SourceID SourceEntry
                  | SourceDelete SourceID PipeID
-                 | SourceAddComID SourceID ComID ComEntry
-                 | SourceDelComID SourceID ComID
 
+data ComOrders   = ComAdd ComID ComEntry
+                 | ComDel ComID
+
+data ComNewComID = ComNewComID {comInit :: ComMessage}
 
 data ComMessage = ComInit {cmID :: ComID, cmPayload :: RawData}
                 | ComData {cmID :: ComID, cmPayload :: RawData}
-                | ComExit {cmID :: ComID}
+                | ComExit {cmID :: ComID, cmPayload :: RawData}
 
 isComExit (ComExit _) = True
 isComExit _ = False
@@ -48,7 +50,7 @@ isComInit = not <$> ((||) <$> isComExit <*> isComData)
 
 data ComError = ComError RawData
 
-type ComCalback = Handler (Either ComError RawData)
+type ComCallback = Handler (Either ComError RawData)
 
 newCommunication :: Communication
 newCommunication = Communication M.empty 0
@@ -57,7 +59,7 @@ newCommunication = Communication M.empty 0
 {-| Sends every comInit to the default handler and route every messages to the entry, if it exists. |-}
 manageComMessages :: SourceMap -> SourceID 
                   -> Handler SourceOrder --Channel for source orders
-                  -> Handler ComMessage -- Channel for higher layers (called on new comIDs)
+                  -> Handler ComNewComID  -- Channel for higher layers (called on new comIDs)
                   -> Handler ComMessage
 manageComMessages sMap sID sOrdH comH msg = case sID `M.lookup` sMap of
                                                 Nothing -> pure ()
@@ -65,8 +67,12 @@ manageComMessages sMap sID sOrdH comH msg = case sID `M.lookup` sMap of
                                                                    Just (ComEntry fire) -> if isComExit msg then fire $ Left (ComError $ cmPayload msg)
                                                                                             else if isComData msg then fire $ Right $ cmPayload msg
                                                                                                                   else pure ()
-                                                                   Nothing -> if isComInit msg then do comH $ msg
+                                                                   Nothing -> if isComInit msg then do comH $ ComNewComID msg 
                                                                                                else pure ()
+
+
+
+
 
 
 {-
