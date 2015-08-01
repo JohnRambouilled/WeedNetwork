@@ -2,6 +2,9 @@ module Sources where
 
 import Crypto
 import Routing
+import Communication
+import Pipes
+
 
 import Data.ByteString.Lazy hiding (split,last)
 import Data.Binary
@@ -12,125 +15,38 @@ import Reactive.Banana.Frameworks
 import Reactive.Banana.Switch
 import Control.Event.Handler
 
-type PipeID = KeyHash
-type PipePubKey = PubKey
-type PipePrivKey = PrivKey
-type SourceID = KeyHash
-type ComID = Int
+type SourceID = Int
+data SourceEntry = SourceEntry {seFire :: Handler DataPacket,
+                                seNetwork :: EventNetwork}
 
-data PipeEntry = PipeEntry {pePubKey :: PipePubKey,
-                            writeFun :: Handler PipeMessage}
-
-data ComEntry = ComEntry {ceFire :: ComCallback}
-data Communication = Communication { comMap :: M.Map ComID ComEntry,
-                                     currentComID :: ComID }
-
-data SourceEntry = SourceEntry { sePipes :: M.Map PipeID PipeEntry, -- Pipe keys
-                                 seCommunications :: Communication}
-
-type SourceMap = M.Map SourceID SourceEntry
+type SourcesMap = M.Map SourceID SourceEntry
 
 data SourceOrder = SourceAdd SourceID SourceEntry
-                 | SourceDelete SourceID PipeID
+                 |  SourceDelete SourceID
 
-data ComOrders   = ComAdd ComID ComEntry
-                 | ComDel ComID
-
-data ComNewComID = ComNewComID {comInit :: ComMessage}
-
-data ComMessage = ComInit {cmID :: ComID, cmPayload :: RawData}
-                | ComData {cmID :: ComID, cmPayload :: RawData}
-                | ComExit {cmID :: ComID, cmPayload :: RawData}
-
-isComExit (ComExit _) = True
-isComExit _ = False
-isComData (ComData _ _) = True
-isComData _  = False
-isComInit = not <$> ((||) <$> isComExit <*> isComData)
-
-data ComError = ComError RawData
-
-type ComCallback = Handler (Either ComError RawData)
-
-newCommunication :: Communication
-newCommunication = Communication M.empty 0
+data NewSourceEntry = NewSourceEntry (Handler ComOrders) (AddHandler ComInit)
 
 
-{-| Sends every comInit to the default handler and route every messages to the entry, if it exists. |-}
-manageComMessages :: SourceMap -> SourceID 
-                  -> Handler SourceOrder --Channel for source orders
-                  -> Handler ComNewComID  -- Channel for higher layers (called on new comIDs)
-                  -> Handler ComMessage
-manageComMessages sMap sID sOrdH comH msg = case sID `M.lookup` sMap of
-                                                Nothing -> pure ()
-                                                Just sEntry -> case cmID msg `M.lookup` comMap (seCommunications sEntry) of
-                                                                   Just (ComEntry fire) -> if isComExit msg then fire $ Left (ComError $ cmPayload msg)
-                                                                                            else if isComData msg then fire $ Right $ cmPayload msg
-                                                                                                                  else pure ()
-                                                                   Nothing -> if isComInit msg then do comH $ ComNewComID msg 
-                                                                                               else pure ()
+buildSourcesManager :: Frameworks t => Event t Request -> (Event t SourceOrder, Handler SourceOrder) -> Handler CryptoOrders -> Handler NewSourceEntry -> Moment t ()
+buildSourcesManager reqE (sourceOE,fireSourceOrder) cryptoOrdH newSourceH = reactimate $ (onRequest cryptoOrdH fireSourceOrder newSourceH <$> sourcesMap) <@> reqE
+  where sourcesMap = accumB M.empty $ onSourceOrder <$> sourceOE
+
+onRequest :: Handler CryptoOrders -> Handler SourceOrder -> Handler NewSourceEntry -> SourcesMap -> Request -> IO ()
+onRequest cryptoOrdH sOrdH newSourceH sMap req = case sID `M.lookup` sMap of
+                                                    Just _ -> pure ()
+                                                    Nothing -> do (comOrdH,fireOrder) <- newAddHandler
+                                                                  (cInitH,fireInit) <- newAddHandler
+                                                                  (dataH,fireData) <- newAddHandler
+                                                                  net <- compile $ do comOE <- fromAddHandler comOrdH
+                                                                                      dataE <- fromAddHandler dataH
+                                                                                      buildSource fireInit comOE dataE
+                                                                  actuate net
+
+                                                                  newSourceH $ NewSourceEntry fireOrder cInitH
+                                                                  cryptoOrdH $ CryptoAdd (reqPipeID req) $ CryptoEntry (reqPipeKey req) fireData
+  where sID = last $ reqRoad req
 
 
-
-
-
-
-{-
-onRequest :: PrivKey -> Request -> SourceMap -> Handler SourceOrder -> Handler CryptoOrders -> Handler ComMessage -> IO ()
-onRequest mePrv (Request _ _ road epk _ pKey pH _ d) srcM sOrdH cOrdH comMessageH = case decodeOrFail $ decrypt mePrv epk of
-                                                            Left (_,_,err) -> print err
-                                                            Right (_,_,(privPipeH,privPipeK)) -> when (computeHashFromKey privPipeK == (privPipeH :: KeyHash)) $
-                                                                                                    let pEntry = PipeEntry pKey privPipeK
-                                                                                                    in case sID `M.lookup` srcM of 
-                                                                    Just sEntry -> case pH `M.lookup` sePipes sEntry of
-                                                                                     Just _ -> pure ()
-                                                                                     Nothing -> do sOrdH $ SourceAdd sID sEntry{sePipes = M.insert pH pEntry $ sePipes sEntry}
-                                                                                                   cOrdH $ CryptoAdd pH $ CryptoEntry pKey managePipeData
-
-                                                                    Nothing -> sOrdH $ SourceAdd sID $ SourceEntry (M.insert pH pEntry M.empty) newCommunication
-                                                                              cOrdH $ CryptoAdd pH $ CryptoEntry pKey managePipeData 
-        where  sID = last road
-               managePipeData (DataPacket kH _ raw) = case decodeOrFail $ signedPayload raw of
-                                                        Left (_,_,err) -> print err
-                                                        Right (_,_,(PipeData _ d)) -> manageComMessage d
-                                                        Right (_,_,(PipeExit _ _)) -> do sOrdH $ SourceDelete sID kH
-                                                                                         cOrdH $ CryptoDelete kH
-
-               manageComMessage raw = case decodeOrFail raw of
-                                        Left (_,_,err) -> print err
-                                        Right (_,_,(ComInit cID rData))
-
-
--}
-{-
-onRequest :: PrivKey -> Request -> SourceMap -> Handler SourceOrder -> Handler CryptoOrders -> IO ()
-onRequest mePrv (Request _ _ road epk _ pKey pH _ d) srcM sOrdH cOrdH = case decodeOrFail $ decrypt mePrv epk of
-                                                            Left (_,_,err) -> print err
-                                                            Right (_,_,(privPipeH,privPipeK)) -> when (computeHashFromKey privPipeK == (privPipeH :: KeyHash)) $
-                                                                                                    let pEntry = PipeEntry pKey privPipeK
-                                                                                                    in case sID `M.lookup` srcM of 
-                                                                    Nothing -> do (addH,fire) <- newAddHandler
-                                                                                  sOrdH $ SourceAddNew sID $ SourceEntry (M.insert pH pEntry M.empty) addH fire
-                                                                                  cOrdH $ CryptoAdd pH $ CryptoEntry pKey (managePipeData fire)
-                                                                    Just sEntry -> case pH `M.lookup` sePipes sEntry of
-                                                                                     Just _ -> pure ()
-                                                                                     Nothing -> do sOrdH $ SourceAddNew sID sEntry{sePipes = M.insert pH pEntry $ sePipes sEntry}
-                                                                                                   cOrdH $ CryptoAdd pH $ CryptoEntry pKey (managePipeData $ seFire sEntry)
-
-                                                                                                          
-
-    where sID = last road
-          managePipeData :: Handler RawData -> Handler DataPacket
-          managePipeData fire (DataPacket kH _ raw) = case decodeOrFail $ signedPayload raw of
-                                                       Left (_,_,err) -> print err
-                                                       Right (_,_,(PipeData _ d)) -> fire d
-                                                       Right (_,_,(PipeExit _ _)) -> do sOrdH $ SourceDeletePipe sID kH
-                                                                                        cOrdH $ CryptoDelete kH
-
-
-                                                                     
-
-onSourceOrder :: SourceOrder -> SourceMap -> SourceMap
-onSourceOrder (SourceAddNew sID sEntry) srcM = M.insert sID sEntry srcM
-onSourceOrder (SourceDeletePipe sID pID) srcM = M.adjust (\sEntry -> sEntry{} ) sID srcM
--}
+onSourceOrder :: SourceOrder -> SourcesMap -> SourcesMap 
+onSourceOrder (SourceAdd sID sEntry) = M.insert sID sEntry
+onSourceOrder (SourceDelete sID) = M.delete sID -- TODO faut il pause le network ? Parce que ça c'est de l'IO

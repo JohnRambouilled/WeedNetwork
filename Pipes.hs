@@ -22,9 +22,9 @@ data PipeOrders = PipeAdd PipeID PipeEntry
 
 
 buildSource :: Frameworks t => Handler ComInit -> Event t ComOrders -> Event t DataPacket ->  Moment t ()
-buildSource comIH ordE dataE = do (pipeOE, pipeOH) <- newEvent
-                                  comE <- buildPipes pipeOE pipeOH dataE
-                                  buildCommunication comIH --todo
+buildSource comIH comOE dataE = do (pipeOE, pipeOH) <- newEvent
+                                   comE <- buildPipes pipeOE pipeOH dataE
+                                   buildCommunication comIH comOE comE--todo
 
 
 
