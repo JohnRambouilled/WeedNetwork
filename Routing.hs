@@ -74,7 +74,7 @@ data Request = Request {reqPosition :: Number,
                         reqPipeSig :: Signature,
                         reqContent :: RawData}
     deriving Generic
-
+{-
 data SignedReq = SignedReq {srLength :: Number, -- ^ Total length of the road
                             srRoad :: Road,  -- ^ Road : list of UserID
                             srEPK :: RawData,  -- ^ encrypted (Keyhash, PrivKey) for the destination of the road
@@ -86,7 +86,7 @@ data UnsignedReq = UnsignedReq {urPosition :: Number,
                                 urNeighSig :: Signature}
     deriving Generic
 
-
+-}
 
 data PipeMessage = PipeData {messageDirection :: Bool,
                              messageContent :: RawData} |
@@ -96,6 +96,6 @@ data PipeMessage = PipeData {messageDirection :: Bool,
 
 
 instance Binary Request
-instance Binary SignedReq
-instance Binary UnsignedReq
+--instance Binary SignedReq
+--instance Binary UnsignedReq
 instance Binary PipeMessage
