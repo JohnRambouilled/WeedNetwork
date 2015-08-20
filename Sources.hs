@@ -1,64 +1,77 @@
 module Sources where
 
-import Crypto
-import Routing
-import Communication
-import Pipes
+import Pipes hiding (onRequest, onOrder)
 
-
-import Data.ByteString.Lazy hiding (split,last)
+import FRP.Sodium
+import FRP.Sodium.Internal hiding (Event)
+import Data.ByteString.Lazy (ByteString)
+import GHC.Generics
 import Data.Binary
 import Control.Monad
 import qualified Data.Map as M
-import Reactive.Banana.Combinators
-import Reactive.Banana.Frameworks
-import Reactive.Banana.Switch
-import Control.Event.Handler
-
-type SourceID = Int
-data SourceEntry = SourceEntry {seFire :: Handler DataPacket}
-
-type SourcesMap = M.Map SourceID SourceEntry
-
-data SourceOrder = SourceAdd NewSourceEntry (Handler ComInit) (AddHandler ComOrders)
-                 |  SourceDelete SourceID
-
-data NewSourceEntry = NewSourceEntry {nsSID :: SourceID,
-                                      nsPipeID :: KeyHash,
-                                      nsKey :: PubKey} --(Handler ComOrders) --(AddHandler ComInit)
+import Data.List
 
 
-buildSourcesManager :: Frameworks t => Event t Request -> (Event t SourceOrder, Handler SourceOrder) -> Handler CryptoOrders -> Handler NewSourceEntry -> Moment t ()
-buildSourcesManager reqE (sourceOE,fireSourceOrder) cryptoOrdH newSourceH = reactimate $ (onRequest cryptoOrdH fireSourceOrder newSourceH <$> sourcesMap) <@> reqE
-  where sourcesMap = accumB M.empty $ onSourceOrder cryptoOrdH <$> sourceOE
+data SourceEntry = SourceEntry {sePipes :: Behaviour (Event (PipeID,PipeMessage))}
+--                                sePipesOrder :: PipeOrder -> Reactive ()}
 
-onRequest :: Handler CryptoOrders -> Handler SourceOrder -> Handler NewSourceEntry -> SourcesMap -> Request -> IO ()
-onRequest cryptoOrdH sOrdH newSourceH sMap req = case sID `M.lookup` sMap of
-                                                            Just sE -> cryptoOrdH $ CryptoAdd (reqPipeID req) $ CryptoEntry (reqPipeKey req) $ seFire sE
-                                                            Nothing -> newSourceH $ NewSourceEntry sID (reqPipeID req) (reqPipeKey req)
-{-                                                            Nothing -> do   (comOrdH,fireOrder) <- newAddHandler
-                                                                  (cInitH,fireInit) <- newAddHandler
-                                                                            (dataH,fireData) <- newAddHandler
-                                                                            net <- compile $ do comOE <- fromAddHandler comOrdH
-                                                                                                dataE <- fromAddHandler dataH
-                                                                                                buildSource fireInit comOE dataE
-                                                                            actuate net
-                                                                            sOrdH $ SourceAdd (last $ reqRoad req) (SourceEntry fireData)
-                                                                            newSourceH $ NewSourceEntry fireOrder --cInitH
-                                                                            cryptoOrdH $ CryptoAdd (reqPipeID req) $ CryptoEntry (reqPipeKey req) fireData
--}  where sID = last $ reqRoad req
+
+
+{-
+
+newSourceModule :: Event Request -- Request qui nous sont destinées
+                -> Event PipeMessage -- Flux de pipeMessages
+                -> Reactive (Behaviour SourceMap)
+
+newSourceModule reqsE pMsgsE = 
+
+-}
+
+
+type PipeMessageEvent = Event (PipeID,PipeMessage) -- Censé être le stream actuel des pipeMessages (en fonction de la pipeMap)
+
+type SourceMap = M.Map SourceID PipeMessageEvent
+
+data SourceOrder = SourceAdd SourceID PipeMessageEvent
+                 | SourceDel SourceID
+
+dropFirstTuple (_,x,y) = (x,y)
+
+onOrder :: SourceOrder -> SourceMap -> SourceMap
+onOrder (SourceAdd sID pMsgE ) = M.insert sID pMsgE
+onOrder (SourceDel sID) = M.delete sID
 
 
 
 
-onSourceOrder :: Handler CryptoOrders -> SourceOrder -> SourcesMap -> SourcesMap 
-onSourceOrder cryptoOrdH (SourceAdd newSE fireInit orderH) = do --M.insert sID sEntry
-            (dataH, fireData) <- newAddHandler
-            net <- compile $ do comOE <- fromAddHandler orderH
-                                dataE <- fromAddHandler dataH
-                                buildSource fireInit comOE dataE
-            actuate net
-            cryptoOrdH $ CryptoAdd (nsPipeID newSE) $ CryptoEntry (nsKey newSE) fireData
+
+{-| Register une entry à chaque nouvelle source |-}
+onRequest :: Event (SourceID,PipeID,PipeMessage) -- PipesMessages provenant de n'importe quelle source
+          -> Event Request -- Stream des requêtes provenant de n'importe quelle source
+          -> (SourceOrder -> Reactive ())
+          -> Request -- Request provenant de n'importe quelle source
+          -> SourceMap
+          -> Reactive ()
+onRequest pMsgsE reqsE fireOrder req sMap = case srcID `M.lookup` sMap of
+                                                Just _ -> pure () -- TODO Refresh le pipe
+                                                Nothing ->  do 
+                                                      msgE <- newPipeModule srcReqsE srcMsgsE
+                                                      fireOrder $ SourceAdd srcID msgE
+        where srcID = last $ reqRoad req
+              srcReqsE = filterE ((srcID==) . last . reqRoad) reqsE -- liste des requêtes provenant de la source
+              srcMsgsE = dropFirstTuple <$> filterE (\(src,_,_) -> src == srcID) pMsgsE -- liste des pipeMessages provenant de la source
 
 
-onSourceOrder _ (SourceDelete sID) = M.delete sID -- TODO faut il pause le network ? Parce que ça c'est de l'IO
+{-| Retourne un event par source. Chaque occurence correspond à une nouvelle source,
+    et contient un stream de pipeMessage (actualisé) provenant d'elle. |-}
+
+
+newSourceModule :: Event (SourceID,PipeID,PipeMessage) -- Event de tous les pipeMessages de toutes les sources
+                -> Event Request -- Event de toutes les requêtes de toutes les sources
+                -> Reactive (Behaviour SourceMap) -- Behaviour actualisé
+
+newSourceModule pMsgsE reqsE = do (orderE,fireOrder) <- newEvent
+                                  sMapB <- accum M.empty $ onOrder <$> orderE
+                                  -- On listen tous les orders provenant des nouvelles requêtes
+                                  listenTrans (snapshot (onRequest pMsgsE reqsE fireOrder) reqsE sMapB) id --ATTENTION normalement on ne devrait pas avoir à unregister ça
+                                  pure sMapB
