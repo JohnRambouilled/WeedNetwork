@@ -6,6 +6,8 @@ module Communication where
 
 import Sources hiding (onOrder)
 import Pipes hiding (onOrder)
+import Crypto hiding (onOrder)
+import Routing hiding (onOrder)
 
 import FRP.Sodium
 import FRP.Sodium.Internal hiding (Event)
@@ -23,7 +25,8 @@ data ComMessage = ComInit {cmComID :: ComID, cmPayload :: RawData}
                 | ComData {cmComID :: ComID, cmPayload :: RawData}
                 | ComExit {cmComID :: ComID, cmPayload :: RawData}
              deriving Generic
-
+isComInit (ComInit _ _) = True
+isComInit _ = False
 instance Binary ComMessage
 
 data ComOrder = ComAdd ComID (Event ComMessage)
@@ -31,59 +34,47 @@ data ComOrder = ComAdd ComID (Event ComMessage)
 
 
 -- Communications provenant d'une seule et unique source
-type CommunicationEvent = Event (ComID, Event ComMessage) -- Event des nouvelles communications
+type NewComEvent = Event (ComID, Event ComMessage) -- Event des nouvelles communications
 
 {-| Associe à chaque sourceID le flux permettant d'écouter les nouvelles communications. |-}
-type ComMap = M.Map SourceID CommunicationEvent
 
-type ComManager = M.Map ComID (Event ComMessage)
+type ComMap = M.Map ComID (Event ComMessage)
 
-data SourceManagerEntry = SourceManagerEntry { smeComManager :: Behaviour ComManager,
-                                               smeFireOrder  :: ComOrder -> Reactive (),
-                                               smeFiredStream :: Event (Reactive ()) }
-type SourceManager = M.Map SourceID SourceManagerEntry
+data ComManagerEntry = ComManagerEntry { cmeComManager :: Behaviour ComMap,
+                                         cmeFireOrder  :: ComOrder -> Reactive (),
+                                         cmeFiredStream :: Event (Reactive ()) }
+type ComManager = M.Map SourceID ComManagerEntry
 
-{-| Unique fonction utile : prend les events de sources et traite les comIDs |-}
-runCommunicationManager :: Behaviour SourceMap -> Reactive (Behaviour SourceManager)
-runCommunicationManager sMapB = do sManaB <- newCommunicationManager sMapB
-                                   -- On reactimate le dernier event d'order fired
-                                   listenTrans (handleSourceManager sManaB) id -- TODO ATTENTION normalement on n'a pas besoin de l'unregister
-                                   pure sManaB
+runComManager :: Behaviour PipeManager -> Reactive (Behaviour ComManager)
+runComManager pManaB = do cManaB <- newComManager pManaB
 
-
-
+                          -- Listen des orders
+                          listenTrans (handleComManager cManaB) id -- TODO attention, n'est censé être appelé qu'une fois
+                          pure cManaB
 
 onOrder (ComAdd cID val) = M.insert cID val
 onOrder (ComDel cID) = M.delete cID
 
 
-onNewComID :: CommunicationEvent -- Flux des nouvelles communications de la source considérée
-           -> Behaviour ComManager -- ComManager actuel
-           -> (ComOrder -> Reactive ()) -- Fire des ComOrders
+onNewComID :: NewComEvent -- Flux des nouvelles communications de la source considérée
+           -> Behaviour ComMap -- ComManager actuel
+           -> Handler ComOrder -- Fire des ComOrders
            -> Event (Reactive ()) -- Events des fires successifs ajoutant des comID à la behaviour
 onNewComID comE cManaB fireOrder = filterJust $ snapshot f comE cManaB
-  where f :: (ComID, Event ComMessage) -> ComManager -> Maybe (Reactive ())
+  where f :: (ComID, Event ComMessage) -> ComMap -> Maybe (Reactive ())
         f (cID, cMsgE) cMana = case cID `M.lookup` cMana of
                                  Just _ -> Nothing
                                  Nothing -> Just $ fireOrder $ ComAdd cID cMsgE
 
-
-
-{-| À chaque nouveau comInit, on renvoie l'event contenant les comMessages y appartenant.
-    ATTENTION : aucune mémoire des comInit, il se peut que le même soit reçu plusieurs
-    fois sans avoir été close. |-}
-newCommunicationModule :: Event ComMessage -- ComMessages provenant d'une même source (actualisé en fonction de la pipesMap)
-                       -> CommunicationEvent -- Event des provenant d'un comID d'une source donnée (fired à chaque nouveau ComInit) (actualisé en fonction de la pipeMap)
-newCommunicationModule cMsgE = filterJust $ onComMsg <$> cMsgE --filterJust $ f <$> cMsgE
-  where onComMsg :: ComMessage -> Maybe (ComID, Event ComMessage)
-        onComMsg (ComInit cID _) = Just (cID, cIDevents cID )
-        onComMsg _ = Nothing
-        cIDevents :: ComID -> Event ComMessage
-        cIDevents cID = filterE ((cID==) . cmComID) cMsgE
-
-filterDecode :: (Binary a) => Event RawData -> Event a
-filterDecode rawE = extractData <$> filterE isRight (decodeOrFail <$> rawE)
-  where extractData (Right (_,_,r)) = r
+{-| Transforme le flux de pipes message en flux de nouvelles communications |-}
+extractNewCom :: Event PipeMessage -> NewComEvent
+extractNewCom pMsgE = fmap ((,) <$> cmComID <*> extractCommunication)  cInitE
+  where cMsgE :: Event ComMessage
+        cMsgE = filterDecode $ messageContent <$> pMsgE
+        (cInitE,cDataE) = filterEither $ fmap (\x -> if isComInit x then Left x else Right x) cMsgE
+        extractCommunication :: ComMessage -> Event ComMessage
+        extractCommunication (ComInit cID _) = filterE ((== cID) . cmComID) cDataE
+        extractCommunication _ = error "Extract communication has been called with a wrong type."
 
 
 {-| Retourne la map actualisée qui à chaque source associe 
@@ -91,25 +82,22 @@ filterDecode rawE = extractData <$> filterE isRight (decodeOrFail <$> rawE)
         - Un moyen d'envoyer des orders
         - des orders fired à reactimate
 |-}
-newCommunicationManager :: Behaviour SourceMap -> Reactive (Behaviour SourceManager)
-newCommunicationManager sMapB = hold M.empty $ execute $ value srcManager
-    where comMsgStream :: PipeMessageEvent -> Event ComMessage
-          comMsgStream pMsgE = filterDecode $ messageContent . snd <$> pMsgE
-          cMap :: Behaviour ComMap
-          cMap = fmap (newCommunicationModule . comMsgStream) <$>  sMapB
-          srcManager :: Behaviour (Reactive SourceManager)
-          srcManager = sequenceA . fmap newCommunicationManager' <$> cMap
+newComManager :: Behaviour PipeManager -> Reactive (Behaviour ComManager)
+newComManager pManaB = swapB $ fmap sequenceA cMapB 
+    where 
+          cMapB :: Behaviour (M.Map SourceID (Reactive ComManagerEntry))
+          cMapB = fmap (newComMap . extractNewCom) <$>  pipesStream pManaB
 
-newCommunicationManager' :: CommunicationEvent -> Reactive SourceManagerEntry 
-newCommunicationManager' cMsgE = do (cOrders,fireOrder) <- newEvent
-                                    cManaB <- accum M.empty $ onOrder <$> cOrders
-                                    pure $ SourceManagerEntry cManaB fireOrder (onNewComID cMsgE cManaB fireOrder) 
+
+newComMap :: NewComEvent -> Reactive ComManagerEntry 
+newComMap cMsgE = do (cOrders,fireOrder) <- newEvent
+                     cManaB <- accum M.empty $ onOrder <$> cOrders
+                     pure $ ComManagerEntry cManaB fireOrder (onNewComID cMsgE cManaB fireOrder) 
 
 
 
 {-| Retourne le flux actuel des events à reactimate |-}
-handleSourceManager :: Behaviour SourceManager -> Event (Reactive ())
-handleSourceManager sManaB = switchE $ foldr merge never . fmap smeFiredStream . M.elems <$> sManaB
-
+handleComManager :: Behaviour ComManager -> Event (Reactive ())
+handleComManager sManaB = switchE $ foldr merge never . fmap cmeFiredStream . M.elems <$> sManaB
 
 

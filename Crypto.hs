@@ -8,6 +8,7 @@ import qualified Data.Map as M
 --import Reactive.Banana.Switch
 --import Control.Event.Handler
 import FRP.Sodium
+import FRP.Sodium.Internal hiding (Event)
 
 type Handler a = a -> Reactive ()
 type EventSource a = (Event a, Handler a)
@@ -28,67 +29,74 @@ type CryptoPacket = Either Introduce DataPacket
 data Introduce = Introduce   {introKeyID :: KeyHash, introKey :: PubKey,  introSig :: Signature, introContent :: Payload} 
 data DataPacket = DataPacket  {datakeyID :: KeyHash, dataSig :: Signature, dataContent :: Payload}
 
+dataSignedPayload = signedPayload . dataContent
+
 checkSig _ _ _ = True
 sign _ _ = 0
 decrypt _ = id
 computeHashFromKey _ = 0
 
 
-data CryptoEntry = CryptoEntry {pubKey :: PubKey,
-                                handlePacket :: Handler DataPacket}
 
-data CryptoNewKey = CryptoNewKey {cnkPayload :: Introduce,
-                                  cnkKeyID :: KeyHash, 
-                                  cnkCallback :: Event DataPacket}
+{-| Associe à chaque keyhash le flux de paquets vérifiés signés par cette clef |-}
+type CryptoMap = M.Map KeyHash (Event DataPacket)
 
-
-type CryptoMap = M.Map KeyHash CryptoEntry
-
-data CryptoOrders = CryptoAdd KeyHash CryptoEntry |
-                    CryptoDelete KeyHash
+data CryptoOrder = CryptoAdd KeyHash (Event DataPacket)
+                 | CryptoAdd' KeyHash PubKey
+                 | CryptoDelete KeyHash
 
 
+{-| Seule fonction à utiliser. Retourne la map des events de datapacket signés par chaque clef
+    ainsi qu'une fonction pour envoyer des commandes. |-}
+runCryptoModule :: Event Introduce -> Event DataPacket -> Reactive (Behaviour CryptoMap , CryptoOrder -> Reactive ())
+runCryptoModule introE dataE = do (ordersE,fireOrder) <- newEvent
+                                  cMapB <- accum M.empty $ onOrder dataE <$> ordersE
+                                  listenTrans (handleCryptoModule introE dataE fireOrder) id
+                                  pure (cMapB,fireOrder)
+
+
+
+
+onOrder :: Event DataPacket -> CryptoOrder -> CryptoMap -> CryptoMap
+onOrder _ (CryptoAdd kH dataE) = M.insert kH dataE
+onOrder dataE (CryptoAdd' kH pKey) = M.insert kH (filterDataStream' pKey dataE)
+onOrder _ (CryptoDelete kH) = M.delete kH
+
+
+
+checkIntroSig :: Introduce -> Bool
 checkIntroSig (Introduce kH pKey sig pay) = computeHashFromKey pKey == kH &&
                                             checkSig pKey sig (signedPayload pay)
 
+
+
+handleCryptoModule :: Event Introduce 
+                   -> Event DataPacket 
+                   -> Handler CryptoOrder
+                   -> Event (Reactive ())
+handleCryptoModule introE dataE fireOrder = filterJust $ onIntro <$> introE
+    where onIntro :: Introduce -> Maybe (Reactive ())
+          onIntro intro@(Introduce kH pKey _ _)
+                | checkIntroSig intro = Just $ fireOrder $ CryptoAdd kH (filterE (filterDataStream pKey) dataE) 
+                | otherwise = Nothing  
+
+filterDataStream :: PubKey -> DataPacket -> Bool
+filterDataStream pKey (DataPacket kH sig pl) = kH == computeHashFromKey pKey &&
+                                         checkSig pKey sig (signedPayload pl)
+
+
+filterDataStream' pKey = filterE (filterDataStream pKey)
                                 
 
+filterDecode :: (Binary a) => Event RawData -> Event a
+filterDecode rawE = extractData <$> filterE isRight (decodeOrFail <$> rawE)
+  where extractData (Right (_,_,r)) = r
 
-{-| Calls outH everytimes a new introduce has been received from an unknown key.
- -  The cryptoEntry contains a handler called for each new datapacket from this source. |-}
-buildCrypto :: EventSource CryptoOrders -> Handler CryptoNewKey -> Event CryptoPacket -> Reactive ()
-buildCrypto (orderE, fireOrder) outH inE = let (introE, dataE) = split inE
-                                           in do cryptoMap <- genCryptoMap orderE
-                                                 let (newIntroE, _) = filterNewIntro (filterE checkIntroSig introE) cryptoMap
-                                                 listen newIntroE $ onNewIntro outH fireOrder
-                                                 listen (snapshot onDataPacket cryptoMap dataE) id
-                                           
-                              
-
-onDataPacket :: CryptoMap -> DataPacket -> IO ()
-onDataPacket cM d@(DataPacket kH s pay) = case M.lookup kH cM of
-                        Nothing -> pure ()
-                        Just (CryptoEntry pK h) -> when (checkSig pK s (signedPayload pay)) $ h d
+isLeft (Left _) = True
+isLeft _ = False
+isRight = not . isLeft
 
 
-
-genCryptoMap :: Event CryptoOrders -> Reactive (Behavior CryptoMap)
-genCryptoMap orders = accum M.empty (onOrder <$> orders)
-
-onOrder :: CryptoOrders -> CryptoMap -> CryptoMap
-onOrder (CryptoAdd kH cE) = M.insert kH cE
-onOrder (CryptoDelete kH) = M.delete kH
-
-filterNewIntro :: Event Introduce -> Behavior CryptoMap -> (Event Introduce, Event Introduce)
-filterNewIntro introE cMapB = split $ snapshot makeEither cMapB introE
-    where makeEither :: CryptoMap -> Introduce -> Either Introduce Introduce
-          makeEither cM i = case M.lookup (introKeyID i) cM of
-                                Nothing -> Left i
-                                Just _ -> Right i
-
-onNewIntro :: Handler CryptoNewKey -> Handler CryptoOrders -> Introduce -> Reactive ()
-onNewIntro outH ordH i@(Introduce kH k _ _) = do (addE, fire) <- newEvent
-                                                 ordH $ CryptoAdd kH (CryptoEntry k fire)
-                                                 outH $ CryptoNewKey i kH addE
-
+swapB :: (Ord k, Eq k) => Behaviour (Reactive (M.Map k a)) -> Reactive (Behaviour (M.Map k a))
+swapB mapB = hold M.empty $ execute $ value mapB
 

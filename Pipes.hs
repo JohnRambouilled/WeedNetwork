@@ -2,6 +2,8 @@
 
 module Pipes where
 
+import Crypto hiding (onOrder)
+import Routing hiding (onOrder)
 import FRP.Sodium
 import Data.ByteString.Lazy (ByteString)
 import GHC.Generics
@@ -9,76 +11,44 @@ import Data.Binary
 import Control.Monad
 import qualified Data.Map as M
 
-type RawData = ByteString
-type Number = Int
-type SourceID = Int
-type PubKey = Int
-type KeyHash = Int
-type Signature = RawData
-type Road = [SourceID]
-type Time = Int
-type PipeID = KeyHash
-
-data Request = Request {reqPosition :: Number,
-                        reqLength :: Number, -- ^ Total length of the road
-                        reqRoad :: Road,  -- ^ Road : list of UserID
-                        reqEPK :: RawData,  -- ^ encrypted (Keyhash, PrivKey) for the destination of the road
-                        reqTime :: Time,
-                        reqPipeKey :: PubKey,
-                        reqPipeID  :: KeyHash,
-                        reqPipeSig :: Signature,
-                        reqContent :: RawData}
-    deriving Generic
 
 
-data PipeMessage = PipeData {messageDirection :: Bool,
-                             messageContent :: RawData} |
-                   PipeExit {messageDirection :: Bool,
-                             messageContent :: RawData} 
-    deriving Generic
-
-data PipeOrder = PipeAdd PipeID PipeEntry
+type PipeMap = M.Map PipeID (Event PipeMessage)
+data PipeManagerEntry = PipeManagerEntry {pmePipeMap :: Behaviour PipeMap,
+                                          pmePipeFired :: Event (Reactive ()),
+                                          pmeFire :: Handler PipeOrder}
+type PipeManager = M.Map SourceID PipeManagerEntry
+data PipeOrder = PipeAdd PipeID (Event PipeMessage)
                | PipeDel PipeID
 
-isPipeExit (PipeExit _ _) = True
-isPipeExit _ = False
-
-isPipeData = not . isPipeExit
-
-instance Binary Request
-instance Binary PipeMessage
+onOrder (PipeAdd pID pE) = M.insert pID pE
+onOrder (PipeDel pID) = M.delete pID
 
 
-type PipeEntry = Event (PipeID,PipeMessage)
-type PipeMap = M.Map PipeID PipeEntry
 
-onExit :: (PipeID,PipeMessage) -> PipeMap -> PipeMap
-onExit (pID,pMessage) pMap = if isPipeExit pMessage then M.delete pID pMap else pMap
+{-| Retourne la PipeMap de la source donnée, les events d'order à réactimate et un moyen d'obtenir la commande |-}
+newPipeModule :: Handler CryptoOrder
+              -> Event (Request, Event PipeMessage)
+              -> Reactive PipeManagerEntry --(Behaviour PipeMap, Event (Reactive ()), Handler PipeOrder)
+newPipeModule fireCrypto newReqE = do (pipeOrders,fireOrders) <- newEvent
+                                      pMapB <- accum M.empty $ onOrder <$> pipeOrders
+ 
+                                      pure $ PipeManagerEntry pMapB (pipeFired fireOrders) fireOrders
 
-onRequest :: Event (PipeID,PipeMessage) -> Request -> PipeMap -> PipeMap
-onRequest pMsgsE pReq pMap = case pID `M.lookup` pMap of
-                                     Just _ -> pMap -- TODO refresh du pipe
-                                     Nothing -> M.insert pID (filterE ((== pID) . fst) pMsgsE) pMap
-       where pID = reqPipeID pReq
+ where -- Accepte le pipe s'il n'appartient pas déjà à la pipeMap
+       onNewReq :: Handler PipeOrder -> (Request, Event PipeMessage) -> Reactive ()
+       onNewReq fire (req,pMsgE) = do fire $ PipeAdd (reqPipeID req) pMsgE
+                                      fireCrypto $ CryptoAdd' (reqPipeID req) (reqPipeKey req)
+       pipeFired :: Handler PipeOrder -> Event (Reactive ())
+       pipeFired fire = onNewReq fire <$> newReqE
+       
 
-isLeft (Left _) = True
-isLeft _ = False
-isRight = not . isLeft
+newPipeManager :: Handler CryptoOrder -> Behaviour RoutingManager -> Reactive (Behaviour PipeManager)
+newPipeManager fireCrypto rManaB = swapB $ sequenceA . fmap (newPipeModule fireCrypto ) <$> rManaB
 
-newPipeModule' :: Event Request -- Request provenant de la source considérée
-              -> Event (PipeID,PipeMessage) -- PipeMessages 
-              -> Reactive (Behaviour (Event (PipeID,PipeMessage))) -- Flux vérifié des pipesData (actualisé en fonction des nouveaux pipes ouverts)
-newPipeModule' reqE pMsgsE  = do 
-                                pMapB <- accum M.empty $ onDataMsg <$> dataE
-                                pure $ eventL <$> pMapB
-  where dataE = (Left <$> reqE) `merge` (Right <$> pMsgsE)
-        onDataMsg (Left req) = onRequest pMsgsE req
-        onDataMsg (Right pMsg) = onExit pMsg
-        eventL pMap = filterE (isPipeData . snd) $ foldr merge never (M.elems pMap)
-
-{-| En provenance d'une source donnée |-}
-newPipeModule :: Event Request -- Les requêtes qu'elle nous envoie
-              -> Event (PipeID,PipeMessage) -- Les pipemessage qu'elle nous envoie (tout pipeID confondu)
-              -> Reactive (Event (PipeID,PipeMessage)) -- L'event actuel de tout les pipesMessages qui proviennent de la source (en fonction des pipes courants)
-newPipeModule reqE pMsgE = switchE <$> newPipeModule' reqE pMsgE
+{-| Retourne le flux de data, indépendamment du pipe, transmis par chaque source |-}
+pipesStream :: Behaviour PipeManager -> Behaviour (M.Map SourceID (Event PipeMessage))
+pipesStream pManaB = fmap (fmap ( srcStream . pmePipeMap) ) pManaB
+  where srcStream :: Behaviour PipeMap -> Event PipeMessage
+        srcStream pMapB = switchE $ foldr merge never . M.elems <$> pMapB
 
