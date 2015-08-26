@@ -1,6 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
 
-
 {- TODO Gérer les ComExit -}
 module Communication where
 
@@ -47,7 +46,6 @@ type ComManager = M.Map SourceID ComManagerEntry
 
 runComManager :: Behaviour PipeManager -> Reactive (Behaviour ComManager)
 runComManager pManaB = do cManaB <- newComManager pManaB
-
                           -- Listen des orders
                           listenTrans (handleComManager cManaB) id -- TODO attention, n'est censé être appelé qu'une fois
                           pure cManaB
@@ -93,8 +91,6 @@ newComMap :: NewComEvent -> Reactive ComManagerEntry
 newComMap cMsgE = do (cOrders,fireOrder) <- newEvent
                      cManaB <- accum M.empty $ onOrder <$> cOrders
                      pure $ ComManagerEntry cManaB fireOrder (onNewComID cMsgE cManaB fireOrder) 
-
-
 
 {-| Retourne le flux actuel des events à reactimate |-}
 handleComManager :: Behaviour ComManager -> Event (Reactive ())
