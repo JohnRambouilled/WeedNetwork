@@ -52,5 +52,9 @@ idEvents mana id = switchE . fmap allEvents' <$> idMapM
 allEvents :: (Ord id, Ord k) => EventManager id k e -> Event e
 allEvents mana = foldr merge never $ switchE . fmap allEvents' <$> M.elems mana
 
+allEventsBhv' :: (Ord k) => Behavior (EventMap k e) -> Event e
+allEventsBhv' mBhv = switchE (allEvents' <$> mBhv)
 
+allEventsBhv :: (Ord id, Ord k) => Behavior (EventManager id k e) -> Event e
+allEventsBhv mBhv = switchE (allEvents <$> mBhv)
 

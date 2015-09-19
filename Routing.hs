@@ -21,11 +21,6 @@ type Road = [SourceID]
 type Time = POSIXTime
 type PipeID = KeyHash
 
---TODO
-roadLengthMax = 10
-maxDelay = 10
-
-
 
 data Request = Request {reqPosition :: Number,
                         reqLength :: Number, -- ^ Total length of the road
@@ -38,32 +33,69 @@ data Request = Request {reqPosition :: Number,
                         reqContent :: RawData}
     deriving Generic
 instance SignedClass Request where scHash (Request n l r epk t pK pH s c) = encode (l,r,epk,t,pK,pH,c)
-
+instance IntroClass Request where icPubKey = reqPipeKey
 instance Binary Request
-instance Binary PipeMessage
-instance Binary NominalDiffTime where
-        get = fromRational <$> get
-        put t = put ((toRational t) :: Rational)
 
 data PipePacket = PipePacket {pipeKeyID :: KeyHash,
                               pipeSig :: Signature,
                               pipePosition :: Number,
                               pipeDirection :: Bool,
-                              pipeContent :: PipeMessage}
+                              pipePayload :: Payload} |
+                  PipeClose  {pipeKeyID :: KeyHash,
+                              pipeSig :: Signature,
+                              pipePosition :: Number,
+                              pipeDirection :: Bool,
+                              pipePayload :: Payload}
+
     deriving Generic
 instance SignedClass PipePacket where scHash (PipePacket kH _ n b m) = encode (kH, n, b, m)
+instance Binary PipePacket
 
-data PipeMessage = PipeMessage RawData | PipeClose RawData
-    deriving Generic
 
-type RoutingMap = M.Map KeyHash (PubKey, Handler PipeMessage)
+type RoutingMapBhv = Behavior (EventMap KeyHash PipePacket)
+type NewPipe = (Request, Event Payload)
 
-type NewPipe = (Request, Event PipeMessage)
+data Routing = Routing {routingLocalMap :: RoutingMapBhv,
+                        routingRelayedMap :: RoutingMapBhv,
+                        routingNewPipes :: Event NewPipe,
+                        routLocCloseHndl :: Handler KeyHash,
+                        routRelCloseHndl :: Handler KeyHash}
+
+buildRouting :: Event Request -> Event PipePacket -> Reactive Routing
+buildRouting reqE packetE = do ((closeRelE, closeRelH), (closeLocE, closeLocH)) <- (,) <$> newEvent <*> newEvent
+                               (reqRelE, reqLocE) <- splitEvent isLocalRequest reqE 
+                               (relayMap, _) <- buildCryptoMap reqRelE closeRelE packetE
+                               (localMap, newPipeE) <- buildCryptoMap reqLocE closeLocE packetE
+                               listenTrans (allEventsBhv' relayMap) $ relayPackets closeRelH
+                               pure $ Routing localMap relayMap  (makeNewPipe <$> newPipeE) closeLocH closeRelH
+    where relayPackets :: Handler KeyHash -> PipePacket -> Reactive ()
+          relayPackets _ p@(PipePacket _ _ n b _ ) = pure () --TODO : send p{pipePosition = if b then n + 1 else n -1} 
+          relayPackets h (PipeClose kID _ _ _ _) = h kID
+          isLocalRequest req = let n = reqPosition req in (n == 0) || (n == reqLength req)
+          makeNewPipe (req, (EventMapEntry _ e _)) = (req, pipePayload <$> e)
+
+splitEvent :: (e -> Bool) -> Event e -> Reactive (Event e, Event e)
+splitEvent f eE = do ((failE, failH), (passE, passH)) <- (,) <$> newEvent <*> newEvent
+                     listenTrans eE $ \e -> if f e then passH e else failH e 
+                     pure (failE, passE)
+
+instance Binary NominalDiffTime where
+        get = fromRational <$> get
+        put t = put ((toRational t) :: Rational)
+
+
+
+
 
 --buildRouting :: Event Request -> Event PipePacket -> (Event PipePacket, Event NewPipe)
 --buildRouting reqE packetE = 
 
 {-
+data PipeMessage = PipeMessage RawData | PipeClose RawData
+    deriving Generic
+instance Binary PipeMessage
+
+
 type NewPipeEventO = (Request, Event PipeMessage)
 type NewPipeEvent = Event NewPipeEventO
 

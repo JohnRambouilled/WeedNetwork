@@ -17,6 +17,7 @@ type PubKey = Int
 type PrivKey = Int
 type Signature = Int
 type RawData = ByteString
+type Payload = RawData
 
 class SignedClass a where scHash :: a -> RawData
                           scKeyHash :: a -> KeyHash
@@ -27,11 +28,13 @@ instance SignedClass a => IDable a KeyHash where extractID = scKeyHash
 class SignedClass a => IntroClass a where icPubKey :: a -> PubKey
 
 
-buildCryptoMap :: (IntroClass i, SignedClass e) => Event i -> Event KeyHash -> Event e -> Reactive (Behavior (EventMap KeyHash e))
-buildCryptoMap introE decoE packetE = do eM <- accum (EventMap M.empty) $ merge (deleteKey <$> decoE) (execute (insertCryptoKey <$> introE))
+buildCryptoMap :: (IntroClass i, SignedClass e) => Event i -> Event KeyHash -> Event e -> Reactive (Behavior (EventMap KeyHash e), Event (i, (EventMapEntry e)))
+buildCryptoMap introE decoE packetE = let newEntryE = execute (insertCryptoKey <$> introE) in
+                                      do eM <- accum (EventMap M.empty) $ merge (deleteKey <$> decoE) (fst <$> newEntryE)
                                          listenTrans (packetActions eM) id
-                                         pure eM
-    where insertCryptoKey intro = insertEntry (scKeyHash intro) <$> newEventEntry (checkSig $ icPubKey intro)
+                                         pure (eM, snd <$> newEntryE)
+    where insertCryptoKey intro = do entry <- newEventEntry (checkSig $ icPubKey intro)
+                                     pure (insertEntry (scKeyHash intro) entry, (intro, entry))
           packetActions eM = filterJust $ snapshot (flip fireKey) packetE eM
 
 
