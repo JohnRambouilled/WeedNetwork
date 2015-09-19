@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies #-}
 module Crypto where
 import Data.ByteString.Lazy hiding (split)
 import Data.Binary
@@ -8,12 +9,12 @@ import qualified Data.Map as M
 --import Reactive.Banana.Switch
 --import Control.Event.Handler
 import FRP.Sodium
+import Class
 import FRP.Sodium.Internal hiding (Event)
 
-type Handler a = a -> Reactive ()
 type EventSource a = (Event a, Handler a)
 
-type KeyHash = Int
+data KeyHash = KeyHash Int deriving (Eq, Ord)
 type PubKey = Int
 type PrivKey = Int
 type Signature = Int
@@ -21,13 +22,36 @@ type RawData = ByteString
 
 class Signed a where hash :: a -> RawData
                      keyHash :: a -> KeyHash
-                     sig :: a -> Signature
+                     signature :: a -> Signature
+
+instance Signed a => IDable a KeyHash where extractID = keyHash
 
 class Signed a => IntroClass a where introKey :: a -> PubKey
 
-type HandlerMapBhv k a e = Behavior (M.Map k (a, Handler e))
+
+buildCryptoMap :: (IntroClass i, Signed e) => Event i -> Event KeyHash -> Event e -> Reactive (Behavior (EventMap KeyHash e))
+buildCryptoMap introE decoE packetE = do eM <- accum (EventMap M.empty) $ merge (deleteKey <$> decoE) (execute (insertCryptoKey <$> introE))
+                                         listenTrans (packetActions eM) id
+                                         pure eM
+    where insertCryptoKey intro = do (event, fire) <- newEvent
+                                     return $ insertEntry (keyHash intro) $ EventMapEntry fire event (checkSig $ introKey intro)
+          packetActions eM = filterJust $ snapshot (flip fireKey) packetE eM
 
 
+
+checkSig :: Signed a => PubKey -> a -> Bool
+checkSig _ _  = True
+sign :: Signed a => PrivKey -> a -> Signature
+sign _ _ = 0
+decrypt _ = id
+computeHashFromKey _ = 0
+
+
+
+
+--type HandlerMapBhv k a e = Behavior (M.Map k (a, Handler e))
+
+{-
 buildHandlerMapBhv :: Ord k => Event (k, a) -> Event k -> Event (k,e) -> Reactive (HandlerMapBhv k a e, Event ((k, a), Event e))
 buildHandlerMapBhv introE decoE packetE = do mapBhv <- accum M.empty $ merge (snd <$> newE) (onDeco <$> decoE)
                                              listen (execute $ snapshot onPacket packetE mapBhv) $ \_ -> pure ()
@@ -45,7 +69,7 @@ buildCryptoMap :: (Signed d, IntroClass i, Signed o) => Event i -> Event o -> Ev
 buildCryptoMap introE decoE dataE = do (decoKeyE, fireDecoKey) <- newEvent 
                                        buildHandlerMapBhv (filter checkIntro introE) decoKeyE 
                                        
-
+-}
 {-
 buildCryptoMap :: (Signed d, IntroClass i, Signed o) => Event (i, Handler d) -> Event o -> Reactive (Behavior (CryptoMap d))
 buildCryptoMap introE decoE = accum M.empty $ merge (onIntro <$> introE) (onDeco <$> decoE) 
@@ -54,13 +78,6 @@ buildCryptoMap introE decoE = accum M.empty $ merge (onIntro <$> introE) (onDeco
           onDeco d = M.update (\(pK,h) -> if checkSig pK (sig d) d then Nothing else Just (pK,h)) $ keyHash d
           makeHandle k h d = if checkSig k (sig d) d then h d else pure ()
 -}
-checkSig :: Signed a => PubKey -> Signature -> a -> Bool
-checkSig _ _ _ = True
-sign :: Signed a => PrivKey -> a -> Signature
-sign _ _ = 0
-decrypt _ = id
-computeHashFromKey _ = 0
-
 
 
 
