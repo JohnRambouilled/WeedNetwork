@@ -19,26 +19,66 @@ type PrivKey = Int
 type Signature = Int
 type RawData = ByteString
 
-data Payload =  Payload { signedPayload :: RawData,
-                          unsignedPayload :: RawData}
+class Signed a where hash :: a -> RawData
+                     keyHash :: a -> KeyHash
+                     sig :: a -> Signature
+
+class Signed a => IntroClass a where introKey :: a -> PubKey
+
+type HandlerMapBhv k a e = Behavior (M.Map k (a, Handler e))
 
 
-type CryptoPacket = Either Introduce DataPacket
+buildHandlerMapBhv :: Ord k => Event (k, a) -> Event k -> Event (k,e) -> Reactive (HandlerMapBhv k a e, Event ((k, a), Event e))
+buildHandlerMapBhv introE decoE packetE = do mapBhv <- accum M.empty $ merge (snd <$> newE) (onDeco <$> decoE)
+                                             listen (execute $ snapshot onPacket packetE mapBhv) $ \_ -> pure ()
+                                             pure (mapBhv, fst <$> newE)
+    where onIntro (k, a) = do (event, fire) <- newEvent
+                              return $ ( ((k, a), event), M.insert k (a, fire))
+          onDeco k = M.delete k
+          onPacket (k,e) map = case M.lookup k map of Nothing -> pure ()
+                                                      Just (a,h) -> h e
+          newE = execute (onIntro <$> introE) 
 
+type CryptoMap e = HandlerMapBhv KeyHash PubKey e
 
-data Introduce = Introduce   {introKeyID :: KeyHash, introKey :: PubKey,  introSig :: Signature, introContent :: Payload} 
-data DataPacket = DataPacket  {datakeyID :: KeyHash, dataSig :: Signature, dataContent :: Payload}
+buildCryptoMap :: (Signed d, IntroClass i, Signed o) => Event i -> Event o -> Event d -> Reactive (CryptoMap d, Event ((KeyHash, PubKey), Event d) )
+buildCryptoMap introE decoE dataE = do (decoKeyE, fireDecoKey) <- newEvent 
+                                       buildHandlerMapBhv (filter checkIntro introE) decoKeyE 
+                                       
 
-dataSignedPayload = signedPayload . dataContent
-
+{-
+buildCryptoMap :: (Signed d, IntroClass i, Signed o) => Event (i, Handler d) -> Event o -> Reactive (Behavior (CryptoMap d))
+buildCryptoMap introE decoE = accum M.empty $ merge (onIntro <$> introE) (onDeco <$> decoE) 
+    where onIntro (i,h) = if checkSig key (sig i) i then M.insert (keyHash i) (key, makeHandle key h) else id
+                    where key = introKey i
+          onDeco d = M.update (\(pK,h) -> if checkSig pK (sig d) d then Nothing else Just (pK,h)) $ keyHash d
+          makeHandle k h d = if checkSig k (sig d) d then h d else pure ()
+-}
+checkSig :: Signed a => PubKey -> Signature -> a -> Bool
 checkSig _ _ _ = True
+sign :: Signed a => PrivKey -> a -> Signature
 sign _ _ = 0
 decrypt _ = id
 computeHashFromKey _ = 0
 
 
 
-{-| Associe à chaque keyhash le flux de paquets vérifiés signés par cette clef |-}
+
+
+
+--data Payload =  Payload { signedPayload :: RawData,
+ --                         unsignedPayload :: RawData}
+
+
+--type CryptoPacket = Either Introduce DataPacket
+
+
+--data Introduce = Introduce   {introKeyID :: KeyHash, introKey :: PubKey,  introSig :: Signature, introContent :: Payload} 
+--data DataPacket = DataPacket  {datakeyID :: KeyHash, dataSig :: Signature, dataContent :: Payload}
+
+--dataSignedPayload = signedPayload . dataContent
+
+{-| Associe à chaque keyhash le flux de paquets vérifiés signés par cette clef |
 type CryptoMap = M.Map KeyHash (Event DataPacket)
 
 data CryptoOrder = CryptoAdd KeyHash (Event DataPacket)
@@ -91,7 +131,7 @@ filterDataStream' pKey = filterE (filterDataStream pKey)
 filterDecode :: (Binary a) => Event RawData -> Event a
 filterDecode rawE = extractData <$> filterE isRight (decodeOrFail <$> rawE)
   where extractData (Right (_,_,r)) = r
-
+-}
 isLeft (Left _) = True
 isLeft _ = False
 isRight = not . isLeft

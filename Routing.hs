@@ -35,15 +35,28 @@ data Request = Request {reqPosition :: Number,
                         reqPipeSig :: Signature,
                         reqContent :: RawData}
     deriving Generic
+instance Signable Request where hash (Request n l r epk t pK pH s c) = encode (l,r,epk,t,pK,pH,c)
 
 
-data PipeMessage = PipeData {messageDirection :: Bool,
-                             messageContent :: RawData} |
-                   PipeExit {messageDirection :: Bool,
-                             messageContent :: RawData} 
+data PipePacket = PipePacket {pipeKeyID :: KeyHash,
+                              pipeSig :: Signature,
+                              pipePosition :: Number,
+                              pipeDirection :: Bool,
+                              pipeContent :: PipeMessage}
+    deriving Generic
+instance Signable PipePacket where hash (PipePacket kH _ n b m) = encode (kH, n, b, m)
+
+data PipeMessage = PipeMessage RawData | PipeClose RawData
     deriving Generic
 
+type RoutingMap = M.Map KeyHash (PubKey, Handler PipeMessage)
 
+type NewPipe = (Request, Event PipeMessage)
+
+buildRouting :: Event Request -> Event PipePacket -> (Event PipePacket, Event NewPipe)
+buildRouting reqE packetE = 
+
+{-
 type NewPipeEventO = (Request, Event PipeMessage)
 type NewPipeEvent = Event NewPipeEventO
 
@@ -139,7 +152,6 @@ checkRequest me t req@(Request n l r epk t' pK pH s c)
     | checkSig pK s $ requestHash req   = Right ()
     | otherwise                         = Left "Invalid signature"
 
-requestHash (Request n l r epk t pK pH s c) = encode (l,r,epk,t,pK,pH,c)
 
 decodePipeMessage :: Payload -> Either String (PipeMessage,Number)
 decodePipeMessage (Payload s us) = case (decodeOrFail s, decodeOrFail us) of
@@ -147,7 +159,7 @@ decodePipeMessage (Payload s us) = case (decodeOrFail s, decodeOrFail us) of
                                     (Left (_,_,e), _) -> Left e
                                     (_, Left (_,_,e)) -> Left e
 
-
+-}
 instance Binary Request
 instance Binary PipeMessage
 instance Binary NominalDiffTime where
