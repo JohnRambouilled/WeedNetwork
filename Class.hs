@@ -18,6 +18,10 @@ type EventManager id k e = M.Map id (Behaviour (EventMap k e))
 class (Ord k) => IDable e k | e -> k where
         extractID :: e -> k
 
+
+newEventEntry ::  (e -> Bool) -> Reactive (EventMapEntry e)
+newEventEntry pred = do (eE,eF) <- newEvent
+                        pure $ EventMapEntry eF eE pred
 insertEntry :: (Ord k) => k -> EventMapEntry e -> EventMap k e -> EventMap k e
 insertEntry k e (EventMap m) = EventMap $ M.insert k e m
 
