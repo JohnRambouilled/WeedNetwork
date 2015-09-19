@@ -18,6 +18,9 @@ type EventManager id k e = M.Map id (Behaviour (EventMap k e))
 class (Ord k) => IDable e k | e -> k where
         extractID :: e -> k
 
+insertEntry :: (Ord k) => k -> EventMapEntry e -> EventMap k e -> EventMap k e
+insertEntry k e (EventMap m) = EventMap $ M.insert k e m
+
 {-| Removes the entry from the event map |-}
 deleteKey :: (Ord k) => k -> EventMap k e -> EventMap k e
 deleteKey k (EventMap m) = EventMap (M.delete k m)
