@@ -2,6 +2,8 @@
 module Routing where
 
 import Crypto hiding (onOrder)
+import Class
+
 import FRP.Sodium
 import FRP.Sodium.Internal hiding (Event)
 import Data.ByteString.Lazy (ByteString)
@@ -35,8 +37,13 @@ data Request = Request {reqPosition :: Number,
                         reqPipeSig :: Signature,
                         reqContent :: RawData}
     deriving Generic
-instance Signable Request where hash (Request n l r epk t pK pH s c) = encode (l,r,epk,t,pK,pH,c)
+instance SignedClass Request where scHash (Request n l r epk t pK pH s c) = encode (l,r,epk,t,pK,pH,c)
 
+instance Binary Request
+instance Binary PipeMessage
+instance Binary NominalDiffTime where
+        get = fromRational <$> get
+        put t = put ((toRational t) :: Rational)
 
 data PipePacket = PipePacket {pipeKeyID :: KeyHash,
                               pipeSig :: Signature,
@@ -44,7 +51,7 @@ data PipePacket = PipePacket {pipeKeyID :: KeyHash,
                               pipeDirection :: Bool,
                               pipeContent :: PipeMessage}
     deriving Generic
-instance Signable PipePacket where hash (PipePacket kH _ n b m) = encode (kH, n, b, m)
+instance SignedClass PipePacket where scHash (PipePacket kH _ n b m) = encode (kH, n, b, m)
 
 data PipeMessage = PipeMessage RawData | PipeClose RawData
     deriving Generic
@@ -53,8 +60,8 @@ type RoutingMap = M.Map KeyHash (PubKey, Handler PipeMessage)
 
 type NewPipe = (Request, Event PipeMessage)
 
-buildRouting :: Event Request -> Event PipePacket -> (Event PipePacket, Event NewPipe)
-buildRouting reqE packetE = 
+--buildRouting :: Event Request -> Event PipePacket -> (Event PipePacket, Event NewPipe)
+--buildRouting reqE packetE = 
 
 {-
 type NewPipeEventO = (Request, Event PipeMessage)
@@ -160,8 +167,3 @@ decodePipeMessage (Payload s us) = case (decodeOrFail s, decodeOrFail us) of
                                     (_, Left (_,_,e)) -> Left e
 
 -}
-instance Binary Request
-instance Binary PipeMessage
-instance Binary NominalDiffTime where
-        get = fromRational <$> get
-        put t = put ((toRational t) :: Rational)
