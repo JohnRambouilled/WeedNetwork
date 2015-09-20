@@ -15,7 +15,6 @@ newEvent' = do (e, h) <- newEvent
 data EventEntry e = EventEntry { eFire :: Handler e,
                                  eEvent :: Event e,
                                  eFilter :: e -> Bool}
---data EventEntryMap k e = EventEntryMap {eventMap :: M.Map k (EventEntry e)}
 
 type EventEntryManager id k e = M.Map id (Behaviour (EventEntryMap k e))
 
@@ -23,20 +22,26 @@ type EventEntryManager id k e = M.Map id (Behaviour (EventEntryMap k e))
 
 type ParamMap a k e = M.Map k (a e)
 
+type BhvTpl a = (Behavior a, Handler a)
+newBhvTpl :: a -> Reactive (BhvTpl a)
+newBhvTpl i = do (b, h) <- newBehavior i
+                 pure (b, Handler h)
+
 
 type HandlerMap k e = ParamMap Handler k e
 type EventEntryMap k e = ParamMap EventEntry k e
 type EventMap k e = ParamMap Event k e --M.Map k (Event e)
-type EventMapBhv k e = Behavior (EventMap k e)
 type EventManager id k e = M.Map id (EventMapBhv k e)
-type EventManagerBhv id k e = Behavior (EventManager id k e)
+
+type EventMapBhv k e = BhvTpl (EventMap k e)
+
+
 
 
 
 class Mergeable a e | a -> e where allEvents :: a -> Event e
 instance Mergeable (Event e) e where allEvents = id
 instance Mergeable (EventEntry e) e where allEvents = eEvent
---instance Mergeable (EventEntryMap k e) e where allEvents m = foldr merge never $ eEvent <$> M.elems (eventMap m)
 instance Mergeable a e => Mergeable (Behavior a) e where allEvents bhv = switchE (allEvents <$> bhv)
 instance Mergeable a e => Mergeable (M.Map k a) e where allEvents m = foldr merge never $ allEvents <$> M.elems m
 

@@ -27,10 +27,10 @@ type PipesSenderManagerBhv = Behavior PipesSenderManager
 
 data Pipes = Pipes {pipesManager :: PipesManager,
                     pipesSenders :: PipesSenderManager,
-                    pipesCloser :: Handler PipeID}
+                    pipesCloser :: Handler (SourceID, PipeID)}
 
 buildPipeManager :: Event NewPipe -> Reactive (PipesManagerBhv, Handler PipeID)
-buildPipeManager newPipeE = do (closeE, closeH) <- newEvent
+buildPipeManager newPipeE = do (closeE, closeH) <- newEvent'
                                pMan <- accum M.empty $ merge (openPipe <$> newPipeE) (closePipe <$> closeE)
                                pure (pMan, closeH)
     where openPipe _ = id
@@ -47,19 +47,24 @@ newSourceEvent npE pMbhv = filterJust $ snapshot makePipesMapMaybe npE pMbhv
 {-| Converts the map of physical neighbors into a map of recipients |-}
 type RecipientMap = EventEntryMap SourceID NewPipe
 buildRecipientMap :: Event NewPipe -> Reactive (Behaviour RecipientMap)
-buildRecipientMap npE = do rMapB <- accum (EventEntryMap M.empty) (execute $ f <$> npE)
-                           listenTrans (filterJust $ snapshot (\np m -> fireKey' m (last $ reqRoad $ fst np) np) npE rMapB) id
+buildRecipientMap npE = do (rMapB, rMapH) <- newBhvTpl M.empty
+                           listenTrans (snapshot (f rMapH) npE rMapB) id
                            pure rMapB
-  where f :: (Request, Event PipeMessage) ->  Reactive (RecipientMap -> RecipientMap)
-        f (req, stream) = (insertEntry (last $ reqRoad req)  <$> newEventEntry (pure True) )
+  where f :: Handler RecipientMap -> (Request, Event PipeMessage) -> RecipientMap -> Reactive ()
+        f h (req, stream) rM = case sID `M.lookup` rM of
+                                 Just eE -> fire (eFire eE) $ (req, stream)
+                                 Nothing -> do eE <- newEventEntry (pure True)
+                                               fire h $ M.insert sID eE rM 
+                                               fire (eFire eE) $ (req, stream)
+                where sID = last $ reqRoad req
 
+{-
 {-| Manages the pipes for a given recipient |-}
 type PipeMap = EventEntryMap PipeID PipeMessage
 buildPipeMap :: Event NewPipe -> Reactive (Behaviour PipeMap)
 buildPipeMap npE = 
 
 
-{-
 type PipeMap = M.Map PipeID (Event PipeMessage)
 data PipeManagerEntry = PipeManagerEntry {pmePipeMap :: Behaviour PipeMap,
                                           pmePipeFired :: Event (Reactive ()),

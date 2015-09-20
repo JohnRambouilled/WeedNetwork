@@ -51,7 +51,7 @@ data PipePacket = PipePacket {pipeKeyID :: PipeID,
 instance SignedClass PipePacket where scHash (PipePacket kH _ n b m) = encode (kH, n, b, m)
 instance Binary PipePacket
 
-type PipeMessage = Either Payload Payload --Left on a PipeClose
+type PipeMessage = Either (PipeID, Payload) (PipeID, Payload) --Left on a PipeClose
 
 type RoutingMapBhv = Behavior (EventEntryMap KeyHash PipePacket)
 type NewPipe = (Request, Event PipeMessage)
@@ -74,8 +74,8 @@ buildRouting reqE packetE = do ((closeRelE, closeRelH), (closeLocE, closeLocH)) 
           relayPackets h (PipeClose kID _ _ _ _) = fire h $ kID
           isLocalRequest req = reqPosition req == reqLength req
           makeNewPipe (req, (EventEntry _ e _)) = (req, makePipeMessage <$> e)
-          makePipeMessage (PipePacket _ _ _ _ p) = Right p
-          makePipeMessage (PipeClose  _ _ _ _ p) = Left  p
+          makePipeMessage (PipePacket pID _ _ _ p) = Right (pID,p)
+          makePipeMessage (PipeClose  pID _ _ _ p) = Left  (pID,p)
 
 
 splitEvent :: (e -> Bool) -> Event e -> Reactive (Event e, Event e)
