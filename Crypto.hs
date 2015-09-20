@@ -28,9 +28,9 @@ instance SignedClass a => IDable a KeyHash where extractID = scKeyHash
 class SignedClass a => IntroClass a where icPubKey :: a -> PubKey
 
 
-buildCryptoMap :: (IntroClass i, SignedClass e) => Event i -> Event KeyHash -> Event e -> Reactive (Behavior (EventMap KeyHash e), Event (i, (EventMapEntry e)))
+buildCryptoMap :: (IntroClass i, SignedClass e) => Event i -> Event KeyHash -> Event e -> Reactive (Behavior (EventEntryMap KeyHash e), Event (i, (EventEntry e)))
 buildCryptoMap introE decoE packetE = let newEntryE = execute (insertCryptoKey <$> introE) in
-                                      do eM <- accum (EventMap M.empty) $ merge (deleteKey <$> decoE) (fst <$> newEntryE)
+                                      do eM <- accum (EventEntryMap M.empty) $ merge (deleteKey <$> decoE) (fst <$> newEntryE)
                                          listenTrans (packetActions eM) id
                                          pure (eM, snd <$> newEntryE)
     where insertCryptoKey intro = do entry <- newEventEntry (checkSig $ icPubKey intro)

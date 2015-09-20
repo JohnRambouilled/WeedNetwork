@@ -1,9 +1,11 @@
 {-# LANGUAGE DeriveGeneric #-}
-
 module Pipes where
 
-import Crypto hiding (onOrder)
-import Routing hiding (onOrder)
+import Crypto
+import Routing 
+import Class
+
+
 import FRP.Sodium
 import Data.ByteString.Lazy (ByteString)
 import GHC.Generics
@@ -11,8 +13,39 @@ import Data.Binary
 import Control.Monad
 import qualified Data.Map as M
 
+type UserID = KeyHash
+
+type PipesMap = EventMap PipeID PipeMessage
+type PipesManager = EventManager UserID PipeID PipeMessage
+type PipesManagerBhv = Behavior PipesManager
+
+type PipesSender = Handler PipeMessage
+type PipesSenderMap = M.Map PipeID PipesSender
+type PipesSenderManager = M.Map UserID (Behavior PipesSenderMap)
+type PipesSenderManagerBhv = Behavior PipesSenderManager
+
+data Pipes = Pipes {pipesManager :: PipesManager,
+                    pipesSenders :: PipesSenderManager,
+                    pipesCloser :: Handler PipeID}
+
+buildPipeManager :: Event NewPipe -> Reactive (PipesManagerBhv, Handler PipeID)
+buildPipeManager newPipeE = do (closeE, closeH) <- newEvent
+                               pMan <- accum M.empty $ merge (openPipe <$> newPipeE) (closePipe <$> closeE)
+                               pure (pMan, closeH)
+    where openPipe _ = id
+          closePipe _ = id
+
+newSourceEvent :: Event NewPipe -> PipesManagerBhv -> Event PipesMap
+newSourceEvent npE pMbhv = filterJust $ snapshot makePipesMapMaybe npE pMbhv
+    where makePipesMapMaybe :: NewPipe -> PipesManager -> Maybe PipesMap
+          makePipesMapMaybe (r, e) pMan = case sID `M.lookup` pMan of
+                                            Just _ -> Nothing
+                                            Nothing -> Just (M.singleton sID e)
+                                        where sID = head $ reqRoad r
 
 
+
+{-
 type PipeMap = M.Map PipeID (Event PipeMessage)
 data PipeManagerEntry = PipeManagerEntry {pmePipeMap :: Behaviour PipeMap,
                                           pmePipeFired :: Event (Reactive ()),
@@ -51,4 +84,4 @@ pipesStream :: Behaviour PipeManager -> Behaviour (M.Map SourceID (Event PipeMes
 pipesStream pManaB = fmap (fmap ( srcStream . pmePipeMap) ) pManaB
   where srcStream :: Behaviour PipeMap -> Event PipeMessage
         srcStream pMapB = switchE $ foldr merge never . M.elems <$> pMapB
-
+-}
