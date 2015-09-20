@@ -8,8 +8,8 @@ import Control.Monad
 type Handler a = a -> Reactive ()
 
 data EventEntry e = EventEntry { eFire :: Handler e,
-                                       eEvent :: Event e,
-                                       eFilter :: e -> Bool}
+                                 eEvent :: Event e,
+                                 eFilter :: e -> Bool}
 data EventEntryMap k e = EventEntryMap {eventMap :: M.Map k (EventEntry e)}
 
 type EventEntryManager id k e = M.Map id (Behaviour (EventEntryMap k e))
@@ -45,9 +45,12 @@ deleteKey k (EventEntryMap m) = EventEntryMap (M.delete k m)
 
 {-| Fires the value on the specified key event |-}
 fireKey :: (IDable e k) => EventEntryMap k e -> e -> Maybe (Reactive ())
-fireKey m e = join $ f <$> extractID e `M.lookup` eventMap m
-  where f entry = if eFilter entry e then Just (eFire entry e) else Nothing
+fireKey m e = fireKey' m (extractID e) e
 
+
+fireKey' :: Ord k => EventEntryMap k e -> k -> e -> Maybe (Reactive ())
+fireKey' m k e = join $ f <$> k `M.lookup` eventMap m
+  where f entry = if eFilter entry e then Just (eFire entry e) else Nothing
 
 {-| Extracts the event stream from a given key |-}
 kEvents :: (Ord k) => EventEntryMap k e -> k -> Maybe (Event e)

@@ -7,6 +7,7 @@ import Class
 
 
 import FRP.Sodium
+import FRP.Sodium.Internal hiding (Event)
 import Data.ByteString.Lazy (ByteString)
 import GHC.Generics
 import Data.Binary
@@ -43,6 +44,19 @@ newSourceEvent npE pMbhv = filterJust $ snapshot makePipesMapMaybe npE pMbhv
                                             Nothing -> Just (M.singleton sID e)
                                         where sID = head $ reqRoad r
 
+{-| Converts the map of physical neighbors into a map of recipients |-}
+type RecipientMap = EventEntryMap SourceID NewPipe
+buildRecipientMap :: Event NewPipe -> Reactive (Behaviour RecipientMap)
+buildRecipientMap npE = do rMapB <- accum (EventEntryMap M.empty) (execute $ f <$> npE)
+                           listenTrans (filterJust $ snapshot (\np m -> fireKey' m (last $ reqRoad $ fst np) np) npE rMapB) id
+                           pure rMapB
+  where f :: (Request, Event PipeMessage) ->  Reactive (RecipientMap -> RecipientMap)
+        f (req, stream) = (insertEntry (last $ reqRoad req)  <$> newEventEntry (pure True) )
+
+{-| Manages the pipes for a given recipient |-}
+type PipeMap = EventEntryMap PipeID PipeMessage
+buildPipeMap :: Event NewPipe -> Reactive (Behaviour PipeMap)
+buildPipeMap npE = 
 
 
 {-
