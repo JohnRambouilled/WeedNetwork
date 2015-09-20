@@ -53,21 +53,22 @@ instance Binary PipePacket
 
 type PipeMessage = Either (PipeID, Payload) (PipeID, Payload) --Left on a PipeClose
 
-type RoutingMapBhv = Behavior (EventEntryMap KeyHash PipePacket)
+type RoutingMap = EventEntryMap KeyHash PipePacket
+type RoutingMapBhv = Behavior RoutingMap
 type NewPipe = (Request, Event PipeMessage)
 
-data Routing = Routing {routingLocalMap :: RoutingMapBhv,
-                        routingRelayedMap :: RoutingMapBhv,
+data Routing = Routing {routingLocMap :: RoutingMapBhv,
+                        routingRelMap :: RoutingMapBhv,
                         routingNewPipes :: Event NewPipe,
-                        routLocCloseHndl :: Handler PipeID,
-                        routRelCloseHndl :: Handler PipeID}
+                        routingModLocMap :: Modifier RoutingMap,
+                        routingModRelMap :: Modifier RoutingMap}
 
 buildRouting :: Event Request -> Event PipePacket -> Reactive Routing
-buildRouting reqE packetE = do ((closeRelE, closeRelH), (closeLocE, closeLocH)) <- (,) <$> newEvent' <*> newEvent'
+buildRouting reqE packetE = do --((closeRelE, closeRelH), (closeLocE, closeLocH)) <- (,) <$> newEvent' <*> newEvent'
                                (reqRelE, reqLocE) <- splitEvent isLocalRequest reqE 
-                               (relayMap, _) <- buildCryptoMap reqRelE closeRelE packetE
-                               (localMap, newPipeE) <- buildCryptoMap reqLocE closeLocE packetE
-                               listenTrans (allEvents relayMap) $ relayPackets $ closeRelH
+                               ((relayMap, closeRelH), _) <- buildCryptoMap reqRelE packetE
+                               ((localMap, closeLocH), newPipeE) <- buildCryptoMap reqLocE packetE
+                               listenTrans (allEvents relayMap) $ relayPackets $ Handler $ closeRelH . M.delete
                                pure $ Routing localMap relayMap  (makeNewPipe <$> newPipeE) closeLocH closeRelH
     where relayPackets :: Handler KeyHash -> PipePacket -> Reactive ()
           relayPackets _ p@(PipePacket _ _ n b _ ) = pure () --TODO : send p{pipePosition = if b then n + 1 else n -1} 

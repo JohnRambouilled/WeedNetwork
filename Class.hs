@@ -21,15 +21,17 @@ type EventEntryManager id k e = M.Map id (Behaviour (EventEntryMap k e))
 
 
 type ParamMap a k e = M.Map k (a e)
+type Modifier a = (a -> a) -> Reactive ()
 
-type BhvTpl a = (Behavior a, Handler a)
+type BhvTpl a = (Behavior a, Modifier a)
 newBhvTpl :: a -> Reactive (BhvTpl a)
-newBhvTpl i = do (b, h) <- newBehavior i
-                 pure (b, Handler h)
+newBhvTpl i = do (e, h) <- newEvent
+                 (,) <$> accum i e <*> pure h
 
 
 type HandlerMap k e = ParamMap Handler k e
 type EventEntryMap k e = ParamMap EventEntry k e
+type EventEntryMapBhv k e = BhvTpl (EventEntryMap k e)
 type EventMap k e = ParamMap Event k e --M.Map k (Event e)
 type EventManager id k e = M.Map id (EventMapBhv k e)
 
