@@ -63,15 +63,15 @@ data Routing = Routing {routingLocalMap :: RoutingMapBhv,
                         routRelCloseHndl :: Handler PipeID}
 
 buildRouting :: Event Request -> Event PipePacket -> Reactive Routing
-buildRouting reqE packetE = do ((closeRelE, closeRelH), (closeLocE, closeLocH)) <- (,) <$> newEvent <*> newEvent
+buildRouting reqE packetE = do ((closeRelE, closeRelH), (closeLocE, closeLocH)) <- (,) <$> newEvent' <*> newEvent'
                                (reqRelE, reqLocE) <- splitEvent isLocalRequest reqE 
                                (relayMap, _) <- buildCryptoMap reqRelE closeRelE packetE
                                (localMap, newPipeE) <- buildCryptoMap reqLocE closeLocE packetE
-                               listenTrans (allEvents relayMap) $ relayPackets closeRelH
+                               listenTrans (allEvents relayMap) $ relayPackets $ closeRelH
                                pure $ Routing localMap relayMap  (makeNewPipe <$> newPipeE) closeLocH closeRelH
     where relayPackets :: Handler KeyHash -> PipePacket -> Reactive ()
           relayPackets _ p@(PipePacket _ _ n b _ ) = pure () --TODO : send p{pipePosition = if b then n + 1 else n -1} 
-          relayPackets h (PipeClose kID _ _ _ _) = h kID
+          relayPackets h (PipeClose kID _ _ _ _) = fire h $ kID
           isLocalRequest req = reqPosition req == reqLength req
           makeNewPipe (req, (EventEntry _ e _)) = (req, makePipeMessage <$> e)
           makePipeMessage (PipePacket _ _ _ _ p) = Right p
