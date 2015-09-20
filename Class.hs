@@ -46,6 +46,7 @@ instance Mergeable (Event e) e where allEvents = id
 instance Mergeable (EventEntry e) e where allEvents = eEvent
 instance Mergeable a e => Mergeable (Behavior a) e where allEvents bhv = switchE (allEvents <$> bhv)
 instance Mergeable a e => Mergeable (M.Map k a) e where allEvents m = foldr merge never $ allEvents <$> M.elems m
+instance Mergeable a e => Mergeable (BhvTpl a) e where allEvents = allEvents . fst
 
 
 class (Ord k) => IDable e k | e -> k where
@@ -101,8 +102,9 @@ idEvents mana id = switchE . fmap allEvents <$> idMapM
 
 
 
+swapB :: (Ord k) => Behaviour (Reactive (M.Map k a)) -> Reactive (Behaviour (M.Map k a))
+swapB mapB = hold M.empty $ execute $ value mapB
 
 
-
-
-
+swapBRM :: (Ord k) => Behaviour (M.Map k (Reactive e)) -> Reactive (Behaviour (M.Map k e))
+swapBRM mapB = swapB $ sequence <$> mapB

@@ -55,7 +55,11 @@ isLeft (Left _) = True
 isLeft _ = False
 isRight = not . isLeft
 
+fromLeft (Left x) = x
+fromLeft _ = error $ "fromLeft on Right"
 
-swapB :: (Ord k, Eq k) => Behaviour (Reactive (M.Map k a)) -> Reactive (Behaviour (M.Map k a))
-swapB mapB = hold M.empty $ execute $ value mapB
+fromRight (Right x) = x
+fromRight _ = error $ "fromRight on Left"
+
+
 

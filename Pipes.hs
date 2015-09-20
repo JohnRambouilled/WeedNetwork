@@ -29,21 +29,6 @@ data Pipes = Pipes {pipesManager :: PipesManager,
                     pipesSenders :: PipesSenderManager,
                     pipesCloser :: Handler (SourceID, PipeID)}
 
-buildPipeManager :: Event NewPipe -> Reactive (PipesManagerBhv, Handler PipeID)
-buildPipeManager newPipeE = do (closeE, closeH) <- newEvent'
-                               pMan <- accum M.empty $ merge (openPipe <$> newPipeE) (closePipe <$> closeE)
-                               pure (pMan, closeH)
-    where openPipe _ = id
-          closePipe _ = id
-
-newSourceEvent :: Event NewPipe -> PipesManagerBhv -> Event PipesMap
-newSourceEvent npE pMbhv = filterJust $ snapshot makePipesMapMaybe npE pMbhv
-    where makePipesMapMaybe :: NewPipe -> PipesManager -> Maybe PipesMap
-          makePipesMapMaybe (r, e) pMan = case sID `M.lookup` pMan of
-                                            Just _ -> Nothing
-                                            Nothing -> Just (M.singleton sID e)
-                                        where sID = head $ reqRoad r
-
 {-| Converts the map of physical neighbors into a map of recipients |-}
 type RecipientMap = EventEntryMap SourceID NewPipe
 buildRecipientMap :: Event NewPipe -> Reactive (BhvTpl RecipientMap)
@@ -58,49 +43,28 @@ buildRecipientMap npE = do (rMapB, rMapH) <- newBhvTpl M.empty
                                                fire (eFire eE) $ (req, stream)
                 where sID = last $ reqRoad req
 
-{-
+
 {-| Manages the pipes for a given recipient |-}
-type PipeMap = EventEntryMap PipeID PipeMessage
-buildPipeMap :: Event NewPipe -> Reactive (Behaviour PipeMap)
-buildPipeMap npE = 
+type PipeMap = EventMap PipeID PipeMessage
+buildPipeMap :: Event NewPipe -> Reactive (BhvTpl PipeMap)
+buildPipeMap npE = do (pMapB,order) <- newBhvTpl M.empty
+                      -- listening the requests stream 
+                      listenTrans (filterJust $ snapshot onNewPipe npE pMapB) order
 
+                      -- listening the deconnections stream
+                      listenTrans (M.delete <$> decoE pMapB) order
+                      pure (pMapB,order)
+    where onNewPipe :: (Request, Event PipeMessage) -> PipeMap -> Maybe (PipeMap -> PipeMap)
+          onNewPipe (req,pE) pMap = case reqPipeID req `M.lookup` pMap of
+                                            Just _ -> Nothing
+                                            Nothing -> Just $ M.insert (reqPipeID req) pE
+          decoE :: Behaviour PipeMap -> Event PipeID
+          decoE pMapB = fst . fromLeft <$> (filterE isLeft $ allEvents pMapB)
 
-type PipeMap = M.Map PipeID (Event PipeMessage)
-data PipeManagerEntry = PipeManagerEntry {pmePipeMap :: Behaviour PipeMap,
-                                          pmePipeFired :: Event (Reactive ()),
-                                          pmeFire :: Handler PipeOrder}
-type PipeManager = M.Map SourceID PipeManagerEntry
-data PipeOrder = PipeAdd PipeID (Event PipeMessage)
-               | PipeDel PipeID
+type PipeManager = M.Map SourceID (BhvTpl PipeMap)
+buildPipeManager :: Behaviour RecipientMap -> Reactive (Behaviour PipeManager)
+buildPipeManager rMapB = swapBRM $ fmap (buildPipeMap . eEvent) <$> rMapB
 
-onOrder (PipeAdd pID pE) = M.insert pID pE
-onOrder (PipeDel pID) = M.delete pID
-
-
-
-{-| Retourne la PipeMap de la source donnée, les events d'order à réactimate et un moyen d'obtenir la commande |-}
-newPipeModule :: Handler CryptoOrder
-              -> Event (Request, Event PipeMessage)
-              -> Reactive PipeManagerEntry --(Behaviour PipeMap, Event (Reactive ()), Handler PipeOrder)
-newPipeModule fireCrypto newReqE = do (pipeOrders,fireOrders) <- newEvent
-                                      pMapB <- accum M.empty $ onOrder <$> pipeOrders
- 
-                                      pure $ PipeManagerEntry pMapB (pipeFired fireOrders) fireOrders
-
- where -- Accepte le pipe s'il n'appartient pas déjà à la pipeMap
-       onNewReq :: Handler PipeOrder -> (Request, Event PipeMessage) -> Reactive ()
-       onNewReq fire (req,pMsgE) = do fire $ PipeAdd (reqPipeID req) pMsgE
-                                      fireCrypto $ CryptoAdd' (reqPipeID req) (reqPipeKey req)
-       pipeFired :: Handler PipeOrder -> Event (Reactive ())
-       pipeFired fire = onNewReq fire <$> newReqE
-       
-
-newPipeManager :: Handler CryptoOrder -> Behaviour RoutingManager -> Reactive (Behaviour PipeManager)
-newPipeManager fireCrypto rManaB = swapB $ sequenceA . fmap (newPipeModule fireCrypto ) <$> rManaB
-
-{-| Retourne le flux de data, indépendamment du pipe, transmis par chaque source |-}
-pipesStream :: Behaviour PipeManager -> Behaviour (M.Map SourceID (Event PipeMessage))
-pipesStream pManaB = fmap (fmap ( srcStream . pmePipeMap) ) pManaB
-  where srcStream :: Behaviour PipeMap -> Event PipeMessage
-        srcStream pMapB = switchE $ foldr merge never . M.elems <$> pMapB
--}
+type DataManager = EventMap SourceID RawData
+buildDataManager :: Behaviour PipeManager -> Behaviour DataManager
+buildDataManager pManaB = fmap (fmap (snd . fromRight) . filterE isRight . allEvents) <$> pManaB
