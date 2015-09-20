@@ -46,25 +46,30 @@ buildRecipientMap npE = do (rMapB, rMapH) <- newBhvTpl M.empty
 
 {-| Manages the pipes for a given recipient |-}
 type PipeMap = EventMap PipeID PipeMessage
-buildPipeMap :: Event NewPipe -> Reactive (BhvTpl PipeMap)
+buildPipeMap :: Event NewPipe -> Reactive (BhvTpl PipeMap, Event (Reactive ()))
 buildPipeMap npE = do (pMapB,order) <- newBhvTpl M.empty
-                      -- listening the requests stream 
-                      listenTrans (filterJust $ snapshot onNewPipe npE pMapB) order
-
-                      -- listening the deconnections stream
-                      listenTrans (M.delete <$> decoE pMapB) order
-                      pure (pMapB,order)
+                      pure ((pMapB,order), toListen order pMapB)
     where onNewPipe :: (Request, Event PipeMessage) -> PipeMap -> Maybe (PipeMap -> PipeMap)
           onNewPipe (req,pE) pMap = case reqPipeID req `M.lookup` pMap of
                                             Just _ -> Nothing
                                             Nothing -> Just $ M.insert (reqPipeID req) pE
           decoE :: Behaviour PipeMap -> Event PipeID
           decoE pMapB = fst . fromLeft <$> (filterE isLeft $ allEvents pMapB)
+          toListen :: Modifier PipeMap -> Behaviour PipeMap -> Event (Reactive ())
+          toListen order pMapB = merge (newPipeOrder order pMapB) (decoOrder order pMapB)
+          newPipeOrder order pMapB = order <$> (filterJust $ snapshot onNewPipe npE pMapB)
+          decoOrder order pMapB = order . M.delete <$> decoE pMapB
 
 type PipeManager = M.Map SourceID (BhvTpl PipeMap)
 buildPipeManager :: Behaviour RecipientMap -> Reactive (Behaviour PipeManager)
-buildPipeManager rMapB = swapBRM $ fmap (buildPipeMap . eEvent) <$> rMapB
+buildPipeManager rMapB = do ret <- swapBRM $ fmap (buildPipeMap . eEvent) <$> rMapB
+                            let pManaB = fmap fst <$> ret
+                                pListener = fmap snd <$> ret
+                            listenTrans (allEvents pListener) id
+                            pure pManaB
+
 
 type DataManager = EventMap SourceID RawData
 buildDataManager :: Behaviour PipeManager -> Behaviour DataManager
 buildDataManager pManaB = fmap (fmap (snd . fromRight) . filterE isRight . allEvents) <$> pManaB
+
