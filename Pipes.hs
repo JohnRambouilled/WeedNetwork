@@ -46,15 +46,15 @@ newSourceEvent npE pMbhv = filterJust $ snapshot makePipesMapMaybe npE pMbhv
 
 {-| Converts the map of physical neighbors into a map of recipients |-}
 type RecipientMap = EventEntryMap SourceID NewPipe
-buildRecipientMap :: Event NewPipe -> Reactive (Behaviour RecipientMap)
+buildRecipientMap :: Event NewPipe -> Reactive (BhvTpl RecipientMap)
 buildRecipientMap npE = do (rMapB, rMapH) <- newBhvTpl M.empty
                            listenTrans (snapshot (f rMapH) npE rMapB) id
-                           pure rMapB
-  where f :: Handler RecipientMap -> (Request, Event PipeMessage) -> RecipientMap -> Reactive ()
+                           pure (rMapB, rMapH)
+  where f :: Modifier RecipientMap -> (Request, Event PipeMessage) -> RecipientMap -> Reactive ()
         f h (req, stream) rM = case sID `M.lookup` rM of
                                  Just eE -> fire (eFire eE) $ (req, stream)
                                  Nothing -> do eE <- newEventEntry (pure True)
-                                               fire h $ M.insert sID eE rM 
+                                               h $ M.insert sID eE 
                                                fire (eFire eE) $ (req, stream)
                 where sID = last $ reqRoad req
 

@@ -32,18 +32,19 @@ instance SignedClass NeighData  where scHash (NeighData  kH _ pay) = encode (kH,
                                       scKeyHash = neighDKeyID
                                       scSignature = neighDSig
 
-type NeighMapBhv = Behavior (EventEntryMap KeyHash NeighData)
+type NeighMap = EventEntryMap KeyHash NeighData
+type NeighMapBhv = Behavior NeighMap 
 
 data Neighborhood = Neighborhood {nbhNeighMap :: NeighMapBhv,
                                   nbhRequests :: Event Request,
-                                  nbhDecoHandle :: Handler KeyHash}
+                                  nbhModNeighMap :: Modifier NeighMap}
 
 buildNeighborhood :: Event NeighIntro -> Event NeighData -> Reactive Neighborhood
-buildNeighborhood introE dataE = do (decoE, decoH) <- newEvent'
-                                    (nM, _) <- buildCryptoMap introE decoE dataE
+buildNeighborhood introE dataE = do 
+                                    ((nM, nMH), _) <- buildCryptoMap introE dataE
                                     (reqE, reqH) <- newEvent'
-                                    listenTrans (allEvents nM) $ onDataEvent decoH reqH
-                                    pure $ Neighborhood nM reqE decoH
+                                    listenTrans (allEvents nM) $ onDataEvent (Handler $ nMH . M.delete) reqH
+                                    pure $ Neighborhood nM reqE nMH
 
 
 onDataEvent :: Handler KeyHash -> Handler Request -> NeighData -> Reactive ()

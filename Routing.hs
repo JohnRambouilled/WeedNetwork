@@ -64,11 +64,14 @@ data Routing = Routing {routingLocMap :: RoutingMapBhv,
                         routingModRelMap :: Modifier RoutingMap}
 
 buildRouting :: Event Request -> Event PipePacket -> Reactive Routing
-buildRouting reqE packetE = do --((closeRelE, closeRelH), (closeLocE, closeLocH)) <- (,) <$> newEvent' <*> newEvent'
+buildRouting reqE packetE = do --On Separe les requetes relayé et locales 
                                (reqRelE, reqLocE) <- splitEvent isLocalRequest reqE 
+                               --On construit les cryptoMaps correspondantes
                                ((relayMap, closeRelH), _) <- buildCryptoMap reqRelE packetE
                                ((localMap, closeLocH), newPipeE) <- buildCryptoMap reqLocE packetE
+                               --On bind les actions de relai (et de fermeture des pipes relayés)
                                listenTrans (allEvents relayMap) $ relayPackets $ Handler $ closeRelH . M.delete
+                               --Retour de la structure de Routing
                                pure $ Routing localMap relayMap  (makeNewPipe <$> newPipeE) closeLocH closeRelH
     where relayPackets :: Handler KeyHash -> PipePacket -> Reactive ()
           relayPackets _ p@(PipePacket _ _ n b _ ) = pure () --TODO : send p{pipePosition = if b then n + 1 else n -1} 
