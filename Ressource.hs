@@ -1,6 +1,7 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric,MultiParamTypeClasses #-}
 module Ressource where
 
+import Class
 import Crypto
 import Routing
 
@@ -23,6 +24,7 @@ newtype RessourceID = RessourceID RawData
 
 -- TODO
 ttlMax = 10
+maxDelay = 10
 
 
 data RessourceCert = RessourceCert {cResSourceDHKey :: DHPubKey,
@@ -46,90 +48,37 @@ data Answer = Answer {ansCert :: RessourceCert,
                       ansCnt :: RawData}
                 deriving Generic
 
-data AnswerOrder = AnswerAdd RessourceID (Handler Answer)
-                 | AnswerDel RessourceID 
-data ResearchOrder = ResearchAdd RessourceID (Handler Research)
-                   | ResearchDel RessourceID 
 
--- Ce que l'on doit faire des answers pour chaque ressourceID
-type AnswerMap = M.Map RessourceID (Handler Answer)
-type ResearchMap = M.Map RessourceID (Handler Research)
+type AnswerMap = EventEntryMap RessourceID Answer
 
-type RessourceMap = M.Map KeyHash (Event Research, Event Answer)
-
--- Répartition des ressources selon les sourcesID
---type RessourceManager = M.Map SourceID [RessourceID] -- TODO
-
-runRessourceModule :: SourceID -> (Behaviour CryptoMap) -> Reactive (Behaviour RessourceMap,
-                                                                  (Behaviour ResearchMap, Handler ResearchOrder),
-                                                                  (Behaviour AnswerMap, Handler AnswerOrder))
-runRessourceModule me cMapB  = do ((resOrder,fireRes),(ansOrder,fireAns)) <- (,) <$> newEvent <*> newEvent
-                                  resMapB <- accum M.empty $ onResearchOrder <$> resOrder
-                                  ansMapB <- accum M.empty $ onAnswerOrder <$> ansOrder
-
-                                  -- listen des recherches/réponses
-                                  listenTrans (onResearch fireRes fireAns resInputE resMapB) id
-                                  listenTrans (onAnswer ansInputE ansMapB) id
-                                  
-                                  pure (buildRessourceMap me <$> cMapB,
-                                        (resMapB,fireRes),
-                                        (ansMapB,fireAns))
-
-  where  
-         extractMaps :: CryptoMap -> (Event Research, Event Answer)
-         extractMaps cMap =  ((,) <$> extractStream . fmap fst <*> extractStream . fmap snd) $ buildRessourceMap me cMap
-         extractStream :: (M.Map k (Event a)) -> Event a
-         extractStream =Prelude.foldr merge never . M.elems
-         (resInputE,ansInputE) = ((,) <$> switchE . fmap fst <*> switchE . fmap snd) $ (extractMaps <$> cMapB) 
+instance IDable Answer RessourceID where
+        extractID = cResID . ansCert
 
 
-onAnswer :: Event Answer -> Behaviour AnswerMap -> Event (Reactive ())
-onAnswer ansE rMapB = filterJust $ snapshot onAnswer' ansE rMapB
-        where onAnswer' :: Answer -> AnswerMap -> Maybe (Reactive () )
-              onAnswer' ans rMap = fmap ($ans) $ (cResID $ ansCert ans) `M.lookup` rMap 
+buildAnswerMap :: Event Research -> Event Answer -> Reactive (Behaviour AnswerMap)
+buildAnswerMap rE aE = do  (aMapB,order) <- newBhvTpl M.empty
+                           -- listening the researchs
+                           listenTrans (filterJust $ snapshot (onResearch order) rE aMapB) id
+                           listenTrans (filterJust $ snapshot (flip fireKey) aE aMapB) id
+                        
+                           pure aMapB
+                      
+    where onResearch :: Modifier AnswerMap -> Research -> AnswerMap -> Maybe (Reactive ())
+          onResearch order r aMap = case resID r `M.lookup` aMap of
+                                      Just _ -> Nothing
+                                      Nothing -> Just $ do e <- newEventEntry $ (resID r==) . cResID . ansCert
+                                                           order $ M.insert (resID r) e
 
 
-onAnswerOrder :: AnswerOrder -> AnswerMap -> AnswerMap 
-onAnswerOrder (AnswerAdd rID rE) resM = M.insert rID rE resM 
-onAnswerOrder (AnswerDel rID) resM = M.delete rID resM 
-onResearchOrder (ResearchAdd rID rE) = M.insert rID rE
-onResearchOrder (ResearchDel rID) = M.delete rID
 
-
-buildRessourceMap :: SourceID -> CryptoMap -> RessourceMap
-buildRessourceMap me cMap = fmap (over _2 checkStream . extractRessourceStream) cMap
-  where extractRessourceStream :: Event DataPacket -> (Event Research, Event Answer)
-        extractRessourceStream dataE = filterEither $ filterJust $ decodeRessource <$> dataE
-        decodeRessource :: DataPacket -> Maybe (Either Research Answer)
-        decodeRessource dataPkt = case decodeOrFail (dataSignedPayload dataPkt) of
-                                    Right (_,_,res) -> Just $ Left res
-                                    Left (_,_,_) -> case decodeOrFail (dataSignedPayload dataPkt) of
-                                                      Right (_,_,ans) -> Just $ Right ans
-                                                      Left _ -> Nothing
-        checkStream :: Event Answer -> Event Answer
-        checkStream  ansE = snd <$> filterE (uncurry $ checkAnswer me) (timeEvent ansE)
-
-onResearch :: Handler ResearchOrder -> Handler AnswerOrder -> Event Research -> Behaviour ResearchMap -> Event (Reactive ())
-onResearch resOrder ansOrder resE resB = snapshot onResearch' resE resB
-  where onResearch' :: Research -> ResearchMap -> Reactive ()
-        onResearch' res rMap = case resID res `M.lookup` rMap of
-                                 Just h -> h res
-                                 Nothing -> do resOrder $ ResearchAdd (resID res) $ pure (pure ())
-                                               ansOrder $ AnswerAdd (resID res) $ relayAnswer
-                                               relayResearch res
-        relayAnswer :: Handler Answer
-        relayAnswer _ = pure () --TODO
-        relayResearch :: Handler Research
-        relayResearch _ = pure () -- TODO
-
+{-
 checkCert source time (RessourceCert dhKey pKey sendTime rID sig) = time - sendTime < maxDelay
                                                                     && computeHashFromKey pKey == source
                                                                     && checkSig pKey sig (encode (dhKey,pKey,sendTime,rID))
 checkAnswer me time ans = ansTTL ans > 1 && ansTTL ans <= ttlMax &&
                           me `Prelude.notElem` ansRoad ans && checkCert (ansSourceID ans) time (ansCert ans)
 
-
-
+-}
 
 
 
