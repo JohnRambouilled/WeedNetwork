@@ -33,9 +33,9 @@ type HandlerMap k e = ParamMap Handler k e
 type EventEntryMap k e = ParamMap EventEntry k e
 type EventEntryMapBhv k e = BhvTpl (EventEntryMap k e)
 type EventMap k e = ParamMap Event k e --M.Map k (Event e)
+type EventMapBhv k e = BhvTpl (EventMap k e)
 type EventManager id k e = M.Map id (EventMapBhv k e)
 
-type EventMapBhv k e = BhvTpl (EventMap k e)
 
 
 
@@ -43,13 +43,14 @@ type EventMapBhv k e = BhvTpl (EventMap k e)
 
 class Mergeable a e | a -> e where allEvents :: a -> Event e
 instance Mergeable (Event e) e where allEvents = id
+instance Mergeable (Event e, a) e where allEvents = fst
 instance Mergeable (EventEntry e) e where allEvents = eEvent
 instance Mergeable a e => Mergeable (Behavior a) e where allEvents bhv = switchE (allEvents <$> bhv)
 instance Mergeable a e => Mergeable (M.Map k a) e where allEvents m = foldr merge never $ allEvents <$> M.elems m
 instance Mergeable a e => Mergeable (BhvTpl a) e where allEvents = allEvents . fst
 
 
-class (Ord k) => IDable e k | e -> k where
+class (Ord k) => IDable e k where
         extractID :: e -> k
 
 

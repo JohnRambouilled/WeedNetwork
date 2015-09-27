@@ -54,6 +54,10 @@ type AnswerMap = EventEntryMap RessourceID Answer
 instance IDable Answer RessourceID where
         extractID = cResID . ansCert
 
+instance SignedClass Answer where scHash (Answer c _ _ sID r) = encode (c, sID, r)
+                                  scKeyHash = ansSourceID
+                                  scSignature = cResSig . ansCert
+instance IntroClass Answer where icPubKey = cResSourceKey . ansCert 
 
 buildAnswerMap :: Event Research -> Event Answer -> Reactive (Behaviour AnswerMap)
 buildAnswerMap rE aE = do  (aMapB,order) <- newBhvTpl M.empty
