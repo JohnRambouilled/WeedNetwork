@@ -1,27 +1,28 @@
 {-# LANGUAGE MultiParamTypeClasses, DeriveGeneric, FlexibleInstances, FunctionalDependencies #-}
-module Crypto where
+module Crypto (module Crypto,
+               module Ed25519)
+where
 import Data.ByteString.Lazy hiding (split)
 import Data.Binary
 import Control.Monad
 import qualified Data.Map as M
 import FRP.Sodium
-import Class
 import FRP.Sodium.Internal hiding (Event)
 import GHC.Generics
 
+import Class
+import Ed25519
+
 type EventSource a = (Event a, Handler a)
 
-newtype KeyHash = KeyHash Int deriving (Eq, Ord, Generic)
+newtype KeyHash = KeyHash RawData deriving (Eq, Ord, Generic)
 instance Binary KeyHash
-type PubKey = Int
-type PrivKey = Int
-type Signature = Int
-type RawData = ByteString
 type Payload = RawData
 
 class SignedClass a where scHash :: a -> RawData
                           scKeyHash :: a -> KeyHash
                           scSignature :: a -> Signature
+                          scPushSignature :: a -> Signature -> a
 
 instance SignedClass a => IDable a KeyHash where extractID = scKeyHash
 
@@ -43,11 +44,16 @@ buildCryptoMap introE packetE = let newEntryE = execute (insertCryptoKey <$> int
 
 
 checkSig :: SignedClass a => PubKey -> a -> Bool
-checkSig _ _  = True
-sign :: SignedClass a => PrivKey -> a -> Signature
-sign _ _ = 0
-decrypt _ = id
-computeHashFromKey _ = 0
+checkSig k a  = checkSignature k (scSignature a) $ scHash a
+
+sign :: SignedClass a => KeyPair-> a -> a
+sign (pK, k) a = scPushSignature a $ makeSignature k pK $ scHash a
+
+decryptPrivKey :: DHPubKey -> PrivKey -> Maybe KeyPair
+decryptPrivKey dh k = privKeyToDHPrivKey k >>= exctractKey dh
+
+computeHashFromKey :: PubKey -> KeyHash
+computeHashFromKey = KeyHash . computeHash
 
 
 
