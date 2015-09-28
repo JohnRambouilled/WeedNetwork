@@ -17,7 +17,6 @@ import GHC.Generics
 
 type TTL = Int
 
-type DHPubKey = Int
 
 newtype RessourceID = RessourceID RawData
     deriving (Eq,Ord,Generic)

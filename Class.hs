@@ -37,10 +37,6 @@ type EventMapBhv k e = BhvTpl (EventMap k e)
 type EventManager id k e = M.Map id (EventMapBhv k e)
 
 
-
-
-
-
 class Mergeable a e | a -> e where allEvents :: a -> Event e
 instance Mergeable (Event e) e where allEvents = id
 instance Mergeable (Event e, a) e where allEvents = fst

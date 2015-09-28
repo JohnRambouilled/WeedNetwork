@@ -21,6 +21,75 @@ type Road = [SourceID]
 type Time = POSIXTime
 type PipeID = KeyHash
 
+type RoutingMap = EventEntryMap KeyHash PipePacket
+type RoutingMapBhv = BhvTpl RoutingMap
+
+
+data Routing = Routing {routingLocMap :: RoutingMapBhv,
+                        routingRelMap :: RoutingMapBhv,
+                        routingNewPipes :: Event NewPipe,
+                        routingRelayedPackets :: Event PipePacket,
+                        routingLocClose :: Handler PipeID,
+                        routingRelClose :: Handler PipeID}
+
+
+
+buildRouting :: KeyPair -> Event Request -> Event PipePacket -> Reactive Routing
+buildRouting uK reqE packetE = do
+                     (locClE, locClH) <- newEvent'
+                     (relClE, relClH) <- newEvent'
+                     --On Separe les requetes relayé et locales 
+                     (reqRelE, reqLocE) <- splitEvent isLocalRequest reqE 
+                     --Event des messages relayés
+                     (relPE, relPH) <- newEvent
+                     --On construit les cryptoMaps correspondantes
+                     (relayMap, _) <- buildCryptoMap reqRelE packetE
+                     (localMap, newPipeE) <- buildCryptoMap reqLocE packetE
+                     --On bind les actions de relai (et de fermeture des pipes relayés)
+                     listenTrans (allEvents $ fst relayMap) $ relayPackets relPH relClH
+                     -- On ferme les pipes local sur PipeClose
+                     listenTrans (allEvents $ fst localMap) $ closeLocalPipes locClH 
+                     -- listen des closes 
+                     listenTrans locClE $ snd localMap . M.delete
+                     listenTrans relClE $ snd relayMap . M.delete
+                     --Retour de la structure de Routing
+                     pure $ Routing localMap relayMap  (filterJust (makeNewPipe <$> newPipeE)) relPE locClH relClH
+    where relayPackets :: (PipePacket -> Reactive ()) -> Handler KeyHash -> PipePacket -> Reactive ()
+          relayPackets h _ p@(PipePacket _ _ n b _ ) = h p{pipePosition = if b then n + 1 else n -1} 
+          relayPackets _ h (PipeClose kID _ _ _ _) = fire h $ kID
+          isLocalRequest req = reqPosition req == reqLength req
+          makeNewPipe (req, (EventEntry _ e _)) = requestToNewPipe uK req $ makePipeMessage <$> e
+          closeLocalPipes h (PipeClose  pID _ _ _ _) = fire h $ pID
+          closeLocalPipes _ _ = pure ()
+
+data NewPipe = NewPipe {npRoad :: Road,
+                        npSource :: SourceID,
+                        npPubKey :: PubKey,
+                        npSender :: PipeMessage -> PipePacket,
+                        npPipeID :: PipeID,
+                        npTime :: Time,
+                        npContent :: RawData,
+                        npMessageEvent :: Event PipeMessage}
+
+routOpenPipe :: Routing -> PipeID -> (DHPubKey, KeyPair) -> Road -> RawData -> Reactive (Request, NewPipe)
+routOpenPipe rout pID (dhPk, (pK, sK)) r cnt = do 
+        eE <- newEventEntry $ checkSig pK
+        snd (routingLocMap rout) $ M.insert pID eE
+        t <- ioReactive getPOSIXTime
+        let np  = NewPipe r (last r) pK (pipeMessageToPipePacket 0 True (pK,sK)) pID t cnt (makePipeMessage <$> eEvent eE)
+            req = Request 0 (length r) r dhPk t pK pID emptySignature cnt
+        pure (sign (pK, sK) req, np)
+
+
+requestToNewPipe :: KeyPair -> Request -> Event PipeMessage -> Maybe NewPipe
+requestToNewPipe (upK,uk) (Request n _ r epk t pK pID _ cnt) e = (\s -> NewPipe r (head r) pK s pID t cnt e) <$> sender
+            where sender = pipeMessageToPipePacket n False <$> decryptPrivKey epk uk
+
+pipeMessageToPipePacket :: Number -> Bool -> KeyPair -> PipeMessage -> PipePacket
+pipeMessageToPipePacket n b pK (Left  (pID,d)) = sign pK $ PipeClose  pID emptySignature n b d 
+pipeMessageToPipePacket n b pK (Right (pID,d)) = sign pK $ PipePacket pID emptySignature n b d 
+
+
 
 data Request = Request {reqPosition :: Number,
                         reqLength :: Number, -- ^ Total length of the road
@@ -58,58 +127,9 @@ instance SignedClass PipePacket where scHash (PipePacket kH _ n b m) = encode (k
 instance Binary PipePacket
 
 type PipeMessage = Either (PipeID, Payload) (PipeID, Payload) --Left on a PipeClose
-
-type RoutingMap = EventEntryMap KeyHash PipePacket
-type RoutingMapBhv = BhvTpl RoutingMap
-data NewPipe = NewPipe {npRoad :: Road,
-                        npSource :: SourceID,
-                        npPubKey :: PubKey,
-                        npSender :: PipeMessage -> PipePacket,
-                        npPipeID :: PipeID,
-                        npTime :: Time,
-                        npContent :: RawData,
-                        npMessageEvent :: Event PipeMessage}
-
-requestToNewPipe :: KeyPair -> Request -> Event PipeMessage -> Maybe NewPipe
-requestToNewPipe (upK,uk) (Request n _ r epk t pK pID _ cnt) e = (\s -> NewPipe r (head r) pK s pID t cnt e) <$> sender
-            where sender = pipeMessageToPipePacket n (n == 0) <$> decryptPrivKey epk uk
-
-pipeMessageToPipePacket :: Number -> Bool -> KeyPair -> PipeMessage -> PipePacket
-pipeMessageToPipePacket n b pK (Left  (pID,d)) = sign pK $ PipeClose  pID emptySignature n b d 
-pipeMessageToPipePacket n b pK (Right (pID,d)) = sign pK $ PipePacket pID emptySignature n b d 
-
-
-
-
-data Routing = Routing {routingLocMap :: RoutingMapBhv,
-                        routingRelMap :: RoutingMapBhv,
-                        routingNewPipes :: Event NewPipe,
-                        routingRelayedPackets :: Event PipePacket,
-                        routingRequestHandler :: Handler Request,
-                        routingPacketHandler :: Handler PipePacket}
-
-buildRouting :: KeyPair -> Reactive Routing
-buildRouting uK = do (reqE, reqH) <- newEvent'
-                     (packetE, packetH) <- newEvent'
-                     --On Separe les requetes relayé et locales 
-                     (reqRelE, reqLocE) <- splitEvent isLocalRequest reqE 
-                     --Event des messages relayés
-                     (relPE, relPH) <- newEvent
-                     --On construit les cryptoMaps correspondantes
-                     (relayMap, _) <- buildCryptoMap reqRelE packetE
-                     (localMap, newPipeE) <- buildCryptoMap reqLocE packetE
-                     --On bind les actions de relai (et de fermeture des pipes relayés)
-                     listenTrans (allEvents $ fst relayMap) $ relayPackets relPH $ Handler $ snd relayMap . M.delete
-                     --Retour de la structure de Routing
-                     pure $ Routing localMap relayMap  (filterJust (makeNewPipe <$> newPipeE)) relPE reqH packetH
-    where relayPackets :: (PipePacket -> Reactive ()) -> Handler KeyHash -> PipePacket -> Reactive ()
-          relayPackets h _ p@(PipePacket _ _ n b _ ) = h p{pipePosition = if b then n + 1 else n -1} 
-          relayPackets _ h (PipeClose kID _ _ _ _) = fire h $ kID
-          isLocalRequest req = reqPosition req == reqLength req
-          makeNewPipe (req, (EventEntry _ e _)) = requestToNewPipe uK req $ makePipeMessage <$> e
-          makePipeMessage (PipePacket pID _ _ _ p) = Right (pID,p)
-          makePipeMessage (PipeClose  pID _ _ _ p) = Left  (pID,p)
-
+makePipeMessage :: PipePacket -> PipeMessage
+makePipeMessage (PipePacket pID _ _ _ p) = Right (pID,p)
+makePipeMessage (PipeClose  pID _ _ _ p) = Left  (pID,p)
 
 splitEvent :: (e -> Bool) -> Event e -> Reactive (Event e, Event e)
 splitEvent f eE = do ((failE, failH), (passE, passH)) <- (,) <$> newEvent <*> newEvent

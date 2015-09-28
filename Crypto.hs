@@ -28,9 +28,10 @@ instance SignedClass a => IDable a KeyHash where extractID = scKeyHash
 
 class SignedClass a => IntroClass a where icPubKey :: a -> PubKey
 
+type CryptoMap e = EventEntryMapBhv KeyHash e
+type CryptoEntryEvent e i = Event (i, EventEntry e)
 
-
-buildCryptoMap :: (IntroClass i, SignedClass e) => Event i -> Event e -> Reactive (EventEntryMapBhv KeyHash e, Event (i, (EventEntry e)))
+buildCryptoMap :: (IntroClass i, SignedClass e) => Event i -> Event e -> Reactive (CryptoMap e, CryptoEntryEvent e i)
 buildCryptoMap introE packetE = let newEntryE = execute (insertCryptoKey <$> introE) in
                                       do --eM <- accum M.empty $ merge (deleteKey <$> decoE) (fst <$> newEntryE)
                                          (eM, orderH) <- newBhvTpl M.empty --creation de la Map

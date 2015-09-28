@@ -2,7 +2,7 @@
 module Protocol where
 
 import Crypto
-import Sources
+--import Sources
 import Pipes
 import Communication
 import Routing
