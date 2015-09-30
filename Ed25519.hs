@@ -61,11 +61,11 @@ generateKeyPair = do (skBs,_) <- randomBytesGenerate keyByteSize <$> getSystemDR
 
 
 
-generateDHPrivKey :: IO DHPrivKey
-generateDHPrivKey  = do (skBs,_) <- randomBytesGenerate keyByteSize <$> getSystemDRG
+generateDHKeyPair :: IO (DHPubKey, DHPrivKey)
+generateDHKeyPair  = do (skBs,_) <- randomBytesGenerate keyByteSize <$> getSystemDRG
                         case DH.secretKey (skBs :: BStrct.ByteString) of
                                 Left s -> fail s
-                                Right k -> pure k
+                                Right k -> pure (DH.toPublic k, k)
                  
 
 privKeyToDHPrivKey :: PrivKey -> Maybe DHPrivKey

@@ -49,6 +49,7 @@ data Answer = Answer {ansCert :: RessourceCert,
 
 
 type AnswerMap = EventEntryMap RessourceID Answer
+type AnswerMapBhv = BhvTpl AnswerMap
 
 instance IDable Answer RessourceID where
         extractID = cResID . ansCert
@@ -56,21 +57,54 @@ instance IDable Answer RessourceID where
 instance SignedClass Answer where scHash (Answer c _ _ sID r) = encode (c, sID, r)
                                   scKeyHash = ansSourceID
                                   scSignature = cResSig . ansCert
+                                  scPushSignature a s = a{ansCert = (ansCert a){cResSig = s} }
 instance IntroClass Answer where icPubKey = cResSourceKey . ansCert 
 
-buildAnswerMap :: Event Research -> Event Answer -> Reactive (Behaviour AnswerMap)
+type RessourceMapTpl = M.Map RessourceID ()
+type RelayMapBhv = BhvTpl RessourceMapTpl
+
+
+data Ressources = Ressources {resAnswerMap :: AnswerMapBhv,
+                              resRelayMap :: RelayMapBhv,
+                              resRelPackets :: Event RessourcePacket }
+
+buildRessources :: DHPubKey -> KeyPair -> RessourceMapTpl -> Event RessourceID -> Event Research -> Event Answer -> Reactive Ressources
+buildRessources dhPK kP locMap rIDE resE ansE = do (relMap, relPE) <- buildRelayMap dhPK kP locMap resE ansE
+                                                   ansB <- buildAnswerMap rIDE ansE
+                                                   pure $ Ressources ansB relMap relPE
+
+
+buildRelayMap :: DHPubKey -> KeyPair -> RessourceMapTpl -> Event Research -> Event Answer -> Reactive (RelayMapBhv, Event RessourcePacket)
+buildRelayMap dhPK (sK,pK) locRMap resE ansE = do (relMap, relMod) <- newBhvTpl M.empty
+                                                  let resP = filterJust $ execute $ snapshot (onResearch relMod) resE relMap
+                                                      ansP = filterJust $ snapshot onAnswer ansE relMap
+                                                  pure ((relMap, relMod), merge (Left <$> resP) (Right <$> ansP))
+        where onResearch :: Modifier RessourceMapTpl -> Research -> RessourceMapTpl -> Reactive (Maybe Research)
+              onResearch mod res map = case resID res `M.lookup` map of
+                                            Just _ -> pure Nothing
+                                            Nothing -> do mod $ M.insert (resID res) ()
+                                                          pure . Just $ relayRes res
+              onAnswer :: Answer -> RessourceMapTpl -> Maybe Answer
+              onAnswer ans map = pure (relayAns ans) <$> extractID ans `M.lookup` map 
+              relayAns :: Answer -> Answer
+              relayAns = id
+              relayRes = id
+
+
+{- | Event des recherches sortantes, et des Answer entrantes. Construit la map des Event Answer nous concernants.-}
+buildAnswerMap :: Event RessourceID -> Event Answer -> Reactive AnswerMapBhv
 buildAnswerMap rE aE = do  (aMapB,order) <- newBhvTpl M.empty
                            -- listening the researchs
                            listenTrans (filterJust $ snapshot (onResearch order) rE aMapB) id
                            listenTrans (filterJust $ snapshot (flip fireKey) aE aMapB) id
                         
-                           pure aMapB
+                           pure (aMapB, order)
                       
-    where onResearch :: Modifier AnswerMap -> Research -> AnswerMap -> Maybe (Reactive ())
-          onResearch order r aMap = case resID r `M.lookup` aMap of
+    where onResearch :: Modifier AnswerMap -> RessourceID -> AnswerMap -> Maybe (Reactive ())
+          onResearch order r aMap = case r `M.lookup` aMap of
                                       Just _ -> Nothing
-                                      Nothing -> Just $ do e <- newEventEntry $ (resID r==) . cResID . ansCert
-                                                           order $ M.insert (resID r) e
+                                      Nothing -> Just $ do e <- newEventEntry $ (r==) . extractID
+                                                           order $ M.insert r e
 
 
 
