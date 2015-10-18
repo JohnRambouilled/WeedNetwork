@@ -49,7 +49,7 @@ data Answer = Answer {ansCert :: RessourceCert,
 
 
 type AnswerMap = EventEntryMap RessourceID Answer
-type AnswerMapBhv = BhvTpl AnswerMap
+type AnswerMapBhv t = ModEvent t AnswerMap
 
 instance IDable Answer RessourceID where
         extractID = cResID . ansCert
@@ -61,7 +61,7 @@ instance SignedClass Answer where scHash (Answer c _ _ sID r) = encode (c, sID, 
 instance IntroClass Answer where icPubKey = cResSourceKey . ansCert 
 
 type RessourceMapTpl = M.Map RessourceID ()
-type RelayMapBhv = BhvTpl RessourceMapTpl
+type RelayMapBhv = ModEvent t RessourceMapTpl
 
 
 data Ressources = Ressources {resAnswerMap :: AnswerMapBhv,

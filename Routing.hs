@@ -1,11 +1,11 @@
 {-# LANGUAGE DeriveGeneric #-}
 module Routing where
 
-import Crypto hiding (onOrder)
+import Crypto 
 import Class
 
-import FRP.Sodium
-import FRP.Sodium.Internal hiding (Event)
+import Reactive.Banana
+import Reactive.Banana.Frameworks
 import Data.ByteString.Lazy (ByteString)
 import GHC.Generics
 import Data.Binary
@@ -22,22 +22,22 @@ type Time = POSIXTime
 type PipeID = KeyHash
 
 type RoutingMap = EventEntryMap KeyHash PipePacket
-type RoutingMapBhv = BhvTpl RoutingMap
+type RoutingMapBhv t = ModEvent t RoutingMap
 
 
-data Routing = Routing {routingLocMap :: RoutingMapBhv,
-                        routingRelMap :: RoutingMapBhv,
-                        routingNewPipes :: Event NewPipe,
-                        routingRelayedPackets :: Event PipePacket,
-                        routingLocClose :: Handler PipeID,
-                        routingRelClose :: Handler PipeID}
+data Routing t = Routing {routingLocMap :: RoutingMapBhv t,
+                          routingRelMap :: RoutingMapBhv t,
+                          routingNewPipes :: Event t NewPipe,
+                          routingRelayedPackets :: Event t PipePacket,
+                          routingLocClose :: Handler PipeID,
+                          routingRelClose :: Handler PipeID}
 
 
 
-buildRouting :: KeyPair -> Event Request -> Event PipePacket -> Reactive Routing
+buildRouting :: Frameworks t => KeyPair -> Event t Request -> Event t PipePacket -> Moment t (Routing t)
 buildRouting uK reqE packetE = do
-                     (locClE, locClH) <- newEvent'
-                     (relClE, relClH) <- newEvent'
+                     (locClE, locClH) <- newEvent
+                     (relClE, relClH) <- newEvent
                      --On Separe les requetes relayé et locales 
                      (reqRelE, reqLocE) <- splitEvent isLocalRequest reqE 
                      --Event des messages relayés
@@ -46,20 +46,22 @@ buildRouting uK reqE packetE = do
                      (relayMap, _) <- buildCryptoMap reqRelE packetE
                      (localMap, newPipeE) <- buildCryptoMap reqLocE packetE
                      --On bind les actions de relai (et de fermeture des pipes relayés)
-                     listenTrans (allEvents $ fst relayMap) $ relayPackets relPH relClH
+                     relEvents <- mergeEvents $ meChanges relayMap
+                     reactimate $ relayPackets relPH relClH <$> relEvents 
                      -- On ferme les pipes local sur PipeClose
-                     listenTrans (allEvents $ fst localMap) $ closeLocalPipes locClH 
+                     locEvents <- mergeEvents $ meChanges localMap
+                     reactimate $ closeLocalPipes locClH <$> locEvents
                      -- listen des closes 
-                     listenTrans locClE $ snd localMap . M.delete
-                     listenTrans relClE $ snd relayMap . M.delete
+                     reactimate $ meModifier localMap . M.delete <$> locClE
+                     reactimate $ meModifier relayMap . M.delete <$> relClE
                      --Retour de la structure de Routing
                      pure $ Routing localMap relayMap  (filterJust (makeNewPipe <$> newPipeE)) relPE locClH relClH
-    where relayPackets :: (PipePacket -> Reactive ()) -> Handler KeyHash -> PipePacket -> Reactive ()
+    where relayPackets :: Handler PipePacket -> Handler KeyHash -> PipePacket -> IO ()
           relayPackets h _ p@(PipePacket _ _ n b _ ) = h p{pipePosition = if b then n + 1 else n -1} 
-          relayPackets _ h (PipeClose kID _ _ _ _) = fire h $ kID
+          relayPackets _ h (PipeClose kID _ _ _ _) = h kID
           isLocalRequest req = reqPosition req == reqLength req
           makeNewPipe (req, (EventEntry _ e _)) = requestToNewPipe uK req $ makePipeMessage <$> e
-          closeLocalPipes h (PipeClose  pID _ _ _ _) = fire h $ pID
+          closeLocalPipes h (PipeClose  pID _ _ _ _) = h  pID
           closeLocalPipes _ _ = pure ()
 
 data NewPipe = NewPipe {npRoad :: Road,
@@ -69,19 +71,19 @@ data NewPipe = NewPipe {npRoad :: Road,
                         npPipeID :: PipeID,
                         npTime :: Time,
                         npContent :: RawData,
-                        npMessageEvent :: Event PipeMessage}
+                        npMessageEvent :: AddHandler PipeMessage}
 
-routOpenPipe :: Routing -> PipeID -> (DHPubKey, KeyPair) -> Road -> RawData -> Reactive (Request, NewPipe)
+routOpenPipe :: Routing t -> PipeID -> (DHPubKey, KeyPair) -> Road -> RawData -> IO (Request, NewPipe)
 routOpenPipe rout pID (dhPk, (pK, sK)) r cnt = do 
         eE <- newEventEntry $ checkSig pK
-        snd (routingLocMap rout) $ M.insert pID eE
-        t <- ioReactive getPOSIXTime
-        let np  = NewPipe r (last r) pK (pipeMessageToPipePacket 0 True (pK,sK)) pID t cnt (makePipeMessage <$> eEvent eE)
+        meModifier (routingLocMap rout) $ M.insert pID eE
+        t <- getPOSIXTime
+        let np  = NewPipe r (last r) pK (pipeMessageToPipePacket 0 True (pK,sK)) pID t cnt (makePipeMessage <$> eAddHandler eE)
             req = Request 0 (length r) r dhPk t pK pID emptySignature cnt
         pure (sign (pK, sK) req, np)
 
 
-requestToNewPipe :: KeyPair -> Request -> Event PipeMessage -> Maybe NewPipe
+requestToNewPipe :: KeyPair -> Request -> AddHandler PipeMessage -> Maybe NewPipe
 requestToNewPipe (upK,uk) (Request n _ r epk t pK pID _ cnt) e = (\s -> NewPipe r (head r) pK s pID t cnt e) <$> sender
             where sender = pipeMessageToPipePacket n False <$> decryptPrivKey epk uk
 
@@ -131,9 +133,9 @@ makePipeMessage :: PipePacket -> PipeMessage
 makePipeMessage (PipePacket pID _ _ _ p) = Right (pID,p)
 makePipeMessage (PipeClose  pID _ _ _ p) = Left  (pID,p)
 
-splitEvent :: (e -> Bool) -> Event e -> Reactive (Event e, Event e)
+splitEvent :: Frameworks t => (e -> Bool) -> Event t e -> Moment t (Event t e, Event t e)
 splitEvent f eE = do ((failE, failH), (passE, passH)) <- (,) <$> newEvent <*> newEvent
-                     listenTrans eE $ \e -> if f e then passH e else failH e 
+                     reactimate  $ (\e -> if f e then passH e else failH e) <$> eE
                      pure (failE, passE)
 
 instance Binary NominalDiffTime where

@@ -6,14 +6,15 @@ import Data.ByteString.Lazy hiding (split)
 import Data.Binary
 import Control.Monad
 import qualified Data.Map as M
-import FRP.Sodium
-import FRP.Sodium.Internal hiding (Event)
 import GHC.Generics
+import Reactive.Banana
+import Reactive.Banana.Frameworks
+
 
 import Class
 import Ed25519
 
-type EventSource a = (Event a, Handler a)
+--type EventSource a = (Event a, Handler a)
 
 newtype KeyHash = KeyHash RawData deriving (Eq, Ord, Generic)
 instance Binary KeyHash
@@ -28,19 +29,20 @@ instance SignedClass a => IDable a KeyHash where extractID = scKeyHash
 
 class SignedClass a => IntroClass a where icPubKey :: a -> PubKey
 
-type CryptoMap e = EventEntryMapBhv KeyHash e
-type CryptoEntryEvent e i = Event (i, EventEntry e)
+type CryptoMap e = EventEntryMap KeyHash e
+type CryptoMapMod t e = ModEvent t (CryptoMap e)
+type CryptoEntryEvent t e i = Event t (i, EventEntry e)
 
-buildCryptoMap :: (IntroClass i, SignedClass e) => Event i -> Event e -> Reactive (CryptoMap e, CryptoEntryEvent e i)
-buildCryptoMap introE packetE = let newEntryE = execute (insertCryptoKey <$> introE) in
-                                      do --eM <- accum M.empty $ merge (deleteKey <$> decoE) (fst <$> newEntryE)
-                                         (eM, orderH) <- newBhvTpl M.empty --creation de la Map
-                                         listenTrans (fst <$> newEntryE) orderH --On ajoute les nouvelles entrées
-                                         listenTrans (packetActions eM) id    --On fire les packets dans la map
-                                         pure ((eM, orderH), snd <$> newEntryE)
-    where insertCryptoKey intro = do entry <- newEventEntry (checkSig $ icPubKey intro)
-                                     pure (insertEntry (scKeyHash intro) entry, (intro, entry))
-          packetActions eM = filterJust $ snapshot (flip fireKey) packetE eM
+buildCryptoMap :: (Frameworks t, IntroClass i, SignedClass e) => Event t i -> Event t e -> Moment t (CryptoMapMod t e, CryptoEntryEvent t e i)
+buildCryptoMap introE packetE = do modE <- newModEvent M.empty --creation de la Map
+                                   newEntryE <- execute (insertCryptoKey (meModifier modE) <$> introE) 
+                                   reactimate $ fst <$> newEntryE --On ajoute les nouvelles entrées
+                                   reactimate . packetActions $ meLastValue modE    --On fire les packets dans la map
+                                   pure (modE, snd <$> newEntryE)
+    where insertCryptoKey :: (IntroClass i, SignedClass e) => Modifier (CryptoMap e) -> i -> FrameworksMoment (IO (), (i, EventEntry e))
+          insertCryptoKey mod intro = FrameworksMoment $ do entry <- liftIO $ newEventEntry (checkSig $ icPubKey intro)
+                                                            pure (mod $ insertEntry (scKeyHash intro) entry, (intro, entry))
+          packetActions eM = filterJust $ apply (fireKey <$> eM) packetE 
 
 
 
