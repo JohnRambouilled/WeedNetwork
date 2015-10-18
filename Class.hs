@@ -16,7 +16,7 @@ data EventEntry e = EventEntry { eFire :: Handler e,
 
 
 type ParamMap a k e = M.Map k (a e)
-type Modifier a = (a -> a) -> IO ()
+type Modifier a = Handler (a -> a)
 
 data ModEvent t a = ModEvent {meLastValue :: Behavior t a, 
                               meChanges :: Event t a,
@@ -27,6 +27,9 @@ newModEvent i = do (e, h) <- newEvent
                    let (e', b) = mapAccum i $ (\f a -> (f a, f a)) <$> e
                    pure $ ModEvent b e' h
 
+
+applyMod :: (Modifier a -> a -> e -> b) -> ModEvent t a -> Event t e -> Event t b
+applyMod f m = apply (f (meModifier m) <$> meLastValue m) 
 
 --type HandlerMap k e = ParamMap Handler k e
 type EventEntryMap k e = ParamMap EventEntry k e

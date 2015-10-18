@@ -6,87 +6,85 @@ import Routing
 import Class
 
 
-import FRP.Sodium
-import FRP.Sodium.Internal hiding (Event)
+import Reactive.Banana
+import Reactive.Banana.Frameworks
 import Data.ByteString.Lazy (ByteString)
 import GHC.Generics
 import Data.Binary
+import Data.Maybe (isJust, fromJust)
 import Control.Monad
 import qualified Data.Map as M
 
 type UserID = KeyHash
 type PipesSender = Handler PipeMessage
 type PipeCloser = Handler (SourceID, PipeID)
-type NewSourceEvent = Event (SourceID, Event NewPipe)
+type NewSourceEvent t = Event t (SourceID, AddHandler NewPipe)
 
-type PipesMap = M.Map PipeID (Event PipeMessage, PipesSender)
+
+type PipesMap = M.Map PipeID (AddHandler PipeMessage, PipesSender)
 
 data PipeManagerEntry =  PipeManagerEntry { pmeFireNP :: Handler NewPipe,
-                                            pmeToListen :: Event (Reactive ()),
-                                            pmePipeMapBhv :: BhvTpl PipesMap }
+                                            pmeUnregister :: IO (),
+                                            pmePipeMap :: PipesMap }
+
 type PipesManager = M.Map SourceID PipeManagerEntry
-type PipesManagerBhv = BhvTpl PipesManager
+type PipesManagerBhv t = ModEvent t PipesManager
 
-data Pipes = Pipes {pipesManager :: PipesManagerBhv,
-                    pipeNewSourceEvent :: NewSourceEvent,
-                    pipesMessagesOut :: Event PipePacket,
-                    pipeNewPipe :: Handler NewPipe,
-                    pipesClosePipe :: PipeCloser,
-                    pipesRemoveSource :: Handler SourceID} 
+data Pipes t = Pipes {pipesManager :: PipesManagerBhv t,
+                      pipeNewSourceEvent :: NewSourceEvent t,
+                      pipesMessagesOut :: Event t PipePacket,
+                      pipeNewPipe :: Handler NewPipe,
+                      pipesClosePipe :: PipeCloser,
+                      pipesRemoveSource :: Handler SourceID} 
 
-buildPipes :: Reactive Pipes
-buildPipes = do (closeE, closeH) <- newEvent'
-                (npE, npH) <- newEvent'
-                (remSE, remSH) <- newEvent'
+buildPipes :: Frameworks t => Moment t (Pipes t)
+buildPipes = do (closeE, closeH) <- newEvent
+                (npE, npH) <- newEvent
+                (remSE, remSH) <- newEvent
                 (pipeManB, sendE, newSourceE) <- buildPipeManager closeH npE
-                listenTrans (snapshot closePipe closeE $ fst pipeManB) id
-                listenTrans remSE $ removeSource closeH pipeManB
+                reactimate $ closePipe (meModifier pipeManB) <$> closeE
+                reactimate $ applyMod (removeSource closeH) pipeManB remSE
                 pure $ Pipes pipeManB newSourceE sendE npH closeH remSH
-    where closePipe (sID, pID) pM = maybe (pure ()) (\pme -> snd (pmePipeMapBhv pme) $ M.delete pID) $ M.lookup sID pM
-          removeSource :: PipeCloser -> BhvTpl PipesManager -> SourceID -> Reactive ()
-          removeSource closeH (manB, manM) sID = do man <- sample manB
-                                                    case M.lookup sID man of
-                                                            Nothing -> pure ()
-                                                            Just pme -> do pIDs <- M.keys <$> sample (fst $ pmePipeMapBhv pme)
-                                                                           forM pIDs $ \pID -> fire closeH $ (sID, pID)
-                                                                           manM $ M.delete sID
+    where closePipe mod (sID, pID) = mod $ M.adjust (deletePipe pID) sID
+          removeSource :: PipeCloser -> Modifier PipesManager -> PipesManager -> SourceID -> IO ()
+          removeSource closeH manM man sID = case M.lookup sID man of
+                                                  Nothing -> pure ()
+                                                  Just pme -> do pmeUnregister pme
+                                                                 manM $ M.delete sID
 
 
 type DataManager = EventMap SourceID RawData
-buildDataManager :: Behaviour PipesManager -> Behaviour DataManager
-buildDataManager pManaB = fmap (fmap (snd . fromRight) . filterE isRight . allEvents . pmePipeMapBhv) <$> pManaB
+--buildDataManager :: Behavior PipesManager -> Behavior DataManager
+--buildDataManager pManaB = fmap (fmap (snd . fromRight) . filterE isRight . fst . M.elems . pmePipeMap) <$> pManaB
 
 
 {-| Converts the map of physical neighbors into a map of recipients |-}
-buildPipeManager :: PipeCloser -> Event NewPipe -> Reactive (PipesManagerBhv, Event PipePacket, NewSourceEvent)
-buildPipeManager closeH npE = do (manB, manH) <- newBhvTpl M.empty
-                                 (nsE, nsH) <- newEvent'
-                                 (sendE, sendH) <- newEvent'
-                                 listenTrans (snapshot (f nsH sendH manH) npE manB) id
-                                 pure ((manB, manH), sendE, nsE)
-  where f :: Handler (SourceID, Event NewPipe) -> Handler PipePacket -> Modifier PipesManager -> NewPipe -> PipesManager -> Reactive ()
-        f nsH sendH mod np rM = case sID `M.lookup` rM of
-                                     Just pme -> fire (pmeFireNP pme) $ np
-                                     Nothing -> do (e, h) <- newEvent'
-                                                   (events, pMapB) <- buildPipeMap closeH sendH sID e
-                                                   mod $ M.insert sID $ PipeManagerEntry h events pMapB
-                                                   fire nsH $ (sID, e)
-                                                   fire h $ np
+buildPipeManager :: Frameworks t => PipeCloser -> Event t NewPipe -> Moment t (PipesManagerBhv t, Event t PipePacket, NewSourceEvent t)
+buildPipeManager closeH npE = do manM <- newModEvent M.empty
+                                 (nsE, nsH) <- newEvent
+                                 (sendE, sendH) <- newEvent
+                                 reactimate $ apply (f nsH sendH (meModifier manM) <$> meLastValue manM) npE
+                                 pure (manM, sendE, nsE)
+  where f :: Handler (SourceID, AddHandler NewPipe) -> Handler PipePacket -> Modifier PipesManager -> PipesManager -> NewPipe -> IO ()
+        f nsH sendH mod rM np = case sID `M.lookup` rM of
+                                     Just pme -> pmeFireNP pme $ np
+                                     Nothing -> do (e, h) <- newAddHandler
+                                                   unreg <- buildPipeMap sendH e pipeMapMod
+                                                   mod $ M.insert sID $ PipeManagerEntry h unreg M.empty
+                                                   nsH (sID, e)
+                                                   h np
                 where sID = npSource np
-
-{-| Manages the pipes for a given recipient  : add new pipes on request, forge the sending function, and delete pipes from the routing map on closes.|-}
-buildPipeMap :: PipeCloser -> Handler PipePacket -> SourceID -> Event NewPipe -> Reactive (Event (Reactive ()), BhvTpl PipesMap) 
-buildPipeMap closeH sendH sID npE = do pmBhv@(pMapB,order) <- newBhvTpl M.empty
-                                       pure (toListen order pMapB, pmBhv ) 
-    where onNewPipe :: NewPipe -> PipesMap -> Maybe (PipesMap -> PipesMap)
-          onNewPipe np pMap = case npPipeID np `M.lookup` pMap of
-                                            Just _ -> Nothing
-                                            Nothing -> Just $ M.insert (npPipeID np) (npMessageEvent np, Handler $ fire sendH . npSender np)
-          toListen :: Modifier PipesMap -> Behaviour PipesMap -> Event (Reactive ())
-          toListen order pMapB = merge newPipeOrder decoOrder
-                where newPipeOrder = order <$> (filterJust $ snapshot onNewPipe npE pMapB)
-                      decoOrder = (\pID -> fire closeH $ (sID, pID)) <$> decoE pMapB
-                      decoE :: Behaviour PipesMap -> Event PipeID
-                      decoE pMapB = fst . fromLeft <$> (filterE isLeft $ allEvents pMapB)
+                      pipeMapMod :: (PipesMap -> PipesMap) -> IO ()
+                      pipeMapMod f = mod $ M.adjust (\pme -> pme{pmePipeMap = f $ pmePipeMap pme}) sID
 
 
+buildPipeMap :: Handler PipePacket -> AddHandler NewPipe -> Modifier PipesMap -> IO (IO ())
+buildPipeMap sendH npE = register $  onNewPipe <$> npE
+    where onNewPipe :: NewPipe -> PipesMap -> PipesMap
+          onNewPipe np pM = case pID `M.lookup` pM of
+                                Nothing -> M.insert pID (npMessageEvent np, sendH . npSender np) pM
+                                Just _ -> pM
+            where pID = npPipeID np
+
+deletePipe :: PipeID -> PipeManagerEntry -> PipeManagerEntry
+deletePipe pID pme = pme{pmePipeMap = M.delete pID $ pmePipeMap pme}
