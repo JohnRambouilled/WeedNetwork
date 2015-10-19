@@ -10,7 +10,6 @@ import Reactive.Banana
 import Reactive.Banana.Frameworks
 import qualified Data.Map as M
 
-type UserID = KeyHash
 type PipesSender = Handler PipeMessage
 type PipeCloser = Handler (SourceID, PipeID)
 type NewSourceEvent t = Event t (SourceID, AddHandler NewPipe)

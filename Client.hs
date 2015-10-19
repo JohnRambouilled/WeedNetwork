@@ -1,7 +1,7 @@
 module Client where
 
-import FRP.Sodium
-import FRP.Sodium.Internal hiding (Event)
+import Reactive.Banana
+import Reactive.Banana.Frameworks
 import qualified Data.Map as M
 
 import Ressource
@@ -14,38 +14,41 @@ import Crypto
 
 --type Packet = PacketNeighI NeighIntro | PacketNeighD NeighData | PacketPipe PipePacket
 
-data PacketEvents = PacketEvents {neighIntroE :: Event NeighIntro,
-                                  neighDataE :: Event NeighData,
-                                  pipePacketE :: Event PipePacket}
+data PacketEvents t = PacketEvents {neighIntroE :: Event t NeighIntro,
+                                    neighDataE :: Event t NeighData,
+                                    pipePacketE :: Event t PipePacket}
 
-data Client = Client {clNeighbors :: Neighborhood,
-                      clRouting :: Routing,
-                      clRessources :: Ressources,
-                      clPipes :: Pipes,
-                      clDHKeys :: (DHPubKey, DHPrivKey),
-                      clKeys :: (PubKey, PrivKey),
-                      clUserID :: UserID,
+data Client t = Client {clNeighbors :: Neighborhood t,
+                        clRouting :: Routing t,
+                        clRessources :: Ressources t,
+                        clPipes :: Pipes t,
+                        clDHKeys :: (DHPubKey, DHPrivKey),
+                        clKeys :: (PubKey, PrivKey),
+                        clUserID :: UserID,
                       
-                      clToSend :: PacketEvents,
+                        clToSend :: PacketEvents t,
+  
+                        clSendToPeer :: Handler (SourceID, RawData),
+                        clLocResH :: Handler RessourceID}
 
-                      clLocResH :: Handler RessourceID}
-
-buildClient :: PacketEvents -> Reactive Client
-buildClient packetsE = do (pK, sK) <- ioReactive generateKeyPair
-                          (dhPK, dhSK) <- ioReactive generateDHKeyPair
+buildClient :: Frameworks t => PacketEvents t -> Moment t (Client t)
+buildClient packetsE = do (pK, sK) <- liftIO generateKeyPair
+                          (dhPK, dhSK) <- liftIO generateDHKeyPair
                           let uID = computeHashFromKey pK
                         
-                          (locResE, locResH) <- newEvent'
+                          (locResE, locResH) <- newEvent
+                          (locMsgE, locMsgH) <- newEvent
 
                           neighs <- buildNeighborhood (neighIntroE packetsE) (neighDataE packetsE)
-                          res <- buildRessources dhPK (pK, sK) M.empty locResE (nbhResearchs neighs) (nbhAnswers neighs)
-                          rout <- buildRouting (pK,sK) (nbhRequests neighs) (pipePacketE packetsE)
+                          res <- buildRessources dhPK (pK, sK) M.empty (nbhResearchs neighs) (nbhAnswers neighs)
+                          rout <- buildRouting uID (pK,sK) (nbhRequests neighs) (pipePacketE packetsE)
                           pipes <- buildPipes 
-                          listenTrans (routingNewPipes rout) $ fire $ pipeNewPipe pipes
+                          reactimate $ pipeNewPipe pipes <$> routingNewPipes rout
+                          reactimate $ resResearchHandle res <$> locResE
                         
-                          let toSend = PacketEvents never never $ merge (pipesMessagesOut pipes) (routingRelayedPackets rout)  
+                          let toSend = PacketEvents never never $ union (pipesMessagesOut pipes) (routingRelayedPackets rout)  
 
-                          pure $ Client neighs rout res pipes (dhPK, dhSK) (pK,sK) uID toSend locResH
+                          pure $ Client neighs rout res pipes (dhPK, dhSK) (pK,sK) uID toSend locMsgH locResH
 
 
 

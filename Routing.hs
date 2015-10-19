@@ -3,6 +3,7 @@ module Routing where
 
 import Crypto 
 import Class
+import Timer
 
 import Reactive.Banana
 import Reactive.Banana.Frameworks
@@ -20,7 +21,6 @@ type Number = Int
 type SourceID = KeyHash
 type UserID = KeyHash
 type Road = [SourceID]
-type Time = POSIXTime
 type PipeID = KeyHash
 
 type RoutingMap = EventEntryMap KeyHash PipePacket
