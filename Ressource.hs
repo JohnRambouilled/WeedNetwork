@@ -9,9 +9,9 @@ import Data.ByteString hiding (split)
 import Data.Binary
 import Control.Monad
 import qualified Data.Map as M
-import FRP.Sodium
-import FRP.Sodium.Internal hiding (Event)
 import Control.Lens
+import Reactive.Banana
+import Reactive.Banana.Frameworks
 
 import GHC.Generics
 
@@ -61,50 +61,48 @@ instance SignedClass Answer where scHash (Answer c _ _ sID r) = encode (c, sID, 
 instance IntroClass Answer where icPubKey = cResSourceKey . ansCert 
 
 type RessourceMapTpl = M.Map RessourceID ()
-type RelayMapBhv = ModEvent t RessourceMapTpl
+type RelayMapBhv t = ModEvent t RessourceMapTpl
 
 
-data Ressources = Ressources {resAnswerMap :: AnswerMapBhv,
-                              resRelayMap :: RelayMapBhv,
-                              resRelPackets :: Event RessourcePacket }
+data Ressources t = Ressources {resAnswerMap :: AnswerMapBhv t,
+                                resRelayMap :: RelayMapBhv t,
+                                resRelPackets :: Event t RessourcePacket }
 
-buildRessources :: DHPubKey -> KeyPair -> RessourceMapTpl -> Event RessourceID -> Event Research -> Event Answer -> Reactive Ressources
+buildRessources :: Frameworks t => DHPubKey -> KeyPair -> RessourceMapTpl -> Event t RessourceID -> Event t Research -> Event t Answer -> Moment t (Ressources t)
 buildRessources dhPK kP locMap rIDE resE ansE = do (relMap, relPE) <- buildRelayMap dhPK kP locMap resE ansE
                                                    ansB <- buildAnswerMap rIDE ansE
                                                    pure $ Ressources ansB relMap relPE
 
 
-buildRelayMap :: DHPubKey -> KeyPair -> RessourceMapTpl -> Event Research -> Event Answer -> Reactive (RelayMapBhv, Event RessourcePacket)
-buildRelayMap dhPK (sK,pK) locRMap resE ansE = do (relMap, relMod) <- newBhvTpl M.empty
-                                                  let resP = filterJust $ execute $ snapshot (onResearch relMod) resE relMap
-                                                      ansP = filterJust $ snapshot onAnswer ansE relMap
-                                                  pure ((relMap, relMod), merge (Left <$> resP) (Right <$> ansP))
-        where onResearch :: Modifier RessourceMapTpl -> Research -> RessourceMapTpl -> Reactive (Maybe Research)
-              onResearch mod res map = case resID res `M.lookup` map of
-                                            Just _ -> pure Nothing
-                                            Nothing -> do mod $ M.insert (resID res) ()
-                                                          pure . Just $ relayRes res
-              onAnswer :: Answer -> RessourceMapTpl -> Maybe Answer
-              onAnswer ans map = pure (relayAns ans) <$> extractID ans `M.lookup` map 
+buildRelayMap :: Frameworks t => DHPubKey -> KeyPair -> RessourceMapTpl -> Event t Research -> Event t Answer -> Moment t (RelayMapBhv t, Event t RessourcePacket)
+buildRelayMap dhPK (sK,pK) locRMap resE ansE = do relModE <- newModEvent M.empty
+                                                  let resP = filterJust $  apply (onResearch (meModifier relModE) <$> meLastValue relModE) resE 
+                                                      ansP = filterJust $ apply (onAnswer <$> meLastValue relModE) ansE 
+                                                  reactimate $ fst <$> resP
+                                                  pure (relModE, union (Left . snd <$> resP) (Right <$> ansP))
+        where onResearch :: Modifier RessourceMapTpl -> RessourceMapTpl -> Research -> Maybe (IO (), Research)
+              onResearch mod map res = case resID res `M.lookup` map of
+                                            Just _ -> Nothing
+                                            Nothing ->  Just (mod $ M.insert (resID res) (), relayRes res)
+              onAnswer :: RessourceMapTpl -> Answer -> Maybe Answer
+              onAnswer map ans = pure (relayAns ans) <$> extractID ans `M.lookup` map 
               relayAns :: Answer -> Answer
               relayAns = id
               relayRes = id
 
 
 {- | Event des recherches sortantes, et des Answer entrantes. Construit la map des Event Answer nous concernants.-}
-buildAnswerMap :: Event RessourceID -> Event Answer -> Reactive AnswerMapBhv
-buildAnswerMap rE aE = do  (aMapB,order) <- newBhvTpl M.empty
+buildAnswerMap :: Frameworks t => Event t RessourceID -> Event t Answer -> Moment t (AnswerMapBhv t)
+buildAnswerMap rE aE = do  aModE <- newModEvent M.empty
                            -- listening the researchs
-                           listenTrans (filterJust $ snapshot (onResearch order) rE aMapB) id
-                           listenTrans (filterJust $ snapshot (flip fireKey) aE aMapB) id
-                        
-                           pure (aMapB, order)
-                      
-    where onResearch :: Modifier AnswerMap -> RessourceID -> AnswerMap -> Maybe (Reactive ())
-          onResearch order r aMap = case r `M.lookup` aMap of
-                                      Just _ -> Nothing
-                                      Nothing -> Just $ do e <- newEventEntry $ (r==) . extractID
-                                                           order $ M.insert r e
+                           reactimate $ apply (onResearch (meModifier aModE) <$> meLastValue aModE) rE
+                           reactimate . filterJust $ apply (fireKey <$> meLastValue aModE) aE
+                           pure aModE
+    where onResearch :: Modifier AnswerMap -> AnswerMap -> RessourceID -> IO ()
+          onResearch order aMap r = case r `M.lookup` aMap of
+                                      Just _ -> pure ()
+                                      Nothing ->  do e <- newEventEntry $ (r==) . extractID
+                                                     order $ M.insert r e
 
 
 

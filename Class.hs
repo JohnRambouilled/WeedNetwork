@@ -59,6 +59,18 @@ mergeAddHandlers eH = switchE <$> execute (makeAnyMom <$> eH)
     where makeAnyMom :: [AddHandler e] -> FrameworksMoment (AnyMoment Event e)
           makeAnyMom hL = FrameworksMoment $ (trimE . unions =<< mapM fromAddHandler hL)
 
+splitEvent :: Frameworks t => (e -> Bool) -> Event t e -> Moment t (Event t e, Event t e)
+splitEvent f eE = do ((failE, failH), (passE, passH)) <- (,) <$> newEvent <*> newEvent
+                     reactimate  $ (\e -> if f e then passH e else failH e) <$> eE
+                     pure (failE, passE)
+
+splitEither :: Frameworks t => Event t (Either a b) -> Moment t (Event t a, Event t b)
+splitEither e = do ((leftE, leftH), (rightE, rightH)) <- (,) <$> newEvent <*> newEvent
+                   let f (Left a) = leftH a
+                       f (Right a) = rightH a
+                   reactimate $ f <$> e
+                   pure (leftE, rightE)
+
 
 newEventEntry :: (e -> Bool) -> IO (EventEntry e)
 newEventEntry pred = do (eE,eF) <- newAddHandler

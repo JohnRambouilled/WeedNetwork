@@ -6,17 +6,19 @@ import Class
 
 import Reactive.Banana
 import Reactive.Banana.Frameworks
-import Data.ByteString.Lazy (ByteString)
 import GHC.Generics
 import Data.Binary
-import Control.Monad
 import qualified Data.Map as M
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
-import Data.Tuple
+
+roadLengthMax = 10 :: Number
+maxDelay = 20 :: Time
+
 
 type Number = Int
 type SourceID = KeyHash
+type UserID = KeyHash
 type Road = [SourceID]
 type Time = POSIXTime
 type PipeID = KeyHash
@@ -30,12 +32,15 @@ data Routing t = Routing {routingLocMap :: RoutingMapBhv t,
                           routingNewPipes :: Event t NewPipe,
                           routingRelayedPackets :: Event t PipePacket,
                           routingLocClose :: Handler PipeID,
-                          routingRelClose :: Handler PipeID}
+                          routingRelClose :: Handler PipeID,
+                          routingLogs :: Event t String}
 
 
 
-buildRouting :: Frameworks t => KeyPair -> Event t Request -> Event t PipePacket -> Moment t (Routing t)
-buildRouting uK reqE packetE = do
+buildRouting :: Frameworks t => UserID -> KeyPair -> Event t Request -> Event t PipePacket -> Moment t (Routing t)
+buildRouting uID uK reqEuc packetE = do
+                     t <- liftIO $ getPOSIXTime
+                     (reqLogs, reqE) <- splitEither $ checkRequest uID t <$> reqEuc
                      (locClE, locClH) <- newEvent
                      (relClE, relClH) <- newEvent
                      --On Separe les requetes relayé et locales 
@@ -49,20 +54,16 @@ buildRouting uK reqE packetE = do
                      relEvents <- mergeEvents $ meChanges relayMap
                      reactimate $ relayPackets relPH relClH <$> relEvents 
                      -- On ferme les pipes local sur PipeClose
-                     locEvents <- mergeEvents $ meChanges localMap
-                     reactimate $ closeLocalPipes locClH <$> locEvents
                      -- listen des closes 
                      reactimate $ meModifier localMap . M.delete <$> locClE
                      reactimate $ meModifier relayMap . M.delete <$> relClE
                      --Retour de la structure de Routing
-                     pure $ Routing localMap relayMap  (filterJust (makeNewPipe <$> newPipeE)) relPE locClH relClH
+                     pure $ Routing localMap relayMap  (filterJust (makeNewPipe <$> newPipeE)) relPE locClH relClH ( ("Rejected request : " ++) <$> reqLogs)
     where relayPackets :: Handler PipePacket -> Handler KeyHash -> PipePacket -> IO ()
           relayPackets h _ p@(PipePacket _ _ n b _ ) = h p{pipePosition = if b then n + 1 else n -1} 
           relayPackets _ h (PipeClose kID _ _ _ _) = h kID
           isLocalRequest req = reqPosition req == reqLength req
           makeNewPipe (req, (EventEntry _ e _)) = requestToNewPipe uK req $ makePipeMessage <$> e
-          closeLocalPipes h (PipeClose  pID _ _ _ _) = h  pID
-          closeLocalPipes _ _ = pure ()
 
 data NewPipe = NewPipe {npRoad :: Road,
                         npSource :: SourceID,
@@ -72,6 +73,9 @@ data NewPipe = NewPipe {npRoad :: Road,
                         npTime :: Time,
                         npContent :: RawData,
                         npMessageEvent :: AddHandler PipeMessage}
+
+
+
 
 routOpenPipe :: Routing t -> PipeID -> (DHPubKey, KeyPair) -> Road -> RawData -> IO (Request, NewPipe)
 routOpenPipe rout pID (dhPk, (pK, sK)) r cnt = do 
@@ -133,23 +137,18 @@ makePipeMessage :: PipePacket -> PipeMessage
 makePipeMessage (PipePacket pID _ _ _ p) = Right (pID,p)
 makePipeMessage (PipeClose  pID _ _ _ p) = Left  (pID,p)
 
-splitEvent :: Frameworks t => (e -> Bool) -> Event t e -> Moment t (Event t e, Event t e)
-splitEvent f eE = do ((failE, failH), (passE, passH)) <- (,) <$> newEvent <*> newEvent
-                     reactimate  $ (\e -> if f e then passH e else failH e) <$> eE
-                     pure (failE, passE)
-
 instance Binary NominalDiffTime where
         get = fromRational <$> get
         put t = put ((toRational t) :: Rational)
 
-
+checkRequest :: UserID -> Time -> Request -> Either String Request
 checkRequest me t req@(Request n l r epk t' pK pH s c)
---    | l > roadLengthMax                 = Left "Rejected road : too long"
+    | l > roadLengthMax                 = Left "Rejected road : too long"
     | n > l                             = Left "Incorrect RequestPosition"
     | l /= length r                      = Left "Incorrect RoadLength"
- --   |  t - t' > maxDelay               = Left "Obsolete Request" 
-    | r !! n /= me                       = Left "Not destinated to me"
---  | computeHashFromKey pK /= pH        = Left "Invalid tuple KeyHash/PubKey"
-   -- | checkSig pK s $ requestHash req   = Right ()
+    | t - t' > maxDelay                 = Left "Obsolete Request" 
+    | r !! n /= me                       = Left "Not adressed to me"
+    | computeHashFromKey pK /= pH        = Left "Invalid tuple KeyHash/PubKey"
+    | checkSig pK req                   = Right req
     | otherwise                         = Left "Invalid signature"
 
