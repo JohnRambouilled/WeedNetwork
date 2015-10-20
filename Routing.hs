@@ -35,6 +35,11 @@ data Routing t = Routing {routingLocMap :: RoutingMapBhv t,
                           routingRelClose :: Handler PipeID,
                           routingLogs :: Event t String}
 
+showRoutingLocal :: Routing t -> Event t String
+showRoutingLocal = showMap "Routing Local" . routingLocMap
+showRoutingRelay :: Routing t -> Event t String
+showRoutingRelay = showMap "Routing Relay" . routingRelMap
+
 
 
 buildRouting :: Frameworks t => UserID -> KeyPair -> Event t Request -> Event t PipePacket -> Moment t (Routing t)

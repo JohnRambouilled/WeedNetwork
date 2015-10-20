@@ -16,7 +16,7 @@ import Ed25519
 
 --type EventSource a = (Event a, Handler a)
 
-newtype KeyHash = KeyHash RawData deriving (Eq, Ord, Generic)
+newtype KeyHash = KeyHash RawData deriving (Eq, Ord, Generic, Show)
 instance Binary KeyHash
 type Payload = RawData
 

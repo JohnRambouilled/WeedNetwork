@@ -32,6 +32,7 @@ data Pipes t = Pipes {pipesManager :: PipesManagerBhv t,
                       pipesClosePipe :: PipeCloser,
                       pipesRemoveSource :: Handler SourceID} 
 
+
 buildPipes :: Frameworks t => Moment t (Pipes t)
 buildPipes = do (closeE, closeH) <- newEvent
                 (npE, npH) <- newEvent
@@ -58,7 +59,7 @@ buildPipeManager :: Frameworks t =>  Event t NewPipe -> Moment t (PipesManagerBh
 buildPipeManager npE = do manM <- newModEvent M.empty
                           (nsE, nsH) <- newEvent
                           (sendE, sendH) <- newEvent
-                          reactimate $ apply (onNewPipe nsH sendH (meModifier manM) <$> meLastValue manM) npE
+                          reactimate $ applyMod (onNewPipe nsH sendH) manM npE
                           pure (manM, sendE, nsE)
   where onNewPipe :: Handler (SourceID, AddHandler NewPipe) -> Handler PipePacket -> Modifier PipesManager -> PipesManager -> NewPipe -> IO ()
         onNewPipe nsH sendH mod rM np = case sID `M.lookup` rM of
@@ -83,3 +84,9 @@ buildPipeMap sendH npE = register $  onNewPipe <$> npE
 
 deletePipe :: PipeID -> PipeManagerEntry -> PipeManagerEntry
 deletePipe pID pme = pme{pmePipeMap = M.delete pID $ pmePipeMap pme}
+
+
+showPipes :: Pipes t -> Event t String
+showPipes = (showPipesManager <$>) . meChanges . pipesManager
+    where showPipesManager = ("PipeManager : \n" ++) . concat . map showSource . M.assocs
+          showSource (sID, e) = "\t Source : " ++ show sID ++ "  pipes : " ++ concat (map ((++ ", ") . show) $ M.keys $ pmePipeMap e)

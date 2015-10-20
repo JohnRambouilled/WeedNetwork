@@ -20,7 +20,7 @@ type TTL = Int
 
 
 newtype RessourceID = RessourceID RawData
-    deriving (Eq,Ord,Generic)
+    deriving (Eq,Ord,Generic, Show)
 
 -- TODO
 ttlMax = 10
@@ -70,6 +70,12 @@ data Ressources t = Ressources {resAnswerMap :: AnswerMapBhv t,
                                 resRelayMap :: RelayMapBhv t,
                                 resResearchHandle :: Handler RessourceID,
                                 resRelPackets :: Event t RessourcePacket }
+
+
+showRessourcesAns :: Ressources t -> Event t String
+showRessourcesAns = showMap "Ressources Waiting" . resAnswerMap 
+showRessourcesRel :: Ressources t -> Event t String
+showRessourcesRel = showMap "Ressources Relayed" . resRelayMap
 
 buildRessources :: Frameworks t => DHPubKey -> KeyPair -> RessourceMapTpl -> Event t Research -> Event t Answer -> Moment t (Ressources t)
 buildRessources dhPK kP locMap resE ansE = do (relMap, relPE) <- buildRelayMap dhPK kP locMap resE ansE

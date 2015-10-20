@@ -18,6 +18,7 @@ data PacketEvents t = PacketEvents {neighIntroE :: Event t NeighIntro,
                                     neighDataE :: Event t NeighData,
                                     pipePacketE :: Event t PipePacket}
 
+
 data Client t = Client {clNeighbors :: Neighborhood t,
                         clRouting :: Routing t,
                         clRessources :: Ressources t,
@@ -49,7 +50,6 @@ buildClient packetsE = do (pK, sK) <- liftIO generateKeyPair
                           let toSend = PacketEvents never never $ union (pipesMessagesOut pipes) (routingRelayedPackets rout)  
 
                           pure $ Client neighs rout res pipes (dhPK, dhSK) (pK,sK) uID toSend locMsgH locResH
-
 
 
 

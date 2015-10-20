@@ -61,5 +61,6 @@ onDataEvent _ reqH _ _ (NeighData _ _ (NeighReq r)) = reqH  r
 onDataEvent _ _ resH _ (NeighData _ _ (NeighRes r)) = resH  r 
 onDataEvent _ _ _ ansH (NeighData _ _ (NeighAns a)) = ansH  a
 
-
+showNeighborhood :: Neighborhood t -> Event t String
+showNeighborhood = showMap "Neighborhood" . nbhNeighMap
 
