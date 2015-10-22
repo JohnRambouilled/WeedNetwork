@@ -35,10 +35,6 @@ data Routing t = Routing {routingLocMap :: RoutingMapBhv t,
                           routingRelClose :: Handler PipeID,
                           routingLogs :: Event t String}
 
-showRoutingLocal :: Routing t -> Event t String
-showRoutingLocal = showMap "Routing Local" . routingLocMap
-showRoutingRelay :: Routing t -> Event t String
-showRoutingRelay = showMap "Routing Relay" . routingRelMap
 
 
 

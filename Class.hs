@@ -95,7 +95,4 @@ fireKey' m k e = join $ f <$> k `M.lookup` m
 kEvents :: (Ord k) => EventEntryMap k e -> k -> Maybe (AddHandler e)
 kEvents m k = eAddHandler <$> k `M.lookup` m
 
-showMap :: Show k => String -> ModEvent t (M.Map k a) -> Event t String
-showMap nom mod = ((nom ++ " : ") ++) . sm <$> meChanges mod
-    where sm = concat . map ((++ ", ") . show) . M.keys
 

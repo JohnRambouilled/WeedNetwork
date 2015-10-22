@@ -86,7 +86,3 @@ deletePipe :: PipeID -> PipeManagerEntry -> PipeManagerEntry
 deletePipe pID pme = pme{pmePipeMap = M.delete pID $ pmePipeMap pme}
 
 
-showPipes :: Pipes t -> Event t String
-showPipes = (showPipesManager <$>) . meChanges . pipesManager
-    where showPipesManager = ("PipeManager : \n" ++) . concat . map showSource . M.assocs
-          showSource (sID, e) = "\t Source : " ++ show sID ++ "  pipes : " ++ concat (map ((++ ", ") . show) $ M.keys $ pmePipeMap e)
