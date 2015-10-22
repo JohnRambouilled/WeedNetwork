@@ -8,16 +8,12 @@ import Control.Concurrent.Chan
 import Control.Monad
 
 
-buildApp :: Int -> [String] -> [(String -> String -> IO ()) -> IO ()] -> IO ()
-buildApp nbWidgets names hooks = do 
+buildApp :: Int -> [String] -> IO (IO (), [(String -> String -> IO ())])
+buildApp nbWidgets names = do 
         cfg <- standardIOConfig
         chan <- newChan
-        zipWithM_ (registerHook chan) modifiers hooks
+--        zipWithM_ (registerHook chan) modifiers hooks
 
-        void $ customMain (mkVty cfg) chan newClientApp client
-
-        
-
-
+        pure (void $ customMain (mkVty cfg) chan newClientApp client, buildModifier chan <$> modifiers)
  where (client,modifiers) = newClientUI nbWidgets names
-       registerHook chan mod hook = hook $ \name string -> writeChan chan $  mod name string
+       buildModifier chan mod x y = writeChan chan $ mod x y
