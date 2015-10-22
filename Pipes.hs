@@ -32,6 +32,15 @@ data Pipes t = Pipes {pipesManager :: PipesManagerBhv t,
                       pipesClosePipe :: PipeCloser,
                       pipesRemoveSource :: Handler SourceID} 
 
+{- | Send messages to sources, if there is pipes leading to them.
+ -   [TODO] : choix du pipes (head pour l'instant...)
+ -   [TODO] : keeplogs -}
+sendToSource :: Frameworks t => Pipes t -> Event t (SourceID, RawData) -> Moment t ()
+sendToSource pipe e = reactimate $ apply (send <$> meLastValue (pipesManager pipe)) e
+    where send pm (sID,d) = case sID `M.lookup` pm of
+                                Nothing -> pure () --TODO log
+                                Just pme -> makeMessage d . head . M.assocs $ pmePipeMap pme
+          makeMessage d (pID,(_,s)) = s $ Right (pID, d)
 
 buildPipes :: Frameworks t => Moment t (Pipes t)
 buildPipes = do (closeE, closeH) <- newEvent

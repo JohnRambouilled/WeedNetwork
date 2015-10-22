@@ -8,7 +8,7 @@ import Control.Concurrent.Chan
 import Control.Monad
 
 
-buildApp :: Int -> [String] -> IO (IO (), [(String -> String -> IO ())])
+buildApp :: Int -> [String] -> IO (IO (), [String -> String -> IO ()])
 buildApp nbWidgets names = do 
         cfg <- standardIOConfig
         chan <- newChan

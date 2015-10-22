@@ -108,6 +108,9 @@ data Request = Request {reqPosition :: Number,
                         reqPipeSig :: Signature,
                         reqContent :: RawData}
     deriving Generic
+
+instance Show Request where show (Request p l r _ t _ pID _ _) = "Request for pipe : " ++ show pID ++ " on road : " ++ show r ++" ("++ show p ++", "++ show l ++")"
+
 instance SignedClass Request where scHash (Request n l r epk t pK pH s c) = encode (l,r,epk,t,pK,pH,c)
                                    scKeyHash = reqPipeID
                                    scSignature = reqPipeSig
@@ -127,6 +130,12 @@ data PipePacket = PipePacket {pipeKeyID :: PipeID,
                               pipePayload :: Payload}
 
     deriving Generic
+
+instance Show PipePacket where
+    show (PipePacket kID _ n b _) = "PipePacket on pipe : " ++ show kID ++ " pos " ++ show n ++ (if b then "+" else "-")
+    show (PipeClose  kID _ n b _) = "PipeClose  on pipe : " ++ show kID ++ " pos " ++ show n ++ (if b then "+" else "-")
+
+
 instance SignedClass PipePacket where scHash (PipePacket kH _ n b m) = encode (kH, n, b, m)
                                       scKeyHash = pipeKeyID
                                       scSignature = pipeSig

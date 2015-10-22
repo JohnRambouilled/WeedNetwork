@@ -9,14 +9,11 @@ import Neighbors
 import Routing
 import Pipes
 import Ed25519
-import Class
 import Crypto
+import Class
 
---type Packet = PacketNeighI NeighIntro | PacketNeighD NeighData | PacketPipe PipePacket
 
-data PacketEvents t = PacketEvents {neighIntroE :: Event t NeighIntro,
-                                    neighDataE :: Event t NeighData,
-                                    pipePacketE :: Event t PipePacket}
+type Packet = Either NeighPacket PipePacket 
 
 
 data Client t = Client {clNeighbors :: Neighborhood t,
@@ -27,29 +24,32 @@ data Client t = Client {clNeighbors :: Neighborhood t,
                         clKeys :: (PubKey, PrivKey),
                         clUserID :: UserID,
                       
-                        clToSend :: PacketEvents t,
+                        clReceived :: Event t Packet,
+                        clToSend :: Event t Packet,
   
                         clSendToPeer :: Handler (SourceID, RawData),
                         clLocResH :: Handler RessourceID}
 
-buildClient :: Frameworks t => PacketEvents t -> Moment t (Client t)
+buildClient :: Frameworks t => Event t Packet -> Moment t (Client t)
 buildClient packetsE = do (pK, sK) <- liftIO generateKeyPair
                           (dhPK, dhSK) <- liftIO generateDHKeyPair
                           let uID = computeHashFromKey pK
-                        
+
+                          (neighPE, pipesPE) <- splitEither packetsE
                           (locResE, locResH) <- newEvent
                           (locMsgE, locMsgH) <- newEvent
 
-                          neighs <- buildNeighborhood (neighIntroE packetsE) (neighDataE packetsE)
+                          neighs <- buildNeighborhood neighPE
                           res <- buildRessources dhPK (pK, sK) M.empty (nbhResearchs neighs) (nbhAnswers neighs)
-                          rout <- buildRouting uID (pK,sK) (nbhRequests neighs) (pipePacketE packetsE)
+                          rout <- buildRouting uID (pK,sK) (nbhRequests neighs) pipesPE
                           pipes <- buildPipes 
                           reactimate $ pipeNewPipe pipes <$> routingNewPipes rout
+                          sendToSource pipes locMsgE
                           reactimate $ resResearchHandle res <$> locResE
                         
-                          let toSend = PacketEvents never never $ union (pipesMessagesOut pipes) (routingRelayedPackets rout)  
+                          let toSend = Right <$> union (pipesMessagesOut pipes) (routingRelayedPackets rout)  
 
-                          pure $ Client neighs rout res pipes (dhPK, dhSK) (pK,sK) uID toSend locMsgH locResH
+                          pure $ Client neighs rout res pipes (dhPK, dhSK) (pK,sK) uID packetsE toSend locMsgH locResH
 
 
 

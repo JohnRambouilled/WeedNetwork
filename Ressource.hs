@@ -48,6 +48,8 @@ data Answer = Answer {ansCert :: RessourceCert,
                       ansCnt :: RawData}
                 deriving Generic
 
+instance Show Research where show (Research rID ttl _ _) = "Research for : " ++ show rID ++ " ttl : " ++ show ttl
+instance Show Answer where show (Answer c ttl r sID _ ) = "Answer for : " ++ show (cResID c) ++ " from : " ++ show sID ++ " ttl : " ++ show ttl ++ " ROAD : " ++ show r
 
 type AnswerMap = EventEntryMap RessourceID Answer
 type AnswerMapBhv t = ModEvent t AnswerMap
