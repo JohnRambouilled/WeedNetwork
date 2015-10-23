@@ -39,24 +39,26 @@ buildClient packetsE = do
 
                           (neighPE, pipesPE) <- splitEither packetsE
                           (locResE, locResH) <- newEvent
+                          (newRoadE, newRoadH) <- newEvent
                           (locMsgE, locMsgH) <- newEvent
                         
                           liftIO . print $ "building Modules"
 
                           neighs <- buildNeighborhood neighPE
                           res <- buildRessources dhPK uID (pK, sK) M.empty (nbhResearchs neighs) (nbhAnswers neighs)
-                          rout <- buildRouting uID (pK,sK) (nbhRequests neighs) pipesPE
-                          pipes <- buildPipes 
+                          rout <- buildRouting uID dhSK newRoadE (nbhRequests neighs) pipesPE
+                          pipes <- buildPipes $ routingNewPipes rout
 
                           liftIO . print $ "connecting handlers"
-                          reactimate $ pipeNewPipe pipes <$> routingNewPipes rout
                           sendToSource pipes locMsgE
                           reactimate $ resResearchHandle res <$> locResE
+                          
 
                           liftIO . print $ "starting neighIntro repeater"
                           (stopRepeatIntro, introE) <- repeatNeighIntro neighRepeatTime uID (pK,sK) emptyPayload
                         
-                          let toSend = union (Left <$> introE) $ Right <$> union (pipesMessagesOut pipes) (routingRelayedPackets rout)  
+                          let toSend = union (Left <$> union dataE introE) $ Right <$> union (pipesMessagesOut pipes) (routingRelayedPackets rout)  
+                              dataE = sendNeighData uID (pK,sK) . NeighReq <$> routingOutgoingRequest rout
 
                           pure $ Client neighs rout res pipes (dhPK, dhSK) (pK,sK) uID packetsE toSend locMsgH locResH
 

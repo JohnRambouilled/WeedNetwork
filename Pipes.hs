@@ -28,12 +28,12 @@ type PipesManagerBhv t = ModEvent t PipesManager
 data Pipes t = Pipes {pipesManager :: PipesManagerBhv t,
                       pipeNewSourceEvent :: NewSourceEvent t,
                       pipesMessagesOut :: Event t PipePacket,
-                      pipeNewPipe :: Handler NewPipe,
                       pipesClosePipe :: PipeCloser,
                       pipesRemoveSource :: Handler SourceID} 
 
 {- | Send messages to sources, if there is pipes leading to them.
  -   [TODO] : choix du pipes (head pour l'instant...)
+ -   [TODO] : closePipe sur les pipeClose Messages
  -   [TODO] : keeplogs -}
 sendToSource :: Frameworks t => Pipes t -> Event t (SourceID, RawData) -> Moment t ()
 sendToSource pipe e = reactimate $ apply (send <$> meLastValue (pipesManager pipe)) e
@@ -42,14 +42,13 @@ sendToSource pipe e = reactimate $ apply (send <$> meLastValue (pipesManager pip
                                 Just pme -> makeMessage d . head . M.assocs $ pmePipeMap pme
           makeMessage d (pID,(_,s)) = s $ Right (pID, d)
 
-buildPipes :: Frameworks t => Moment t (Pipes t)
-buildPipes = do (closeE, closeH) <- newEvent
-                (npE, npH) <- newEvent
-                (remSE, remSH) <- newEvent
-                (pipeManB, sendE, newSourceE) <- buildPipeManager npE
-                reactimate $ closePipe (meModifier pipeManB) <$> closeE
-                reactimate $ applyMod removeSource pipeManB remSE
-                pure $ Pipes pipeManB newSourceE sendE npH closeH remSH
+buildPipes :: Frameworks t => Event t NewPipe -> Moment t (Pipes t)
+buildPipes npE = do (closeE, closeH) <- newEvent
+                    (remSE, remSH) <- newEvent
+                    (pipeManB, sendE, newSourceE) <- buildPipeManager npE
+                    reactimate $ closePipe (meModifier pipeManB) <$> closeE
+                    reactimate $ applyMod removeSource pipeManB remSE
+                    pure $ Pipes pipeManB newSourceE sendE closeH remSH
     where closePipe mod (sID, pID) = mod $ M.adjust (deletePipe pID) sID
           removeSource :: Modifier PipesManager -> PipesManager -> SourceID -> IO ()
           removeSource manM man sID = case M.lookup sID man of

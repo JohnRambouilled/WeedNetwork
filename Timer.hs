@@ -26,18 +26,20 @@ lookupTO k m = snd <$> M.lookup k m
 
 insertTOEvent :: (Ord k, Frameworks t ) => Time -> ModEvent t (TimeMap k a) -> Event t (k, a) -> Moment t (Event t (k,a))
 insertTOEvent t me e = do (decoE, decoH) <- newEvent
-                          reactimate $ applyMod (insertTOWith t (curry decoH)) me e
+                          reactimate $ applyMod (insertTOWith t (flip $ curry decoH)) me e
                           pure decoE
 
-insertTOReactimate :: (Ord k, Frameworks t) => Time -> ModEvent t (TimeMap k a) -> Event t (k, a) -> Moment t ()
-insertTOReactimate t me = reactimate . applyMod (insertTO t) me
+insertTOReactimate :: (Ord k, Frameworks t) => Time -> (a -> k -> IO ()) -> ModEvent t (TimeMap k a) -> Event t (k, a) -> Moment t ()
+insertTOReactimate t f me = reactimate . applyMod (insertTOWith t f) me
 
+insertTOReactimate_ :: (Ord k, Frameworks t) => Time -> ModEvent t (TimeMap k a) -> Event t (k, a) -> Moment t ()
+insertTOReactimate_ t = insertTOReactimate t $ pure . pure . pure ()
 
-insertTO :: Ord k => Time -> Modifier (TimeMap k a) -> TimeMap k a -> (k, a) -> IO ()
-insertTO t = insertTOWith t $ pure . pure . pure ()
+--insertTO :: Ord k => Time -> Modifier (TimeMap k a) -> TimeMap k a -> (k, a) -> IO ()
+--insertTO t = insertTOWith t $ pure . pure . pure ()
 
-insertTOWith :: Ord k => Time -> (k -> a -> IO ()) -> Modifier (TimeMap k a) -> TimeMap k a -> (k, a) -> IO ()
-insertTOWith delay f mod map (k, a) = do e <- newTimeOutEntry delay $ f k a >> (mod $ M.delete k)
+insertTOWith :: Ord k => Time -> (a -> k -> IO ()) -> Modifier (TimeMap k a) -> TimeMap k a -> (k, a) -> IO ()
+insertTOWith delay f mod map (k, a) = do e <- newTimeOutEntry delay $ f a k >> (mod $ M.delete k)
                                          case k `M.lookup` map of Nothing -> pure ()
                                                                   Just e -> killTimeOut $ fst e
                                          mod $ M.insert k (e,a)

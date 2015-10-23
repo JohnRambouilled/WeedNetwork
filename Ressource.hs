@@ -79,7 +79,7 @@ buildRelayMap dhPK uID (pK,sK) locRMap resE ansE = do relModE <- newModEvent M.e
                                                       (resFE, locAnsE) <- answerResearch resE 
                                                       let resP = filterJust $  applyMod onResearch relModE resFE 
                                                           ansP = filterJust $ applyMod (pure onAnswer) relModE ansE 
-                                                      insertTOReactimate relayTimeOut relModE $ (\r -> (resID r, ())) <$> resP
+                                                      insertTOReactimate_ relayTimeOut relModE $ (\r -> (resID r, ())) <$> resP
                                                       pure (relModE, unions [Left <$> resP, Right <$> ansP, Right <$> locAnsE ])
         where answerResearch :: Frameworks t => Event t Research -> Moment t (Event t Research, Event t Answer)
               answerResearch e = do (ansE, ansH) <- newEvent

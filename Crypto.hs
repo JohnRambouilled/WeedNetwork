@@ -14,10 +14,8 @@ import Timer
 import Class
 import Ed25519
 
---type EventSource a = (Event a, Handler a)
 
-newtype KeyHash = KeyHash RawData deriving (Eq, Ord, Generic, Show)
-instance Binary KeyHash
+newtype KeyHash = KeyHash RawData deriving (Eq, Ord, Generic)
 type Payload = RawData
 
 emptyPayload = Data.ByteString.Lazy.empty :: Payload
@@ -31,42 +29,30 @@ instance SignedClass a => IDable a KeyHash where extractID = scKeyHash
 
 class SignedClass a => IntroClass a where icPubKey :: a -> PubKey
 
-type CryptoMapTO e = TimeMap KeyHash (EventEntry e)
-type CryptoMap e = EventEntryMap KeyHash e
-type CryptoMapMod t e = ModEvent t (CryptoMap e)
-type CryptoMapModTO t e = ModEvent t (CryptoMapTO e)
-type CryptoEvent t e i = Event t (Either (KeyHash, EventEntry e) (i, EventEntry e))
+type CryptoMap t a = ModEvent t (M.Map KeyHash a)
+type CryptoEvent t a i = Event t (Either (KeyHash, a) (i, a))
 
 
-
-buildCryptoMapTO :: (Frameworks t, IntroClass i, SignedClass e) => Time -> Event t i -> Event t e -> Moment t (CryptoMapModTO t e, CryptoEvent t e i)
-buildCryptoMapTO t introE packetE = do modE <- newModEvent M.empty --creation de la Map
-                                       ceE <- insertCryptoKey modE 
-                                       reactimate . packetActions $ meLastValue modE    --On fire les packets dans la map
-                                       pure (modE, ceE)
+buildCryptoMap :: (Frameworks t, IntroClass i, SignedClass e, EventManager a e) 
+                => Time -> (i -> IO a) -> Event t i -> Event t KeyHash -> Event t e -> Moment t (CryptoMap t a, CryptoEvent t a i)
+buildCryptoMap t toEntry introE decoE packetE = do modE <- newModEvent M.empty --creation de la Map
+                                                   ceE <- insertCryptoKey modE 
+                                                   reactimate . packetActions $ meLastValue modE    --On fire les packets dans la map
+                                                   pure (restrictModEvent (snd . snd <$>) (flip $ pure id) modE, makeCryptoE <$> ceE)
     where --insertCryptoKey :: (Frameworks t, IntroClass i, SignedClass e) => ModEvent t (CryptoMapTO e) -> Moment t (CryptoEntryEvent t e i)
           insertCryptoKey mod = do (ceE, ceH) <- newEvent
-                                   reactimate $ onIntro ceH <$> introE
-                                   decoE <- insertTOEvent t mod $ insertI <$> ceE
-                                   pure $ union (Left <$> decoE) (Right <$> ceE)
-                                where onIntro h intro = do entry <- liftIO $ newEventEntry (checkSig $ icPubKey intro)
-                                                           h $ (intro, entry)
+                                   reactimate $ onIntro ceH <$> filterE checkIntro introE
+                                   timeOE <- insertTOEvent t mod $ insertI <$> ceE
+                                   deleteTOReactimate mod decoE
+                                   pure $ union (Left <$> timeOE) (Right <$> ceE)
+                                where onIntro h intro = do entry <- toEntry intro
+                                                           h $ (intro, (checkSig $ icPubKey intro, entry))
                                       insertI (i, e) = (scKeyHash i, e)
-          packetActions eM = filterJust $ apply (fireKeyWith snd <$> eM) packetE 
-
-
-
-buildCryptoMap :: (Frameworks t, IntroClass i, SignedClass e) => Event t i -> Event t e -> Moment t (CryptoMapMod t e, CryptoEvent t e i)
-buildCryptoMap introE packetE = do modE <- newModEvent M.empty --creation de la Map
-                                   newEntryE <- execute (insertCryptoKey (meModifier modE) <$> introE) 
-                                   reactimate $ fst <$> newEntryE --On ajoute les nouvelles entrées
-                                   reactimate . packetActions $ meLastValue modE    --On fire les packets dans la map
-                                   pure (modE, Right . snd <$> newEntryE)
-    where insertCryptoKey :: (IntroClass i, SignedClass e) => Modifier (CryptoMap e) -> i -> FrameworksMoment (IO (), (i, EventEntry e))
-          insertCryptoKey mod intro = FrameworksMoment $ do entry <- liftIO $ newEventEntry (checkSig $ icPubKey intro)
-                                                            pure (mod $ insertEntry (scKeyHash intro) entry, (intro, entry))
-          packetActions eM = filterJust $ apply (fireKey  <$> eM) packetE 
-
+          packetActions eM = filterJust $ apply (fireKeyWith (fireEntry . snd) <$> eM) packetE 
+          fireEntry (sigCheck, a) e = if sigCheck e then emFire a $ e else pure ()
+          checkIntro i = checkSig (icPubKey i) i
+          makeCryptoE (Right (i, (_,a))) = Right (i,a)
+          makeCryptoE (Left (i, (_,a))) = Left (i,a)
 
 
 checkSig :: SignedClass a => PubKey -> a -> Bool
@@ -75,8 +61,6 @@ checkSig k a  = checkSignature k (scSignature a) $ scHash a
 sign :: SignedClass a => KeyPair-> a -> a
 sign (pK, k) a = scPushSignature a $ makeSignature k pK $ scHash a
 
-decryptPrivKey :: DHPubKey -> PrivKey -> Maybe KeyPair
-decryptPrivKey dh k = privKeyToDHPrivKey k >>= exctractKey dh
 
 computeHashFromKey :: PubKey -> KeyHash
 computeHashFromKey = KeyHash . computeHash
@@ -93,5 +77,6 @@ fromLeft _ = error $ "fromLeft on Right"
 fromRight (Right x) = x
 fromRight _ = error $ "fromRight on Left"
 
-
+instance Show KeyHash where show (KeyHash d) = prettyPrint d
+instance Binary KeyHash
 

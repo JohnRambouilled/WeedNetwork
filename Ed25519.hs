@@ -21,7 +21,7 @@ type Hash = RawData
 
 type Signature = S.Signature
 emptySignature :: S.Signature
-emptySignature = throwCryptoError $ S.signature BStrct.empty
+emptySignature = throwCryptoError . S.signature $ BStrct.replicate 64 0 
 
 newtype PubKey = PubKey {runPubKey :: S.PublicKey} deriving (Show)
 newtype PrivKey = PrivKey {runPrivKey :: S.SecretKey}
@@ -47,8 +47,8 @@ transmitKey dK nK = (\keys -> (DH.toPublic nK, keys)) <$> (keysFromShared $ DH.d
                       in case sKM of CryptoPassed sK -> Just (PubKey $ S.toPublic sK, PrivKey sK )
                                      _ -> Nothing
 
-exctractKey :: DHPubKey -> DHPrivKey -> Maybe KeyPair
-exctractKey pK prK = keysFromShared $ DH.dh pK prK
+decryptKeyPair :: DHPubKey -> DHPrivKey -> Maybe KeyPair
+decryptKeyPair pK prK = keysFromShared $ DH.dh pK prK
     where keysFromShared dhS = let sKM = S.secretKey dhS
                                in case sKM of CryptoPassed sk ->  Just (PubKey $ S.toPublic sk, PrivKey sk)
                                               _ -> Nothing
@@ -68,12 +68,12 @@ generateDHKeyPair  = do (skBs,_) <- randomBytesGenerate keyByteSize <$> getSyste
                                 Right k -> pure (DH.toPublic k, k)
                  
 
-privKeyToDHPrivKey :: PrivKey -> Maybe DHPrivKey
-privKeyToDHPrivKey (PrivKey pk) = case DH.secretKey pk of Left e -> Nothing
-                                                          Right k -> Just k
+--privKeyToDHPrivKey :: PrivKey -> Maybe DHPrivKey
+--privKeyToDHPrivKey (PrivKey pk) = case DH.secretKey pk of Left e -> Nothing
+--                                                          Right k -> Just k
 
-privKeyToDHPubKey :: PrivKey -> Maybe DHPubKey
-privKeyToDHPubKey = (DH.toPublic <$>) . privKeyToDHPrivKey
+privKeyToPubKeyDH :: DHPrivKey -> DHPubKey
+privKeyToPubKeyDH = DH.toPublic
 
 
 computeHash :: (Show a, Binary a) => a -> Hash

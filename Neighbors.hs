@@ -20,16 +20,22 @@ data NeighData  = NeighData  {neighDKeyID :: KeyHash, neighDSig :: Signature, ne
                   NeighClose {neighDKeyID :: KeyHash, neighDSig :: Signature, neighCPayload :: Payload}
 
 data NeighDataContent = NeighReq Request | NeighRes Research | NeighAns Answer deriving Generic
-type NeighMap = TimeMap KeyHash (EventEntry NeighData)
+type NeighMap = EventEntryMap KeyHash NeighData
 type NeighMapBhv t = ModEvent t NeighMap 
 
 data Neighborhood t = Neighborhood {nbhNeighMap :: NeighMapBhv t,
                                     nbhRequests :: Event t Request,
                                     nbhResearchs :: Event t Research,
-                                    nbhAnswers :: Event t Answer}
+                                    nbhAnswers :: Event t Answer,
+                                    nbhForceDeco :: Handler UserID}
 
-neighTimeOut = 10 :: Time
-neighRepeatTime = 15 :: Time
+neighTimeOut = 5 :: Time
+neighRepeatTime = 2 :: Time
+
+sendNeighData :: UserID -> KeyPair -> NeighDataContent -> NeighPacket
+sendNeighData uID k cnt = Right . sign k $ NeighData uID emptySignature cnt
+
+
 repeatNeighIntro :: Frameworks t => Time -> UserID -> KeyPair -> Payload -> Moment t (TimeOutEntry, Event t NeighPacket)
 repeatNeighIntro t uID k p = do (e,h) <- newEvent
                                 toe <- liftIO $ newRepeater Nothing t $ h neighP
@@ -38,14 +44,15 @@ repeatNeighIntro t uID k p = do (e,h) <- newEvent
 
 buildNeighborhood :: Frameworks t => Event t NeighPacket -> Moment t (Neighborhood t)
 buildNeighborhood packetE  = do (introE, dataE) <- splitEither packetE
-                                (nMod, _) <- buildCryptoMapTO neighTimeOut introE dataE
                                 (reqE, reqH) <- newEvent
                                 (resE, resH) <- newEvent
                                 (ansE, ansH) <- newEvent
+                                (decoE, decoH) <- newEvent
+                                (nMod, _) <- buildCryptoMap neighTimeOut newNeighEntry introE decoE dataE 
                                 allEvents <- mergeEvents $ meChanges nMod
-                                reactimate $ onDataEvent (meModifier nMod . M.delete) reqH resH ansH <$> allEvents
-                                pure $ Neighborhood nMod reqE resE ansE
-
+                                reactimate $ onDataEvent decoH reqH resH ansH <$> allEvents
+                                pure $ Neighborhood nMod reqE resE ansE decoH
+    where newNeighEntry _ = newEventEntry $ pure True
 
 
 onDataEvent :: Handler KeyHash -> Handler Request -> Handler Research -> Handler Answer -> NeighData -> IO ()
