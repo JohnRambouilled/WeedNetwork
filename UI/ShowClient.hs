@@ -21,26 +21,30 @@ showClient c = zipWithM_ showModule (moduleList c)
   where showModule (n,e) h = reactimate $ h n <$> e
 
 moduleList :: Client t -> [(String, Event t String)]
-moduleList c = [("Pipes", showPipes c),
-            ("Neighbors", showNeighborhood c),
-            ("Answers", showRessourcesAns c),
-            ("Relayed Research", showRessourcesRel c),
-            ("Routing Local", showRoutingLocal c),
-            ("Routing Relayed", showRoutingRelay c),
-            ("Received Packets", showReceivedPackets c),
-            ("Packets sent", showSentPackets c)]
-            where showPipes :: Client t -> Event t String
-                  showPipes = (showPipesManager <$>) . meChanges . pipesManager . clPipes
+moduleList c = [("Pipes", showPipes),
+            ("Neighbors", showNeighborhood),
+            ("Answers", showRessourcesAns),
+            ("Relayed Research", showRessourcesRel),
+            ("Routing Local", showRoutingLocal),
+            ("Routing Relayed", showRoutingRelay),
+            ("Received Packets", showReceivedPackets 20),
+            ("Packets sent", showSentPackets 20)]
+            where 
+                  showPipes = (showPipesManager <$>) . meChanges . pipesManager $ clPipes c
                         where showPipesManager = concatMap showSource . M.assocs
                               showSource (sID, e) = "\t Source : " ++ show sID ++ "\n\t\t" ++ concat (map ((++ "\n\t\t") . show) $ M.keys $ pmePipeMap e) ++ "\n\n"
 
-                  showNeighborhood = showMap . nbhNeighMap . clNeighbors
-                  showRessourcesAns = showMap . resAnswerMap . clRessources
-                  showRessourcesRel = showMap . resRelayMap . clRessources
-                  showRoutingLocal = showMap . routingLocMap . clRouting
-                  showRoutingRelay = showMap . routingRelMap . clRouting
-                  showReceivedPackets c = showPacket <$> clReceived c
-                  showSentPackets c = showPacket <$> clToSend c
+                  showNeighborhood = showMap . nbhNeighMap $ clNeighbors c
+                  showRessourcesAns = showMap . resAnswerMap $ clRessources c
+                  showRessourcesRel = showMap . resRelayMap $ clRessources c 
+                  showRoutingLocal = showMap . routingLocMap $ clRouting c
+                  showRoutingRelay = showMap . routingRelMap $ clRouting c
+                  showReceivedPackets n =  accumStrings n $ showPacket <$> clReceived c
+                  showSentPackets n = accumStrings n $ showPacket <$> clToSend c
+
+                  accumStrings :: Int -> Event t String -> Event t String
+                  accumStrings n e = concat <$> (accumE [] $ f <$> e)
+                        where f s l = take n $ (s ++ "\n\n") : l
 
                   showPacket :: Packet -> String
                   showPacket (Left (Left a)) = show a
@@ -50,4 +54,5 @@ moduleList c = [("Pipes", showPipes c),
                   showMap mod = sm <$> meChanges mod
                         where sm = concat . map ((++ "\n") . show) . M.keys
 
+moduleNameList :: [String]
 moduleNameList = ["Pipes","Neighbors","Answers","Relayed Research","Routing Local","Routing Relayed","Received Packets","Packets sent"]

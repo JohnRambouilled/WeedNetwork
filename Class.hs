@@ -47,6 +47,7 @@ class (Ord k) => IDable e k where
 
 class Mergeable a e where allAddHandlers :: a -> [AddHandler e]
 instance Mergeable (EventEntry e) e where allAddHandlers = pure . eAddHandler
+instance Mergeable (a, EventEntry e) e where allAddHandlers = pure . eAddHandler . snd
 instance Mergeable (AddHandler e) e where allAddHandlers = pure
 instance Mergeable a e => Mergeable (M.Map k a) e
     where allAddHandlers = (allAddHandlers =<<) . M.elems
@@ -86,6 +87,9 @@ deleteKey = M.delete
 fireKey :: (IDable e k) => EventEntryMap k e -> e -> Maybe (IO ())
 fireKey m e = fireKey' m (extractID e) e
 
+fireKeyWith :: (IDable e k) => (a -> EventEntry e) -> M.Map k a -> e -> Maybe (IO ())
+fireKeyWith acc m e =  join $ (\a -> f $ acc a) <$> (extractID e) `M.lookup` m
+  where f entry = if eFilter entry e then Just (eFire entry e) else Nothing
 
 fireKey' :: Ord k => EventEntryMap k e -> k -> e -> Maybe (IO ())
 fireKey' m k e = join $ f <$> k `M.lookup` m

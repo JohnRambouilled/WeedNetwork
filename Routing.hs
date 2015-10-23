@@ -50,7 +50,7 @@ buildRouting uID uK reqEuc packetE = do
                      (relPE, relPH) <- newEvent
                      --On construit les cryptoMaps correspondantes
                      (relayMap, _) <- buildCryptoMap reqRelE packetE
-                     (localMap, newPipeE) <- buildCryptoMap reqLocE packetE
+                     (localMap, cryptoE) <- buildCryptoMap reqLocE packetE
                      --On bind les actions de relai (et de fermeture des pipes relayés)
                      relEvents <- mergeEvents $ meChanges relayMap
                      reactimate $ relayPackets relPH relClH <$> relEvents 
@@ -58,13 +58,17 @@ buildRouting uID uK reqEuc packetE = do
                      -- listen des closes 
                      reactimate $ meModifier localMap . M.delete <$> locClE
                      reactimate $ meModifier relayMap . M.delete <$> relClE
+                     --Creation des event de Pipe, push des TimeOut
+                     (actE, newPipeE) <- splitEither $ makeNewPipe <$> cryptoE
+                     reactimate actE
                      --Retour de la structure de Routing
-                     pure $ Routing localMap relayMap  (filterJust (makeNewPipe <$> newPipeE)) relPE locClH relClH ( ("Rejected request : " ++) <$> reqLogs)
+                     pure $ Routing localMap relayMap  newPipeE relPE locClH relClH ( ("Rejected request : " ++) <$> reqLogs)
     where relayPackets :: Handler PipePacket -> Handler KeyHash -> PipePacket -> IO ()
           relayPackets h _ p@(PipePacket _ _ n b _ ) = h p{pipePosition = if b then n + 1 else n -1} 
           relayPackets _ h (PipeClose kID _ _ _ _) = h kID
           isLocalRequest req = reqPosition req == reqLength req
-          makeNewPipe (req, (EventEntry _ e _)) = requestToNewPipe uK req $ makePipeMessage <$> e
+          makeNewPipe (Right (req, EventEntry _ e _) ) = maybe (Left $ pure ()) Right $ requestToNewPipe uK req $ makePipeMessage <$> e
+          makeNewPipe (Left (pID, EventEntry h _ _) ) = Left . h $ pipePacketTimeOut pID
 
 data NewPipe = NewPipe {npRoad :: Road,
                         npSource :: SourceID,
@@ -130,6 +134,9 @@ data PipePacket = PipePacket {pipeKeyID :: PipeID,
                               pipePayload :: Payload}
 
     deriving Generic
+
+pipePacketTimeOut :: PipeID -> PipePacket
+pipePacketTimeOut pID = PipePacket pID emptySignature 0 False emptyPayload
 
 instance Show PipePacket where
     show (PipePacket kID _ n b _) = "PipePacket on pipe : " ++ show kID ++ " pos " ++ show n ++ (if b then "+" else "-")
