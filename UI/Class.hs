@@ -33,7 +33,7 @@ onUIKey cui e = case e of
           incrCur i = if i+1 > ma then mi else i+1
           decCur i = if i-1 < mi then ma else i-1
 
-drawCurrentWidget cui = [vBox [str names,fst cur]]
+drawCurrentWidget cui = vBox [str names,fst cur]
     where cur = getCurrentWidget cui
           curInd = _cuiCurrent cui
           drawSel i (_,x)
@@ -43,7 +43,7 @@ drawCurrentWidget cui = [vBox [str names,fst cur]]
           names = unwords $ map (uncurry drawSel) (A.assocs $ _cuiWidgets cui)
 
 newClientApp :: App ClientUI UIEvent
-newClientApp = App (\cui -> drawCurrentWidget cui)
+newClientApp = App (\cui -> (drawCurrentWidget cui : map fst ( A.elems (_cuiWidgets cui))))
                    (\_ _ -> Nothing)
                    eventHandler
                    pure
@@ -51,6 +51,7 @@ newClientApp = App (\cui -> drawCurrentWidget cui)
                    UIKey
     where eventHandler cui (UIKey (EvKey e _) ) = onUIKey cui e 
           eventHandler cui (UIModifier modifier) = continue $ modifier cui
+          eventHandler cui _ = continue cui
 
 
 

@@ -1,4 +1,4 @@
 module Main where
 import Network
 
-main = leakTestMainNoUI
+main = leakTestMain
