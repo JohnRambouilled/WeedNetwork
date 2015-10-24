@@ -43,7 +43,7 @@ drawCurrentWidget cui = vBox [str names,fst cur]
           names = unwords $ map (uncurry drawSel) (A.assocs $ _cuiWidgets cui)
 
 newClientApp :: App ClientUI UIEvent
-newClientApp = App (\cui -> (drawCurrentWidget cui : map fst ( A.elems (_cuiWidgets cui))))
+newClientApp = App (\cui -> [drawCurrentWidget cui]) --(drawCurrentWidget cui : map fst ( A.elems (_cuiWidgets cui))))
                    (\_ _ -> Nothing)
                    eventHandler
                    pure
