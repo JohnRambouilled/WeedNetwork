@@ -26,10 +26,12 @@ type PipesManager = M.Map SourceID PipeManagerEntry
 type PipesManagerBhv t = ModEvent t PipesManager
 
 data Pipes t = Pipes {pipesManager :: PipesManagerBhv t,
+                      pipesDataManager :: Event t DataManager,
                       pipeNewSourceEvent :: NewSourceEvent t,
                       pipesMessagesOut :: Event t PipePacket,
                       pipesClosePipe :: PipeCloser,
-                      pipesRemoveSource :: Handler SourceID} 
+                      pipesRemoveSource :: Handler SourceID,
+                      pipesLogs :: Event t String} 
 
 {- | Send messages to sources, if there is pipes leading to them.
  -   [TODO] : choix du pipes (head pour l'instant...)
@@ -45,10 +47,17 @@ sendToSource pipe e = reactimate $ apply (send <$> meLastValue (pipesManager pip
 buildPipes :: Frameworks t => Event t NewPipe -> Moment t (Pipes t)
 buildPipes npE = do (closeE, closeH) <- newEvent
                     (remSE, remSH) <- newEvent
+                    --Contruction du pipeManager
                     (pipeManB, sendE, newSourceE) <- buildPipeManager npE
+                    --Reactimate des suppressions de pipes et de sources
                     reactimate $ closePipe (meModifier pipeManB) <$> closeE
                     reactimate $ applyMod removeSource pipeManB remSE
-                    pure $ Pipes pipeManB newSourceE sendE closeH remSH
+                    --Fermeture des pipes lors de receptions de PipeClose
+                    let dataMan = buildDataManager $ meChanges pipeManB
+                    reactimate . (closeH <$>) =<< closePipeEvent dataMan
+                    --Retour de la structure
+                    logsE <- (("PIPES : " ++) <$>) <$> showDataManager dataMan
+                    pure $ Pipes pipeManB dataMan newSourceE sendE closeH remSH logsE
     where closePipe mod (sID, pID) = mod $ M.adjust (deletePipe pID) sID
           removeSource :: Modifier PipesManager -> PipesManager -> SourceID -> IO ()
           removeSource manM man sID = case M.lookup sID man of
@@ -57,9 +66,16 @@ buildPipes npE = do (closeE, closeH) <- newEvent
                                                                  manM $ M.delete sID
 
 
-type DataManager = EventMap SourceID RawData
---buildDataManager :: Behavior PipesManager -> Behavior DataManager
---buildDataManager pManaB = fmap (fmap (snd . fromRight) . filterE isRight . fst . M.elems . pmePipeMap) <$> pManaB
+
+closePipeEvent :: Frameworks t => Event t DataManager -> Moment t (Event t (SourceID, PipeID))
+closePipeEvent dmE = mergeEvents $  M.mapWithKey filterClose <$> dmE
+    where filterClose sID e = (,) sID . fst . fromLeft <$> filterIO (pure . isLeft) e
+
+type DataManager = EventMap SourceID PipeMessage
+buildDataManager :: Event t PipesManager -> Event t DataManager
+buildDataManager pManaB = (mergeEntry <$> ) <$> pManaB
+    where mergeEntry :: PipeManagerEntry -> AddHandler PipeMessage
+          mergeEntry = allAddHandlers . (fst <$>) . pmePipeMap 
 
 
 {-| Converts the map of physical neighbors into a map of recipients |-}
@@ -94,3 +110,6 @@ deletePipe :: PipeID -> PipeManagerEntry -> PipeManagerEntry
 deletePipe pID pme = pme{pmePipeMap = M.delete pID $ pmePipeMap pme}
 
 
+showDataManager :: Frameworks t => Event t DataManager -> Moment t (Event t String)
+showDataManager e = mergeEvents $ M.mapWithKey showE <$> e
+    where showE sID ah = (("Source : " ++ show sID ++ " -> ") ++) . show <$> ah

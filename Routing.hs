@@ -66,12 +66,14 @@ buildRouting uID dhSK newRE reqEuc packetE = do
                      (actE, newPipeE) <- splitEither $ makeNewPipe <$> cryptoE
                      reactimate actE
                      --Retour de la structure de Routing
-                     pure $ Routing localMap relayMap newPipeE relPE (nrReq <$> reqOutE) locClH relClH ( ("Rejected request : " ++) <$> reqLogs)
+                     let logs = unions [("AcceptedRequest : " ++) . show <$> reqE,
+                                        ("Rejected request : " ++) <$> reqLogs]
+                     pure $ Routing localMap relayMap newPipeE relPE (nrReq <$> reqOutE) locClH relClH logs
     where relayPackets :: Handler PipePacket -> Handler KeyHash -> PipePacket -> IO ()
           relayPackets h _ p@(PipePacket _ _ n b _ ) = h p{pipePosition = if b then n + 1 else n -1} 
           relayPackets _ h (PipeClose kID _ _ _ _) = h kID
           newRoutingEntry _ = newEventEntry $ pure True
-          isLocalRequest req = reqPosition req == reqLength req
+          isLocalRequest req = reqPosition req == reqLength req - 1
           makeNewPipe (Right (req, EventEntry _ e _) ) = maybe (Left $ pure ()) Right $ newRequestToNewPipe dhSK req $ makePipeMessage <$> e
           makeNewPipe (Left (pID, EventEntry h _ _) ) = Left . h $ pipePacketTimeOut pID
 
@@ -88,9 +90,10 @@ routOpenPipe newRE = do
                                  case decryptKeyPair (nrDHPubKey nr) dhSK of
                                         Nothing -> pure ()
                                         Just (pK,sK) -> do t <- getPOSIXTime
-                                                           let (r,pID,cnt) = ( (,,) <$> nrRoad <*> nrPipeID <*> nrContent ) $ nr
-                                                               req = sign (pK,sK) $ Request 0 (length r) r dhPK t pK pID emptySignature cnt
-                                                               sender = pipeMessageToPipePacket 0 True (pK,sK)
+                                                           let (r,cnt) = ( (,) <$> nrRoad <*> nrContent ) $ nr
+                                                               pID = computeHashFromKey pK
+                                                               req = sign (pK,sK) $ Request 1 (length r) r dhPK t pK pID emptySignature cnt
+                                                               sender = pipeMessageToPipePacket 1 True (pK,sK)
                                                            send $ OutgoingRequest req sender
 
 newRequestToNewPipe :: DHPrivKey -> NewRequest -> AddHandler PipeMessage -> Maybe NewPipe
@@ -111,8 +114,7 @@ data NewPipe = NewPipe {npRoad :: Road,
                         npContent :: RawData,
                         npMessageEvent :: AddHandler PipeMessage}
 
-data NewRoad = NewRoad {nrPipeID :: PipeID,
-                        nrRoad :: Road,
+data NewRoad = NewRoad {nrRoad :: Road,
                         nrDHPubKey :: DHPubKey,
                         nrSourceID :: SourceID,
                         nrContent :: RawData}
@@ -165,7 +167,7 @@ data PipePacket = PipePacket {pipeKeyID :: PipeID,
     deriving Generic
 
 pipePacketTimeOut :: PipeID -> PipePacket
-pipePacketTimeOut pID = PipePacket pID emptySignature 0 False emptyPayload
+pipePacketTimeOut pID = PipeClose pID emptySignature 0 False emptyPayload
 
 instance Show PipePacket where
     show (PipePacket kID _ n b _) = "PipePacket on pipe : " ++ show kID ++ " pos " ++ show n ++ (if b then "+" else "-")
@@ -190,7 +192,7 @@ instance Binary NominalDiffTime where
 checkRequest :: UserID -> Time -> Request -> Either String Request
 checkRequest me t req@(Request n l r epk t' pK pH s c)
     | l > roadLengthMax                 = Left "Rejected road : too long"
-    | n > l                             = Left "Incorrect RequestPosition"
+    | n > l-1                           = Left "Incorrect RequestPosition"
     | l /= length r                      = Left "Incorrect RoadLength"
     | t - t' > maxDelay                 = Left "Obsolete Request" 
     | r !! n /= me                       = Left "Not adressed to me"

@@ -21,18 +21,15 @@ showClient c = zipWithM_ showModule (moduleList c)
   where showModule (n,e) h = reactimate $ h n <$> e
 
 moduleList :: Client t -> [(String, Event t String)]
-moduleList c = [("Pipes", showPipes),
-            ("Neighbors", showNeighborhood),
-            ("Answers", showRessourcesAns),
-            ("Relayed Research", showRessourcesRel),
-            ("Routing Local", showRoutingLocal),
-            ("Routing Relayed", showRoutingRelay),
-            ("Received Packets", showReceivedPackets 20),
-            ("Packets sent", showSentPackets 20)]
-            where 
+moduleList c = makeList [showPipes, showNeighborhood,
+                         showRessourcesAns, showRessourcesRel,
+                         showRoutingLocal, showRoutingRelay,
+                         showReceivedPackets 20, showSentPackets 20,
+                         showLogs 25]
+            where makeList = zip  moduleNameList .  moduleShowList 
                   showPipes = (showPipesManager <$>) . meChanges . pipesManager $ clPipes c
-                        where showPipesManager = concatMap showSource . M.assocs
-                              showSource (sID, e) = "\t Source : " ++ show sID ++ "\n\t\t" ++ concat (map ((++ "\n\t\t") . show) $ M.keys $ pmePipeMap e) ++ "\n\n"
+                        where showPipesManager pm = concat $ showSource <$> M.assocs pm
+                              showSource (sID, e) = " Source : " ++ show sID ++ "\n" ++ (showKeys $ pmePipeMap e)
 
                   showNeighborhood = showMap . nbhNeighMap $ clNeighbors c
                   showRessourcesAns = showMap . resAnswerMap $ clRessources c
@@ -41,6 +38,8 @@ moduleList c = [("Pipes", showPipes),
                   showRoutingRelay = showMap . routingRelMap $ clRouting c
                   showReceivedPackets n =  accumStrings n $ showPacket <$> clReceived c
                   showSentPackets n = accumStrings n $ showPacket <$> clToSend c
+                  showLogs n = accumStrings n $ unions [routingLogs $ clRouting c,
+                                                        pipesLogs $ clPipes c]
 
                   accumStrings :: Int -> Event t String -> Event t String
                   accumStrings n e = concat <$> (accumE [] $ f <$> e)
@@ -51,8 +50,13 @@ moduleList c = [("Pipes", showPipes),
                   showPacket (Left (Right a)) = show a
                   showPacket (Right a) = show a
 
-                  showMap mod = sm <$> meChanges mod
-                        where sm = concat . map ((++ "\n") . show) . M.keys
 
+                  showMap mod = showKeys <$> meChanges mod
+                  showKeys :: Show k => M.Map k a -> String
+                  showKeys = concat . map ((++ "\n") . show) . M.keys
+
+moduleShowCount = length $ moduleShowList [1..] :: Int
+moduleShowList :: [a] -> [a]
+moduleShowList = map snd . filter fst . zip [True, True, True, False, True, False, True, True, True]
 moduleNameList :: [String]
-moduleNameList = ["Pipes","Neighbors","Answers","Relayed Research","Routing Local","Routing Relayed","Received Packets","Packets sent"]
+moduleNameList = moduleShowList ["Pipes","Neighbors","Answers","Relayed Research","Routing Local","Routing Relayed","Received Packets","Packets sent","Logs"]

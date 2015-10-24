@@ -13,13 +13,16 @@ import Reactive.Banana
 import Reactive.Banana.Frameworks
 import GHC.Generics
 
+neighTimeOut = 15 :: Time
+neighRepeatTime = 1 :: Time
+
 type NeighPacket = Either NeighIntro NeighData
 
 data NeighIntro = NeighIntro {neighIKeyID :: KeyHash, neighIPubKey :: PubKey,  neighISig :: Signature, neighIPayload :: Payload} 
 data NeighData  = NeighData  {neighDKeyID :: KeyHash, neighDSig :: Signature, neighDContent :: NeighDataContent} |
                   NeighClose {neighDKeyID :: KeyHash, neighDSig :: Signature, neighCPayload :: Payload}
 
-data NeighDataContent = NeighReq Request | NeighRes Research | NeighAns Answer deriving Generic
+data NeighDataContent = NeighReq Request | NeighRes RessourcePacket deriving Generic
 type NeighMap = EventEntryMap KeyHash NeighData
 type NeighMapBhv t = ModEvent t NeighMap 
 
@@ -29,8 +32,6 @@ data Neighborhood t = Neighborhood {nbhNeighMap :: NeighMapBhv t,
                                     nbhAnswers :: Event t Answer,
                                     nbhForceDeco :: Handler UserID}
 
-neighTimeOut = 1 :: Time
-neighRepeatTime = 2 :: Time
 
 sendNeighData :: UserID -> KeyPair -> NeighDataContent -> NeighPacket
 sendNeighData uID k cnt = Right . sign k $ NeighData uID emptySignature cnt
@@ -59,8 +60,8 @@ buildNeighborhood packetE  = do (introE, dataE) <- splitEither packetE
 onDataEvent :: Handler KeyHash -> Handler Request -> Handler Research -> Handler Answer -> NeighData -> IO ()
 onDataEvent h _ _ _ (NeighClose kID _ _) = h  kID
 onDataEvent _ reqH _ _ (NeighData _ _ (NeighReq r)) = reqH  r
-onDataEvent _ _ resH _ (NeighData _ _ (NeighRes r)) = resH  r 
-onDataEvent _ _ _ ansH (NeighData _ _ (NeighAns a)) = ansH  a
+onDataEvent _ _ resH _ (NeighData _ _ (NeighRes (Left r))) = resH  r 
+onDataEvent _ _ _ ansH (NeighData _ _ (NeighRes (Right a))) = ansH  a
 
 
 
@@ -85,8 +86,8 @@ instance Show NeighData where
     show (NeighData uID _ c) = "NeighData from : " ++ show uID ++ " CONTENT : " ++ show c
 
 instance Show NeighDataContent where show (NeighReq r) = show r
-                                     show (NeighRes r) = show r
-                                     show (NeighAns a) = show a
+                                     show (NeighRes (Left r)) = show r
+                                     show (NeighRes (Right a)) = show a
 instance Binary NeighDataContent
 
 

@@ -26,28 +26,6 @@ ttlMax = 10
 maxDelay = 10
 
 
-type RessourcePacket = Either Research Answer
-
-data Research = Research {resID :: RessourceID,
-                          resTTL :: TTL,
-                          resRoad :: Road,
-                          resCnt :: RawData}
-                deriving Generic
-
-data Answer = Answer {ansCert :: RessourceCert,
-                      ansTTL :: TTL,
-                      ansRoad :: Road,
-                      ansSourceID :: SourceID,
-                      ansCnt :: RawData}
-                deriving Generic
-
-data RessourceCert = RessourceCert {cResSourceDHKey :: DHPubKey,
-                                    cResSourceKey :: PubKey,
-                                    cResTimestamp :: Time,
-                                    cResID :: RessourceID,
-                                    cResSig :: Signature}
-                deriving Generic
-
 
 type AnswerMap = EventEntryMap RessourceID Answer
 type AnswerMapBhv t = ModEvent t AnswerMap
@@ -56,22 +34,24 @@ type RelayMap = TimeMap RessourceID ()
 type RelayMapBhv t = ModEvent t RelayMap 
 
 type LocalRessourceMap = M.Map RessourceID (Int, Time, RawData) --Nombre de répetition, et temps d'attente, contenue des réponses 
-
+genLocalResMap :: [RessourceID] -> LocalRessourceMap
+genLocalResMap rIDL = M.fromList $ f <$> rIDL
+    where f i = (i, (5, 5, encode i))
 
 
 
 data Ressources t = Ressources {resAnswerMap :: AnswerMapBhv t,
                                 resRelayMap :: RelayMapBhv t,
-                                resResearchHandle :: Handler RessourceID,
                                 resRelPackets :: Event t RessourcePacket }
 
+genResearch :: RessourceID -> RessourcePacket
+genResearch rID = Left $ Research rID ttlMax [] emptyPayload
 
 
-buildRessources :: Frameworks t => DHPubKey -> UserID -> KeyPair -> LocalRessourceMap -> Event t Research -> Event t Answer -> Moment t (Ressources t)
-buildRessources dhPK uID kP locMap resE ansE = do (relMap, relPE) <- buildRelayMap dhPK uID kP locMap resE ansE
-                                                  (rIDE, rIDH) <- newEvent
-                                                  ansB <- buildAnswerMap rIDE ansE
-                                                  pure $ Ressources ansB relMap rIDH relPE
+buildRessources :: Frameworks t => DHPubKey -> UserID -> KeyPair -> LocalRessourceMap -> Event t Research -> Event t Answer -> Event t RessourceID -> Moment t (Ressources t)
+buildRessources dhPK uID kP locMap resE ansE rIDE = do (relMap, relPE) <- buildRelayMap dhPK uID kP locMap resE ansE
+                                                       ansB <- buildAnswerMap rIDE ansE
+                                                       pure $ Ressources ansB relMap (union relPE $ genResearch <$> rIDE)
 
 relayTimeOut = 10 :: Time
 buildRelayMap :: Frameworks t => DHPubKey -> UserID -> KeyPair -> LocalRessourceMap -> Event t Research -> Event t Answer -> Moment t (RelayMapBhv t, Event t RessourcePacket)
@@ -103,7 +83,7 @@ buildRelayMap dhPK uID (pK,sK) locRMap resE ansE = do relModE <- newModEvent M.e
               sendAnswer :: Handler Answer -> RawData -> RessourceID -> IO ()
               sendAnswer h c rID = do t <- getTime
                                       let cert = RessourceCert dhPK pK t rID emptySignature
-                                      h $ Answer cert ttlMax [] uID c
+                                      h $ Answer cert ttlMax [uID] uID c
 
 
 
@@ -112,7 +92,7 @@ buildRelayMap dhPK uID (pK,sK) locRMap resE ansE = do relModE <- newModEvent M.e
 buildAnswerMap :: Frameworks t => Event t RessourceID -> Event t Answer -> Moment t (AnswerMapBhv t)
 buildAnswerMap rE aE = do  aModE <- newModEvent M.empty
                            -- listening the researchs
-                           reactimate $ apply (onResearch (meModifier aModE) <$> meLastValue aModE) rE
+                           reactimate $ applyMod onResearch aModE rE
                            reactimate . filterJust $ apply (fireKey <$> meLastValue aModE) aE
                            pure aModE
     where onResearch :: Modifier AnswerMap -> AnswerMap -> RessourceID -> IO ()
@@ -122,6 +102,8 @@ buildAnswerMap rE aE = do  aModE <- newModEvent M.empty
                                                      order $ M.insert r e
 
 
+answerToNewRoad :: UserID -> Answer -> NewRoad
+answerToNewRoad uID = NewRoad <$> (uID :) . ansRoad <*> cResSourceDHKey . ansCert <*> ansSourceID <*> pure (encode "wooobdidoo")
 
 {-
 checkCert source time (RessourceCert dhKey pKey sendTime rID sig) = time - sendTime < maxDelay
@@ -131,6 +113,29 @@ checkAnswer me time ans = ansTTL ans > 1 && ansTTL ans <= ttlMax &&
                           me `Prelude.notElem` ansRoad ans && checkCert (ansSourceID ans) time (ansCert ans)
 
 -}
+type RessourcePacket = Either Research Answer
+
+data Research = Research {resID :: RessourceID,
+                          resTTL :: TTL,
+                          resRoad :: Road,
+                          resCnt :: RawData}
+                deriving Generic
+
+data Answer = Answer {ansCert :: RessourceCert,
+                      ansTTL :: TTL,
+                      ansRoad :: Road,
+                      ansSourceID :: SourceID,
+                      ansCnt :: RawData}
+                deriving Generic
+
+
+data RessourceCert = RessourceCert {cResSourceDHKey :: DHPubKey,
+                                    cResSourceKey :: PubKey,
+                                    cResTimestamp :: Time,
+                                    cResID :: RessourceID,
+                                    cResSig :: Signature}
+                deriving Generic
+
 
 instance IDable Answer RessourceID where
         extractID = cResID . ansCert

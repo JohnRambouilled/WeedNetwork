@@ -42,29 +42,32 @@ type EventMap k e = ParamMap AddHandler k e
 class (Ord k) => IDable e k where
         extractID :: e -> k
 
-class Mergeable a e where allAddHandlers :: a -> [AddHandler e]
-instance Mergeable (EventEntry e) e where allAddHandlers = pure . eAddHandler
-instance Mergeable (AddHandler e) e where allAddHandlers = pure
-instance Mergeable a e => Mergeable (M.Map k a) e where allAddHandlers = (allAddHandlers =<<) . M.elems
+class Mergeable a e where allAddHandlers :: a -> AddHandler e
+instance Mergeable (EventEntry e) e where allAddHandlers = eAddHandler
+instance Mergeable (AddHandler e) e where allAddHandlers = id
+instance Mergeable a e => Mergeable (M.Map k a) e where allAddHandlers = mergeAddHandlersList . (allAddHandlers <$>) . M.elems
 
 mergeEvents :: (Frameworks t, Mergeable a e) => Event t a -> Moment t (Event t e)
 mergeEvents = mergeAddHandlers . (allAddHandlers <$>)
 
-mergeAddHandlers :: Frameworks t => Event t [AddHandler e] -> Moment t (Event t e)
+mergeAddHandlers :: Frameworks t => Event t (AddHandler e) -> Moment t (Event t e)
 mergeAddHandlers eAH = do (e,h) <-  newEvent
                           (unregE, unregH) <- newEvent
                           reactimate $ reg h unregH <$> eAH
                           reactimate $ stepper (pure ()) unregE <@ eAH
                           pure e
-        where reg :: Handler e -> Handler (IO ()) -> [AddHandler e] -> IO ()
-              reg h urH l = forM l (`register` h) >>= urH . sequence_
+        where reg :: Handler e -> Handler (IO ()) -> AddHandler e -> IO ()
+              reg h urH adH = adH `register` h >>= urH 
               
-
+mergeAddHandlersList :: [AddHandler e] -> AddHandler e
+mergeAddHandlersList l = AddHandler $ \h -> sequence_ <$> forM l (`register` h)
 
 mergeAddHandlersLeak :: Frameworks t => Event t [AddHandler e] -> Moment t (Event t e)
 mergeAddHandlersLeak eH = switchE <$> execute (makeAnyMom <$> eH)
     where makeAnyMom :: [AddHandler e] -> FrameworksMoment (AnyMoment Event e)
           makeAnyMom hL = FrameworksMoment $ (trimE . unions =<< mapM fromAddHandler hL)
+
+
 
 splitEvent :: Frameworks t => (e -> Bool) -> Event t e -> Moment t (Event t e, Event t e)
 splitEvent f eE = do ((failE, failH), (passE, passH)) <- (,) <$> newEvent <*> newEvent
