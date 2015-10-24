@@ -50,7 +50,7 @@ buildCryptoMap t toEntry introE decoE packetE = do modE <- newModEvent M.empty -
                                       insertI (i, e) = (scKeyHash i, e)
           packetActions eM = filterJust $ apply (fireKeyWith (fireEntry . snd) <$> eM) packetE 
           fireEntry (sigCheck, a) e = if sigCheck e then emFire a $ e else pure ()
-          checkIntro i = checkSig (icPubKey i) i
+          checkIntro i = checkSig (icPubKey i) i -- && computeHashFromKey (icPubKey i) == scKeyHash i 
           makeCryptoE (Right (i, (_,a))) = Right (i,a)
           makeCryptoE (Left (i, (_,a))) = Left (i,a)
 

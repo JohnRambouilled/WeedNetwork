@@ -29,18 +29,19 @@ data Neighborhood t = Neighborhood {nbhNeighMap :: NeighMapBhv t,
                                     nbhAnswers :: Event t Answer,
                                     nbhForceDeco :: Handler UserID}
 
-neighTimeOut = 5 :: Time
+neighTimeOut = 1 :: Time
 neighRepeatTime = 2 :: Time
 
 sendNeighData :: UserID -> KeyPair -> NeighDataContent -> NeighPacket
 sendNeighData uID k cnt = Right . sign k $ NeighData uID emptySignature cnt
 
+sendNeighIntro :: UserID -> KeyPair -> Payload -> NeighPacket
+sendNeighIntro uID k p = Left . sign k $ NeighIntro uID (fst k) emptySignature p
 
 repeatNeighIntro :: Frameworks t => Time -> UserID -> KeyPair -> Payload -> Moment t (TimeOutEntry, Event t NeighPacket)
 repeatNeighIntro t uID k p = do (e,h) <- newEvent
-                                toe <- liftIO $ newRepeater Nothing t $ h neighP
+                                toe <- liftIO $ newRepeater Nothing t $ h $ sendNeighIntro uID k p
                                 pure (toe, e)
-        where neighP = Left . sign k $ NeighIntro uID (fst k) emptySignature p
 
 buildNeighborhood :: Frameworks t => Event t NeighPacket -> Moment t (Neighborhood t)
 buildNeighborhood packetE  = do (introE, dataE) <- splitEither packetE

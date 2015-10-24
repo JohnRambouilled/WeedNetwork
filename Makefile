@@ -25,6 +25,6 @@ tests:
 				./Main
 
 
-profil: Main.hs obj/ethernet.o obj/receiver.o obj/udp.o
-		ghc -osuf p_o -prof -auto-all -threaded obj/ethernet.o obj/receiver.o obj/udp.o --make Main.hs
+profil: Main.hs   #obj/ethernet.o obj/receiver.o obj/udp.o
+		ghc -osuf p_o -prof -auto-all -threaded --make Main.hs  #obj/ethernet.o obj/receiver.o obj/udp.o --make Main.hs
 			
