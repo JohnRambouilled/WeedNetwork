@@ -14,11 +14,22 @@ import Crypto
 import Neighbors
 import Timer
 
-
-
-
 leakTestMain :: IO ()
 leakTestMain = do 
+              dummyKeys <- generateKeyPair
+              (displayIO, handles) <- buildApp (length moduleNameList) moduleNameList
+              (outC,inC) <- compileClient handles
+              forkIO .forM_ neighList $ \i -> do waitFor 0.1   
+                                                 inC . Left $ sendNeighIntro (KeyHash i) dummyKeys i
+              displayIO
+    where neighList :: [RawData]
+          neighList = encode <$> ([1..] :: [Int])
+
+
+
+
+leakTestMainNoUI :: IO ()
+leakTestMainNoUI = do 
               dummyKeys <- generateKeyPair
 --              (displayIO, handles) <- buildApp (length moduleNameList) moduleNameList
               (outC,inC) <- compileClient [] --handles

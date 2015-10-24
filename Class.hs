@@ -51,7 +51,18 @@ mergeEvents :: (Frameworks t, Mergeable a e) => Event t a -> Moment t (Event t e
 mergeEvents = mergeAddHandlers . (allAddHandlers <$>)
 
 mergeAddHandlers :: Frameworks t => Event t [AddHandler e] -> Moment t (Event t e)
-mergeAddHandlers eH = switchE <$> execute (makeAnyMom <$> eH)
+mergeAddHandlers eAH = do (e,h) <-  newEvent
+                          (unregE, unregH) <- newEvent
+                          reactimate $ reg h unregH <$> eAH
+                          reactimate $ stepper (pure ()) unregE <@ eAH
+                          pure e
+        where reg :: Handler e -> Handler (IO ()) -> [AddHandler e] -> IO ()
+              reg h urH l = forM l (`register` h) >>= urH . sequence_
+              
+
+
+mergeAddHandlersLeak :: Frameworks t => Event t [AddHandler e] -> Moment t (Event t e)
+mergeAddHandlersLeak eH = switchE <$> execute (makeAnyMom <$> eH)
     where makeAnyMom :: [AddHandler e] -> FrameworksMoment (AnyMoment Event e)
           makeAnyMom hL = FrameworksMoment $ (trimE . unions =<< mapM fromAddHandler hL)
 
