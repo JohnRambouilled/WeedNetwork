@@ -28,8 +28,7 @@ type NeighMapBhv t = ModEvent t NeighMap
 
 data Neighborhood t = Neighborhood {nbhNeighMap :: NeighMapBhv t,
                                     nbhRequests :: Event t Request,
-                                    nbhResearchs :: Event t Research,
-                                    nbhAnswers :: Event t Answer,
+                                    nbhRessources :: Event t RessourcePacket,
                                     nbhForceDeco :: Handler UserID}
 
 
@@ -48,20 +47,18 @@ buildNeighborhood :: Frameworks t => Event t NeighPacket -> Moment t (Neighborho
 buildNeighborhood packetE  = do (introE, dataE) <- splitEither packetE
                                 (reqE, reqH) <- newEvent
                                 (resE, resH) <- newEvent
-                                (ansE, ansH) <- newEvent
                                 (decoE, decoH) <- newEvent
                                 (nMod, _) <- buildCryptoMap neighTimeOut newNeighEntry introE decoE dataE 
                                 allEvents <- mergeEvents $ meChanges nMod
-                                reactimate $ onDataEvent decoH reqH resH ansH <$> allEvents
-                                pure $ Neighborhood nMod reqE resE ansE decoH
+                                reactimate $ onDataEvent decoH reqH resH <$> allEvents
+                                pure $ Neighborhood nMod reqE resE decoH
     where newNeighEntry _ = newEventEntry $ pure True
 
 
-onDataEvent :: Handler KeyHash -> Handler Request -> Handler Research -> Handler Answer -> NeighData -> IO ()
-onDataEvent h _ _ _ (NeighClose kID _ _) = h  kID
-onDataEvent _ reqH _ _ (NeighData _ _ (NeighReq r)) = reqH  r
-onDataEvent _ _ resH _ (NeighData _ _ (NeighRes (Left r))) = resH  r 
-onDataEvent _ _ _ ansH (NeighData _ _ (NeighRes (Right a))) = ansH  a
+onDataEvent :: Handler KeyHash -> Handler Request -> Handler RessourcePacket -> NeighData -> IO ()
+onDataEvent h _ _ (NeighClose kID _ _) = h  kID
+onDataEvent _ reqH _ (NeighData _ _ (NeighReq r)) = reqH  r
+onDataEvent _ _ resH (NeighData _ _ (NeighRes r)) = resH  r 
 
 
 

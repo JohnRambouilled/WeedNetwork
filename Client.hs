@@ -43,13 +43,13 @@ buildClient packetsE locResE rIDL = do
                           liftIO . print $ "building Modules"
 
                           neighs <- buildNeighborhood neighPE
-                          res <- buildRessources dhPK uID (pK, sK) (genLocalResMap rIDL) (nbhResearchs neighs) (nbhAnswers neighs) locResE
+                          res <- buildRessources dhPK uID (pK, sK) (nbhRessources neighs) 
                           rout <- buildRouting uID dhSK newRoadE (nbhRequests neighs) pipesPE
                           pipes <- buildPipes $ routingNewPipes rout
 
                           liftIO . print $ "connecting handlers"
                           sendToSource pipes locMsgE
-                          ansE <- mergeEvents . meChanges $ resAnswerMap res
+                          ansE <- mergeEvents $ resListenMap res
                           reactimate $ newRoadH . answerToNewRoad uID <$> ansE
 
                           liftIO . print $ "starting neighIntro repeater"
