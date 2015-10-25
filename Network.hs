@@ -7,15 +7,20 @@ import Control.Monad
 import Control.Concurrent
 import Data.Binary
 
-import UI.ShowClient
+--import UI.ShowClient
 import UI.App
+import Class
 import Client
+import Ed25519
 import Crypto
 import Neighbors
 import Timer
 import Ressource
+import Routing
+import Pipes
 
 type ClientShow = [(String, [AddHandler String])]
+type Logs = String
 
 data ClientInterface = ClientInterface {ciInput :: Handler Packet,
                                         ciOutput :: AddHandler Packet,
@@ -40,12 +45,13 @@ data ClientEvents = ClientEvents {cleNeighborsMap :: AddHandler (EventMap KeyHas
                                   cleRoutingLocalMap :: AddHandler (EventMap UserID PipePacket),
                                   cleRoutingRelayedMap :: AddHandler (EventMap UserID PipePacket),
                                   cleRoutingLogs :: AddHandler Logs,
-                                  clePipeManager :: AddHandler (M.Map SourceID PipesMap)
+                                  clePipeManager :: AddHandler (M.Map SourceID PipesMap),
                                   clePipeLogs :: AddHandler Logs}
 
 
 
 
+{-
 compileClient ::[WidgetHandler] -> IO (AddHandler Packet, Handler Packet)
 compileClient = (f <$>) . compileClientRes []
     where f (a,b,_) = (a,b)
@@ -67,3 +73,4 @@ compileClientRes rIDL wL = do (inE,inH) <- newAddHandler
                               showClient c wL
 
 
+-}

@@ -19,9 +19,9 @@ buildApp binds = do
         chan <- newChan
 --        zipWithM_ (registerHook chan) modifiers hooks
 --        zipWithM_ (registerModifier chan) modifiers (snd <$> binds)
-        sequence $ do (tab,modi) <- zip (snd <$> binds) (modifiers)
-                      (i,j) <- range $ A.bounds tab
-                      pure $ void $ registerModifier chan modi tab (i,j)
+        sequence_ $ do (tab,modi) <- zip (snd <$> binds) (modifiers)
+                       (i,j) <- range $ A.bounds tab
+                       pure $ void $ registerModifier chan modi tab (i,j)
         void $ customMain (mkVty cfg) chan newClientApp client
         
 --        pure (void $ customMain (mkVty cfg) chan newClientApp client, buildModifier chan <$> modifiers)
