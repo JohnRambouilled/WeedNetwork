@@ -86,7 +86,7 @@ buildRessources dhPK uID kP packetE = do (resE, ansE) <- splitEither packetE
             - et on ignore si elle est présente dans la RelayMap -}
     where onResearch :: Handler RessourcePacket -> Modifier RelayMap -> RelayMap -> AnswerMap -> LocalAnswerMap -> ResPolMap -> Research -> IO () 
           onResearch packetH modRelM relM ansM locAnsM relPol res = when b $ case rID `M.lookup` locAnsM of
-                        Just locA -> sendAnswer packetH locA rID
+                        Just locA -> sendAnswer dhPK (fst kP) uID packetH locA rID
                         Nothing -> case rID `lookupTO` ansM of
                                     Just a -> packetH $ Right a
                                     Nothing -> case rID `lookupTO` relM of
@@ -123,16 +123,16 @@ buildRessources dhPK uID kP packetE = do (resE, ansE) <- splitEither packetE
           relayAnswer a = a{ansTTL = ansTTL a - 1, ansRoad = uID : ansRoad a}
           relayResearch :: Research -> Research
           relayResearch res = res{resTTL = resTTL res - 1}
-          sendAnswer :: Handler RessourcePacket -> (Time, RawData) -> RessourceID -> IO ()
-          sendAnswer h (v,c) rID = do t <- getTime
-                                      let cert = RessourceCert dhPK (fst kP) t v rID emptySignature
-                                      h . Right $ Answer cert ttlMax [uID] uID c
-
             -- TODO : renvoi True si la deuxième est mieux que la première
           compareAnswer :: Answer -> Answer -> Bool
           compareAnswer _ _ = True
           ansValidity :: Answer -> Time
           ansValidity = cResValidity . ansCert
+
+sendAnswer :: DHPubKey -> PubKey -> UserID -> Handler RessourcePacket -> (Time, RawData) -> RessourceID -> IO ()
+sendAnswer dhPK pK uID h (v,c) rID = do t <- getTime
+                                        let cert = RessourceCert dhPK pK t v rID emptySignature
+                                        h . Right $ Answer cert ttlMax [uID] uID c
 
 
 

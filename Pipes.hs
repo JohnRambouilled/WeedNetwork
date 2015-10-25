@@ -30,19 +30,10 @@ data Pipes t = Pipes {pipesManager :: PipesManagerBhv t,
                       pipeNewSourceEvent :: NewSourceEvent t,
                       pipesMessagesOut :: Event t PipePacket,
                       pipesClosePipe :: PipeCloser,
+                      pipesSendOnPipe :: Handler (SourceID, PipeID, RawData),
                       pipesRemoveSource :: Handler SourceID,
                       pipesLogs :: Event t String} 
 
-{- | Send messages to sources, if there is pipes leading to them.
- -   [TODO] : choix du pipes (head pour l'instant...)
- -   [TODO] : closePipe sur les pipeClose Messages
- -   [TODO] : keeplogs -}
-sendToSource :: Frameworks t => Pipes t -> Event t (SourceID, RawData) -> Moment t ()
-sendToSource pipe e = reactimate $ apply (send <$> meLastValue (pipesManager pipe)) e
-    where send pm (sID,d) = case sID `M.lookup` pm of
-                                Nothing -> pure () --TODO log
-                                Just pme -> makeMessage d . head . M.assocs $ pmePipeMap pme
-          makeMessage d (pID,(_,s)) = s $ Right (pID, d)
 
 buildPipes :: Frameworks t => Event t NewPipe -> Moment t (Pipes t)
 buildPipes npE = do (closeE, closeH) <- newEvent
@@ -55,15 +46,28 @@ buildPipes npE = do (closeE, closeH) <- newEvent
                     --Fermeture des pipes lors de receptions de PipeClose
                     let dataMan = buildDataManager $ meChanges pipeManB
                     reactimate . (closeH <$>) =<< closePipeEvent dataMan
+                    sendH <- sendOnPipe pipeManB 
                     --Retour de la structure
                     logsE <- (("PIPES : " ++) <$>) <$> showDataManager dataMan
-                    pure $ Pipes pipeManB dataMan newSourceE sendE closeH remSH logsE
+                    pure $ Pipes pipeManB dataMan newSourceE sendE closeH sendH remSH logsE
     where closePipe mod (sID, pID) = mod $ M.adjust (deletePipe pID) sID
           removeSource :: Modifier PipesManager -> PipesManager -> SourceID -> IO ()
           removeSource manM man sID = case M.lookup sID man of
                                                   Nothing -> pure ()
                                                   Just pme -> do pmeUnregister pme
                                                                  manM $ M.delete sID
+          {- | Send messages to sources, if there is pipes leading to them.
+          -   [TODO] : choix du pipes (head pour l'instant...)
+          -   [TODO] : closePipe sur les pipeClose Messages
+          -   [TODO] : keeplogs -}
+          sendOnPipe pm = do (sE,sH) <- newEvent
+                             reactimate $ apply (send <$> meLastValue pm) sE
+                             pure sH
+              where send :: PipesManager -> (SourceID, PipeID, RawData) -> IO ()
+                    send pm (sID,pID,d) = maybe (pure ()) (makeMessage pID d) $ M.lookup sID pm >>= M.lookup pID . pmePipeMap 
+                    makeMessage pID d (_,s) = s $ Right (pID, d)
+
+
 
 
 

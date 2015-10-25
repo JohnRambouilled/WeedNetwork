@@ -40,6 +40,7 @@ makeSignature uK pK d = S.sign  (runPrivKey uK) (runPubKey pK) $ B.toStrict d
 
 type DHPubKey = DH.PublicKey
 type DHPrivKey = DH.SecretKey
+type DHKeyPair = (DHPubKey, DHPrivKey)
 
 transmitKey :: DHPubKey -> DHPrivKey -> Maybe (DHPubKey, KeyPair)
 transmitKey dK nK = (\keys -> (DH.toPublic nK, keys)) <$> (keysFromShared $ DH.dh dK nK)
