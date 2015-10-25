@@ -1,3 +1,4 @@
+{-# LANGUAGE ImpredicativeTypes, RankNTypes, FlexibleInstances, UndecidableInstances, MultiParamTypeClasses, FunctionalDependencies #-}
 module Network where
 
 import Reactive.Banana
@@ -49,8 +50,9 @@ data ClientEvents = ClientEvents {cleNeighborsMap :: AddHandler (EventMap KeyHas
                                   clePipeManager :: AddHandler (M.Map SourceID PipesMap),
                                   clePipeLogs :: AddHandler Logs}
 
-compileClient :: BananAction t -> IO () --ClientInterface
-compileClient bananAction = do (inE,inH) <- nah
+compileClient :: IO ClientInterface
+compileClient = do 
+                               (inE,inH) <- nah
                                (keys,dhKeys) <- (,) <$> generateKeyPair <*> generateDHKeyPair
                                let uID = computeHashFromKey $ fst keys
                                    ids = (uID, keys, dhKeys)
@@ -82,39 +84,52 @@ compileClient bananAction = do (inE,inH) <- nah
                                let mkClient :: Frameworks t => Moment t ()
                                    mkClient = do inEv <- fromAddHandler inE 
                                                  c <- buildClient inEv dhKeys keys uID
+                                                 forM_ act $ \a -> getBA a $ c
                                                  pure ()
-                               --actuate =<< compile mkClient 
+                               actuate =<< compile mkClient 
                                
-                               pure ()
+                               pure ci
 
     where 
           nah = newAddHandler
+          eah ::  BananEvent a -> WBanan (AddHandler a)
           eah = extractEvent
           exctractPipeManager :: Client t -> Event t (M.Map SourceID PipesMap)
           exctractPipeManager c = (pmePipeMap <$>) <$> (meChanges . pipesManager $ clPipes c)
 
-          em :: (Client t -> ModEvent t (EventEntryMap k e)) -> WriterT (BananAction t) IO (AddHandler (EventMap k e))
+          em :: (forall t. Frameworks t => Client t -> ModEvent t (EventEntryMap k a)) -> WBanan (AddHandler (EventMap k a))
           em f = eah (((eAddHandler <$>) <$>) .  meChanges . f)
+          eh :: BananHandler a -> WBanan (Handler a)
           eh = extractHandler
 
-type BananAction t = Client t -> Moment t ()
-extractHandler :: (Client t -> Handler a) -> WriterT (BananAction t) IO (Handler a)
+
+newtype BananAction = BananAction {getBA :: forall t. Frameworks t => Client t -> Moment t ()}
+type BananEvent a = forall t. Frameworks t => Client t -> Event t a
+type BananHandler a = forall t. Frameworks t => Client t -> Handler a
+type WBanan = WriterT [BananAction] IO
+
+extractHandler :: BananHandler a -> WBanan (Handler a)
 extractHandler f = do (ah,h) <- liftIO newAddHandler
-                      let b c = liftIO $ ah `register` f c
-                      tell b
+                      let b :: forall t. Frameworks t => Client t -> Moment t ()
+                          b c = do liftIO . void $ register ah (f c)
+                      tell [BananAction b]
                       pure h
 
-extractEvent :: Frameworks t => (Client t -> Event t a) -> WriterT (BananAction t) IO (AddHandler a)
+extractEvent ::  BananEvent a -> WBanan (AddHandler a)
 extractEvent f = do (ah,h) <- liftIO newAddHandler
-                    let b c = reactimate $ h <$> f c
-                    tell b
+                    let b :: forall t. Frameworks t => Client t -> Moment t ()
+                        b c = reactimate $ h <$> f c
+                    tell [BananAction b]
                     pure ah
 
 
-
-
-
 {-
+test :: AddHandler a -> (forall t. Frameworks t => Client t -> Handler a) -> BananAction
+test ah bh = x
+    where x :: forall t. Frameworks t => Client t -> Moment t ()
+          x c = do liftIO $ register ah (bh c)
+                   pure ()
+
 compileClient ::[WidgetHandler] -> IO (AddHandler Packet, Handler Packet)
 compileClient = (f <$>) . compileClientRes []
     where f (a,b,_) = (a,b)
