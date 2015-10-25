@@ -15,60 +15,36 @@ import Neighbors
 import Timer
 import Ressource
 
-leakTestMain :: IO ()
-leakTestMain = do 
-              dummyKeys <- generateKeyPair
-              (displayIO, handles) <- buildApp (length moduleNameList) moduleNameList
-              (outC,inC) <- compileClient handles
-              forkIO .forM_ neighList $ \i -> do waitFor 0.1   
-                                                 inC . Left $ sendNeighIntro (KeyHash i) dummyKeys i
-              displayIO
-    where neighList :: [RawData]
-          neighList = encode <$> ([1..] :: [Int])
+type ClientShow = [(String, [AddHandler String])]
+
+data ClientInterface = ClientInterface {ciInput :: Handler Packet,
+                                        ciOutput :: AddHandler Packet,
+                                        ciIDs :: (UserID, KeyPair),
+                                        ciResearch :: Handler RessourceID,
+                                        ciSend :: Handler (SourceID, RawData),
+                                        ciSendOnPipe :: Handler (PipeID, RawData),
+                                        ciReceive :: AddHandler DataManager,
+                                        ciHandlers :: ClientHandlers,
+                                        ciEvents :: ClientEvents}
+
+data ClientHandlers = ClientHandlers {clhSendResearch :: Handler RessourceID,
+                                      clhSendAnswer :: Handler RessourceID,
+                                      clhOpenPipe :: Handler NewRoad,
+                                      clhSendNeighIntro :: Handler RawData,
+                                      clhBanNeighbor :: Handler UserID,
+                                      clhClosePipe :: Handler PipeID,
+                                      clhCloseSource :: Handler SourceID}
+
+data ClientEvents = ClientEvents {cleNeighborsMap :: AddHandler (EventMap KeyHash NeighData),
+                                  cleNeighborsData :: (AddHandler Request, AddHandler RessourcePacket),
+                                  cleRoutingLocalMap :: AddHandler (EventMap UserID PipePacket),
+                                  cleRoutingRelayedMap :: AddHandler (EventMap UserID PipePacket),
+                                  cleRoutingLogs :: AddHandler Logs,
+                                  clePipeManager :: AddHandler (M.Map SourceID PipesMap)
+                                  clePipeLogs :: AddHandler Logs}
 
 
 
-
-leakTestMainNoUI :: IO ()
-leakTestMainNoUI = do 
-              dummyKeys <- generateKeyPair
---              (displayIO, handles) <- buildApp (length moduleNameList) moduleNameList
-              (outC,inC) <- compileClient [] --handles
-              forM_ neighList $ \i -> do waitFor 0.1   
-                                         inC . Left $ sendNeighIntro (KeyHash i) dummyKeys i
-        --      displayIO
-    where neighList :: [RawData]
-          neighList = encode <$> ([1..] :: [Int])
-
-
-
-testMainRes :: IO ()
-testMainRes = do 
-              print "Building display"
-              (displayIO, handles) <- buildApp (2 * moduleShowCount) (moduleNameList ++ moduleNameList)
-              let (c1H,c2H) = splitAt moduleShowCount handles
-              print "Compiling clients"
-              ((out1,in1,res1),(out2,in2,res2)) <- (,) <$> compileClientRes [resID1] c1H <*> compileClientRes [] c2H
-              newRepeater (Just 10) 2 $ res2 resID1
-              print "registering communications"
-              register out1 in2
-              register out2 in1
-              print "Launching display"
-              displayIO
-    where resID1 = RessourceID $ encode "Je suis 1!!"
-
-
-testMain :: IO ()
-testMain = do print "Building display"
-              (displayIO, handles) <- buildApp (2 * moduleShowCount) (moduleNameList ++ moduleNameList)
-              let (c1H,c2H) = splitAt moduleShowCount handles
-              print "Compiling clients"
-              ((out1,in1),(out2,in2)) <- (,) <$> compileClient c1H <*> compileClient c2H
-              print "registering communications"
-              register out1 in2
-              register out2 in1
-              print "Launching display"
-              displayIO
 
 compileClient ::[WidgetHandler] -> IO (AddHandler Packet, Handler Packet)
 compileClient = (f <$>) . compileClientRes []
