@@ -11,17 +11,19 @@ import Data.List
 
 import Control.Lens
 
+type ClientWidget = A.Array (Int,Int) Widget
 
-type ClientWidget = (Widget, String)
-data ClientUI = ClientUI {_cuiWidgets :: A.Array Int ClientWidget,
+buildClientWidget :: ClientWidget -> Widget
+buildClientWidget cw = vBox [ hBox [ cw A.! (i,j) |j <- [1..nbCol]]  | i <- [1..nbLi]]
+  where (_,(nbLi,nbCol)) = A.bounds cw
+
+data ClientUI = ClientUI {_cuiWidgets :: A.Array Int (String,ClientWidget),
                           _cuiCurrent :: Int } 
+
 makeLenses ''ClientUI 
 data UIEvent = UIKey Event
              | UIModifier (ClientUI -> ClientUI)
-
-type ClientApp = App ClientUI UIEvent
-
-
+type ClientWidgetModifier = (Int, Int) -> String -> UIEvent
 onUIKey cui e = case e of
                   KLeft -> continue $ cui {_cuiCurrent = decCur cur}
                   KRight -> continue $ cui {_cuiCurrent = incrCur cur}
@@ -33,14 +35,21 @@ onUIKey cui e = case e of
           incrCur i = if i+1 > ma then mi else i+1
           decCur i = if i-1 < mi then ma else i-1
 
-drawCurrentWidget cui = vBox [str names,fst cur]
+drawCurrentWidget cui = vBox [str names,buildClientWidget cur]
     where cur = getCurrentWidget cui
           curInd = _cuiCurrent cui
-          drawSel i (_,x)
+          drawSel i (x,_)
             | i == curInd = "[" ++ x ++ "]"
             | otherwise = x
           --names = concat $ intersperse "\t" $  (uncurry drawSel <$> (A.assocs $ cuiWidgets cui))
-          names = unwords $ map (uncurry drawSel) (A.assocs $ _cuiWidgets cui)
+          names = unwords $ map (uncurry drawSel) (A.assocs $ _cuiWidgets cui) --(A.assocs $ _cuiWidgets cui)
+
+{-
+type ClientWidget = ([Widget], String)
+
+type ClientApp = App ClientUI UIEvent
+-}
+
 
 newClientApp :: App ClientUI UIEvent
 newClientApp = App (\cui -> [drawCurrentWidget cui]) --(drawCurrentWidget cui : map fst ( A.elems (_cuiWidgets cui))))
@@ -59,18 +68,44 @@ newClientApp = App (\cui -> [drawCurrentWidget cui]) --(drawCurrentWidget cui : 
     Retourne une "app" contenant des fenetres vides, ainsi que des modifiers pour
     créer un évent modifiant l'écran pour écrire la string (à push dans le Chan correspondant)
  -}
-newClientUI :: Int -> [String] -> (ClientUI, [String -> String -> UIEvent])
-newClientUI nbWidgets names  = (ret, map updateWidget [1..])
-    where tab = A.listArray (1,nbWidgets) [(str "",ni) | ni <- names]
-          ret = ClientUI tab 1
+--newClientUI :: Int -> [String] -> (ClientUI, [String -> String -> UIEvent])
+--newClientUI :: Int -> [String] -> (ClientUI, [String -> String -> UIEvent])
+--newClientUI nbWidgets names  = (ret, map updateWidget [1..])
+--    where tab = A.listArray (1,nbWidgets) [(str "",ni) | ni <- names]
+--          ret = ClientUI tab 1
 
 
+
+newClientUI :: [(String,(Int,Int))] -> (ClientUI,[ClientWidgetModifier])
+newClientUI  grids  = (ClientUI (A.listArray (1,nbGrids) $ zip names (mkClientWidget <$> sizes)) 1, uiModifier <$> [1..nbGrids])
+   where mkClientWidget (nbLi,nbCol) = A.array ((1,1),(nbLi,nbCol)) $ [((i,j),str "") | i <- [1..nbLi], j <- [1..nbCol]]
+         nbGrids = length grids
+         (names,sizes) = unzip grids
+        
+
+
+{-
 updateWidget :: Int -> String -> String -> UIEvent
 updateWidget i name string = UIModifier $ over cuiWidgets (A.// [(i,(str string,name))]) 
+-}
+
+{-| Modifie la grille considérée |-}
+updateWidget :: ClientWidget -> (Int,Int) -> String -> ClientWidget
+updateWidget w (i,j) val = w A.// [((i,j), str val)]
+
+{-| Modifie la grille de l'indice i |-}
+uiModifier' :: Int -> (Int,Int) -> String -> ClientUI -> ClientUI
+uiModifier' i coord val cui = over cuiWidgets f cui
+  where (name,targetGrid) = _cuiWidgets cui A.! i
+        f t = t A.// [(i,(name,updateWidget targetGrid coord val))]
+
+uiModifier :: Int -> ClientWidgetModifier
+uiModifier i coord val = UIModifier $ uiModifier' i coord val
 
 {- tools -}
 getCurrentWidget :: ClientUI -> ClientWidget
-getCurrentWidget cui = _cuiWidgets cui A.! _cuiCurrent cui
+getCurrentWidget cui = snd $ _cuiWidgets cui A.! _cuiCurrent cui
+
 
 
 
