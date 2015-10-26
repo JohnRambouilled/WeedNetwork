@@ -66,6 +66,8 @@ data Ressources t = Ressources {resAnswerMap :: AnswerMapBhv t,
 genResearch :: RessourceID -> RessourcePacket
 genResearch rID = Left $ Research rID ttlMax [] emptyPayload
 
+offerRessource :: Frameworks t => Ressources t -> (Time, RawData, RessourceID) -> IO ()
+offerRessource res (t,d,rID) = meModifier (resLocalAnswerMap res) $ M.insert rID (t,d)
 
 buildRessources :: Frameworks t => DHPubKey -> UserID -> KeyPair -> Event t RessourcePacket -> Moment t (Ressources t)
 buildRessources dhPK uID kP packetE = do (resE, ansE) <- splitEither packetE

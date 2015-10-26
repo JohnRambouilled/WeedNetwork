@@ -28,6 +28,7 @@ data ClientInterface = ClientInterface {ciInput :: Handler Packet,
                                         ciOutput :: AddHandler Packet,
                                         ciIDs :: (UserID, KeyPair, DHKeyPair),
                                         ciResearch :: Handler RessourceID,
+                                        ciOfferRessource :: Handler (Time, Payload, RessourceID),
                                         ciSend :: Handler (SourceID, RawData),
                                         ciReceive :: AddHandler DataManager,
                                         ciHandlers :: ClientHandlers,
@@ -60,6 +61,7 @@ compileClient = do
                                (ci,act) <- runWriterT $ ClientInterface inH <$> eah clToSend
                                                                             <*> pure ids
                                                                             <*> eh clSendResearch
+                                                                            <*> eh (offerRessource . clRessources)
                                                                             <*> eh clSendToPeer 
                                                                             <*> eah (pipesDataManager . clPipes)
                                                                             <*> (ClientHandlers <$> eh clSendResearch
