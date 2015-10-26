@@ -19,9 +19,10 @@ import UI.App
 
 
 
+renderClients cEventsL = buildApp $ zip (map show [1..]) (map renderClient cEventsL)
 
-renderClient :: ClientEvents -> IO ()--[A.Array (Int,Int) (AddHandler String)]
-renderClient cEvents = buildApp [("LAYER 2",win1)]
+renderClient :: ClientEvents -> (A.Array (Int,Int) (AddHandler String)) --[A.Array (Int,Int) (AddHandler String)]
+renderClient cEvents = win1
     where [neigh,rLoc,rRel,pMap] = showClientEvent' cEvents
           win1 = A.array ((1,1),(2,2)) $ [((1,1),rLoc),((1,2),rRel),
                                             ((2,1),neigh), ((2,2),pMap)]
