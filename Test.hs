@@ -6,6 +6,7 @@ import Reactive.Banana.Frameworks
 import qualified Data.Map as M
 import Control.Monad
 import Control.Concurrent
+import Control.Concurrent.MVar
 import Data.Binary
 
 import UI.ShowClient
@@ -38,14 +39,22 @@ testMain tcL = do
 --              (displayIO, handles) <- buildApp (2 * moduleShowCount) (moduleNameList ++ moduleNameList)
 --              ciL@[ci1,ci2] <- [] <$> compileClient c1H <*> compileClient c2H
               ciL <- forM tcL (pure compileClient)
+              print "Launching interface"
+              mv <- myForkIO $ renderClients ciL
               let ciLZ = zip ciL tcL
               print "registering communications"
               forM_ ciLZ $ \(ci,tc) -> do forM_ (tcOfferedR tc) $ \rID -> ciOfferRessource ci (testValidity, encode $ show rID, rID)
                                           forM_ (tcListen tc) $ \i -> register (ciOutput ci) (ciInput $ ciL !! i)
                                           forM_ (tcResearch tc) $ ciResearch ci
-              renderClients ciL
+              readMVar mv
 
+    where myForkIO :: IO () -> IO (MVar ())
+          myForkIO io = do mvar <- newEmptyMVar
+                           forkIO (io >> putMVar mvar ())
+                           return mvar
+              
 
+              
 {-
 leakTestMain :: IO ()
 leakTestMain = do 

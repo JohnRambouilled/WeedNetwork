@@ -26,7 +26,7 @@ renderClient cInterface = [win1,win2,win3]
     where [neigh,rLoc,rRel,pMap,resLocal, resListen, output, routLog, pipeLog] = showClientEvent' cInterface
           win1 = A.array ((1,1),(2,2)) $ [((1,1),rLoc),((1,2),rRel),
                                             ((2,1),neigh), ((2,2),pMap)]
-          win2 = A.listArray ((1,1),(1,2)) $ [resLocal, resListen, output, routLog]
+          win2 = A.listArray ((1,1),(2,2)) $ [resLocal, resListen, output, routLog]
           win3 = A.listArray ((1,1),(1,1)) $ [pipeLog]
 showClientEvent' :: ClientInterface -> [AddHandler String]
 showClientEvent' cInterface = [dump "NEIGHBORS" cleNeighborsMap, dump "ROUTING LOCAL" cleRoutingLocalMap, dump "ROUTING RELAY" cleRoutingRelayedMap]
