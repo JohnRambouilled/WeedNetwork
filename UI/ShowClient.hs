@@ -19,17 +19,22 @@ import UI.App
 
 
 
-renderClients cEventsL = buildApp $ zip (map show [1..]) (map renderClient cEventsL)
+renderClients cEventsL = buildApp $ zip (map show [1..]) (concatMap renderClient cEventsL)
 
-renderClient :: ClientEvents -> (A.Array (Int,Int) (AddHandler String)) --[A.Array (Int,Int) (AddHandler String)]
-renderClient cEvents = win1
-    where [neigh,rLoc,rRel,pMap] = showClientEvent' cEvents
+renderClient :: ClientInterface -> [A.Array (Int,Int) (AddHandler String)] --[A.Array (Int,Int) (AddHandler String)]
+renderClient cInterface = [win1,win2,win3]
+    where [neigh,rLoc,rRel,pMap,resLocal, resListen, output, routLog, pipeLog] = showClientEvent' cInterface
           win1 = A.array ((1,1),(2,2)) $ [((1,1),rLoc),((1,2),rRel),
                                             ((2,1),neigh), ((2,2),pMap)]
-showClientEvent' :: ClientEvents -> [AddHandler String]
-showClientEvent' cEvents = [dump "NEIGHBORS" cleNeighborsMap, dump "ROUTING LOCAL" cleRoutingLocalMap, dump "ROUTING RELAY" cleRoutingRelayedMap]
-                        ++ [showPipeMap <$> clePipeManager cEvents]
-    where dump name f = showMapKeys name <$> f cEvents
+          win2 = A.listArray ((1,1),(1,2)) $ [resLocal, resListen, output, routLog]
+          win3 = A.listArray ((1,1),(1,1)) $ [pipeLog]
+showClientEvent' :: ClientInterface -> [AddHandler String]
+showClientEvent' cInterface = [dump "NEIGHBORS" cleNeighborsMap, dump "ROUTING LOCAL" cleRoutingLocalMap, dump "ROUTING RELAY" cleRoutingRelayedMap]
+                        ++ [showPipeMap <$> clePipeManager (ciEvents cInterface)] ++ [dump "RESSOURCE LOCAL" cleResLocalMap, dump "RESSOURCE LISTEN" cleResListenMap]
+                        ++ [show  <$> ciOutput cInterface, 
+                           cleRoutingLogs $ ciEvents cInterface, 
+                           clePipeLogs $ ciEvents cInterface]
+    where dump name f = showMapKeys name <$> f (ciEvents cInterface)
 
 
 showMapKeys :: Show k => String -> M.Map k a -> String
