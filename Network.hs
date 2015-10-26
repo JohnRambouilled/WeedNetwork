@@ -50,6 +50,7 @@ data ClientEvents = ClientEvents {cleNeighborsMap :: AddHandler (EventMap KeyHas
                                   cleResListenMap :: AddHandler (EventMap RessourceID Answer),
                                   cleRoutingLocalMap :: AddHandler (EventMap UserID PipePacket),
                                   cleRoutingRelayedMap :: AddHandler (EventMap UserID PipePacket),
+                                  cleReceivedMessage :: AddHandler Packet,
                                   cleRoutingLogs :: AddHandler Logs,
                                   clePipeManager :: AddHandler (M.Map SourceID PipesMap),
                                   clePipeLogs :: AddHandler Logs}
@@ -83,6 +84,7 @@ compileClient = do
                                                                                                 <*> eah (resListenMap . clRessources)
                                                                                                 <*> em (routingLocMap . clRouting)
                                                                                                 <*> em (routingRelMap . clRouting)
+                                                                                                <*> eah clReceived 
                                                                                                 <*> eah (routingLogs . clRouting)
                                                                                                 <*> eah exctractPipeManager
                                                                                                 <*> eah (pipesLogs . clPipes) )
