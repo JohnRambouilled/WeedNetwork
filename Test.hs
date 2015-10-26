@@ -43,7 +43,7 @@ testMain tcL = do
               forM_ ciLZ $ \(ci,tc) -> do forM_ (tcOfferedR tc) $ \rID -> ciOfferRessource ci (testValidity, encode $ show rID, rID)
                                           forM_ (tcListen tc) $ \i -> register (ciOutput ci) (ciInput $ ciL !! i)
                                           forM_ (tcResearch tc) $ ciResearch ci
-              renderClients $ ciEvents <$> ciL
+              renderClients ciL
 
 
 {-
