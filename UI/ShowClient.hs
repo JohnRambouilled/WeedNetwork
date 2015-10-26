@@ -21,11 +21,10 @@ import UI.App
 
 
 renderClient :: ClientEvents -> IO ()--[A.Array (Int,Int) (AddHandler String)]
-renderClient cEvents = buildApp [("LAYER 2",win1),("LAYER3",win2)]
+renderClient cEvents = buildApp [("LAYER 2",win1)]
     where [neigh,rLoc,rRel,pMap] = showClientEvent' cEvents
-          win1 = A.array ((1,1),(4,4)) $ [((1,1),rLoc),((1,2),rRel),
-                                            ((2,1),neigh)]
-          win2 = A.array ((1,1),(1,1)) $ [((1,1),pMap)]
+          win1 = A.array ((1,1),(2,2)) $ [((1,1),rLoc),((1,2),rRel),
+                                            ((2,1),neigh), ((2,2),pMap)]
 showClientEvent' :: ClientEvents -> [AddHandler String]
 showClientEvent' cEvents = [dump "NEIGHBORS" cleNeighborsMap, dump "ROUTING LOCAL" cleRoutingLocalMap, dump "ROUTING RELAY" cleRoutingRelayedMap]
                         ++ [showPipeMap <$> clePipeManager cEvents]
