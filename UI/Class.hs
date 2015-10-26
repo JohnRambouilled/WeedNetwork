@@ -14,7 +14,7 @@ import Control.Lens
 type ClientWidget = A.Array (Int,Int) Widget
 
 buildClientWidget :: ClientWidget -> Widget
-buildClientWidget cw = vBox [ hBox [ cw A.! (i,j) |j <- [1..nbCol]]  | i <- [1..nbLi]]
+buildClientWidget cw = vBox [hBox [padAll 5 $ cw A.! (i,j) |j <- [1..nbCol]]  | i <- [1..nbLi]]
   where (_,(nbLi,nbCol)) = A.bounds cw
 
 data ClientUI = ClientUI {_cuiWidgets :: A.Array Int (String,ClientWidget),
