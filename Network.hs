@@ -45,6 +45,9 @@ data ClientHandlers = ClientHandlers {clhSendResearch :: Handler RessourceID,
 
 data ClientEvents = ClientEvents {cleNeighborsMap :: AddHandler (EventMap KeyHash NeighData),
                                   cleNeighborsData :: (AddHandler Request, AddHandler RessourcePacket),
+                                  cleResAnswerMap :: AddHandler AnswerMap,
+                                  cleResLocalMap :: AddHandler LocalAnswerMap,
+                                  cleResListenMap :: AddHandler (EventMap RessourceID Answer),
                                   cleRoutingLocalMap :: AddHandler (EventMap UserID PipePacket),
                                   cleRoutingRelayedMap :: AddHandler (EventMap UserID PipePacket),
                                   cleRoutingLogs :: AddHandler Logs,
@@ -75,6 +78,9 @@ compileClient = do
                                                                             <*> (ClientEvents   <$> em (nbhNeighMap . clNeighbors)
                                                                                                 <*> ( (,) <$> eah (nbhRequests . clNeighbors) 
                                                                                                           <*> eah (nbhRessources . clNeighbors) )
+                                                                                                <*> eah (meChanges . resAnswerMap . clRessources)
+                                                                                                <*> eah (meChanges . resLocalAnswerMap . clRessources)
+                                                                                                <*> eah (resListenMap . clRessources)
                                                                                                 <*> em (routingLocMap . clRouting)
                                                                                                 <*> em (routingRelMap . clRouting)
                                                                                                 <*> eah (routingLogs . clRouting)
