@@ -167,7 +167,7 @@ data PipePacket = PipePacket {pipeKeyID :: PipeID,
     deriving Generic
 
 pipePacketTimeOut :: PipeID -> PipePacket
-pipePacketTimeOut pID = PipeClose pID emptySignature 0 False emptyPayload
+pipePacketTimeOut pID = PipeClose pID emptySignature 0 False $ encode "Pipe timed-out"
 
 instance Show PipePacket where
     show (PipePacket kID _ n b _) = "PipePacket on pipe : " ++ show kID ++ " pos " ++ show n ++ (if b then "+" else "-")

@@ -19,6 +19,14 @@ import Ressource
 import Network
 
 
+mainTestRelay :: IO ()
+mainTestRelay = testMain [TestClient [res1] [] True [1],
+                          TestClient [] [] True [0,2],
+                          TestClient [] [res1] True [1]]
+        where res1 = RessourceID (encode "This is the shit")
+
+
+
 mainTestBinaire :: IO ()
 mainTestBinaire = testMain [TestClient [res1] [] True [1],
                             TestClient [] [res1] True [0]]
