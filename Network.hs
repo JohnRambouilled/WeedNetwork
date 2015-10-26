@@ -60,7 +60,7 @@ compileClient = do
                                                                
                                (ci,act) <- runWriterT $ ClientInterface inH <$> eah clToSend
                                                                             <*> pure ids
-                                                                            <*> eh clSendResearch
+                                                                            <*> eh clResearch
                                                                             <*> eh (offerRessource . clRessources)
                                                                             <*> eh clSendToPeer 
                                                                             <*> eah (pipesDataManager . clPipes)

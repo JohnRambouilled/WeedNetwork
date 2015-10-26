@@ -2,6 +2,7 @@ module Client where
 
 import Reactive.Banana
 import Reactive.Banana.Frameworks
+import Control.Monad
 import qualified Data.Map as M
 
 import Ressource
@@ -66,6 +67,9 @@ clSendNeighData c d = clSendH c . Left $ ((sendNeighData <$> clUserID <*> clKeys
 
 clSendResearch :: Client t -> Handler RessourceID 
 clSendResearch c = clSendNeighData c . NeighRes . genResearch
+
+clResearch :: Client t -> RessourceID -> IO ()
+clResearch c  rID = void $ newRepeater (Just 2) 5 $ clSendResearch c rID
 
 
 clSendAnswer :: Client t -> Handler (Time, RawData, RessourceID)
