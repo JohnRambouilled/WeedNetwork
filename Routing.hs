@@ -55,28 +55,32 @@ buildRouting uID dhSK newRE reqEuc packetE = do
                      --Ouverture des pipes locaux
                      reqOutE <- routOpenPipe newRE
                      --On construit les cryptoMaps correspondantes
-                     (relayMap, _) <- buildCryptoMap pipeTimeOut newRoutingEntry reqRelE relClE packetE
-                     let newReqE = union (IncomingRequest <$> reqLocE) reqOutE
-                     (localMap, cryptoE) <- buildCryptoMap pipeTimeOut newRoutingEntry newReqE locClE packetE
+                     (relayMap, cryptoRelE) <- buildCryptoMap pipeTimeOut newRoutingEntry reqRelE relClE packetE
+                     let reqRelOE = relayRequest . fst . fromRight <$> (filterE isRight cryptoRelE)
+                         newReqE = union (IncomingRequest <$> reqLocE) reqOutE
+                         packetOut = union reqRelOE $ nrReq <$> reqOutE
+                     (localMap, cryptoLocE) <- buildCryptoMap pipeTimeOut newRoutingEntry newReqE locClE packetE
                      --On bind les actions de relai (et de fermeture des pipes relayés)
                      relEvents <- mergeEvents $ meChanges relayMap
                      reactimate $ relayPackets relPH relClH <$> relEvents 
                      -- On ferme les pipes local sur PipeClose
                      --Creation des event de Pipe, push des TimeOut
-                     (actE, newPipeE) <- splitEither $ makeNewPipe <$> cryptoE
+                     (actE, newPipeE) <- splitEither $ makeNewPipe <$> cryptoLocE
                      reactimate actE
                      --Retour de la structure de Routing
                      let logs = unions [("AcceptedRequest : " ++) . show <$> reqE,
                                         ("Rejected request : " ++) <$> reqLogs]
-                     pure $ Routing localMap relayMap newPipeE relPE (nrReq <$> reqOutE) locClH relClH logs
+                     pure $ Routing localMap relayMap newPipeE relPE packetOut locClH relClH logs
     where relayPackets :: Handler PipePacket -> Handler KeyHash -> PipePacket -> IO ()
           relayPackets h _ p@(PipePacket _ _ n b _ ) = h p{pipePosition = if b then n + 1 else n -1} 
           relayPackets _ h (PipeClose kID _ _ _ _) = h kID
+          relayRequest :: Request -> Request
+          relayRequest r = r{reqPosition = reqPosition r + 1}
           newRoutingEntry _ = newEventEntry $ pure True
           isLocalRequest req = reqPosition req == reqLength req - 1
           makeNewPipe (Right (req, EventEntry _ e _) ) = maybe (Left $ pure ()) Right $ newRequestToNewPipe dhSK req $ makePipeMessage <$> e
           makeNewPipe (Left (pID, EventEntry h _ _) ) = Left . h $ pipePacketTimeOut pID
-
+          
 
 
 
@@ -133,6 +137,7 @@ data Request = Request {reqPosition :: Number,
                         reqPipeSig :: Signature,
                         reqContent :: RawData}
     deriving Generic
+
 
 instance Show Request where show (Request p l r _ t _ pID _ _) = "Request for pipe : " ++ show pID ++ " on road : " ++ show r ++" ("++ show p ++", "++ show l ++")"
 

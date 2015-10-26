@@ -102,12 +102,13 @@ buildRessources dhPK uID kP packetE = do (resE, ansE) <- splitEither packetE
            - Sinon, on relai si la ressource est présente dans la relayMap,
            - et on insère dans la AnswerMap si la politique le permet-}
           onAnswer :: Handler RessourcePacket -> Modifier AnswerMap -> AnswerMap -> RelayMap -> ResPolMap -> Answer -> IO ()
-          onAnswer packetH modAnsM ansM relM stoPol ans = do
+          onAnswer packetH modAnsM ansM relM stoPol ansUR = 
                 when b $ do case rID `M.lookup` relM of
                                 Nothing -> pure ()
-                                Just _ -> packetH . Right $ relayAnswer ans
+                                Just _ -> packetH . Right $ ans
                             when (maybe defaultStorePolitic id $ rID `M.lookup` stoPol) $ insertTO (ansValidity ans) modAnsM ansM (rID, ans)
                     where rID = cResID $ ansCert ans
+                          ans = relayAnswer ansUR
                           b = case rID `lookupTO` ansM of
                                      Just a -> compareAnswer a ans 
                                      Nothing -> True 

@@ -69,7 +69,7 @@ clSendResearch :: Client t -> Handler RessourceID
 clSendResearch c = clSendNeighData c . NeighRes . genResearch
 
 clResearch :: Client t -> RessourceID -> IO ()
-clResearch c rID = do void $ newRepeater (Just 10) 5 $ clSendResearch c rID
+clResearch c rID = do void $ newRepeater Nothing 5 $ clSendResearch c rID
                       resListenHandler (clRessources c) (rID, True)
 
 
