@@ -48,11 +48,10 @@ buildNeighborhood packetE  = do (introE, dataE) <- splitEither packetE
                                 (reqE, reqH) <- newEvent
                                 (resE, resH) <- newEvent
                                 (decoE, decoH) <- newEvent
-                                (nMod, _) <- buildCryptoMap neighTimeOut newNeighEntry introE decoE dataE 
+                                (nMod, _) <- buildCryptoMap neighTimeOut (pure newEventEntry) introE decoE dataE 
                                 allEvents <- mergeEvents $ meChanges nMod
                                 reactimate $ onDataEvent decoH reqH resH <$> allEvents
                                 pure $ Neighborhood nMod reqE resE decoH
-    where newNeighEntry _ = newEventEntry $ pure True
 
 
 onDataEvent :: Handler KeyHash -> Handler Request -> Handler RessourcePacket -> NeighData -> IO ()

@@ -41,6 +41,11 @@ data TestClient = TestClient {tcOfferedR :: [RessourceID],
 
 testValidity = 5 :: Time
 
+
+nombredEuler = zipWith (-) harm $ map log [1..]
+    where harm = scanl1 (+) $ map (1/) [1..]
+
+
 testMain :: [TestClient] -> IO ()
 testMain tcL = do 
               print "Building display"

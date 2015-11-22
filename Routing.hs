@@ -76,10 +76,10 @@ buildRouting uID dhSK newRE reqEuc packetE = do
           relayPackets _ h (PipeClose kID _ _ _ _) = h kID
           relayRequest :: Request -> Request
           relayRequest r = r{reqPosition = reqPosition r + 1}
-          newRoutingEntry _ = newEventEntry $ pure True
+          newRoutingEntry _ = newEventEntry 
           isLocalRequest req = reqPosition req == reqLength req - 1
-          makeNewPipe (Right (req, EventEntry _ e _) ) = maybe (Left $ pure ()) Right $ newRequestToNewPipe dhSK req $ makePipeMessage <$> e
-          makeNewPipe (Left (pID, EventEntry h _ _) ) = Left . h $ pipePacketTimeOut pID
+          makeNewPipe (Right (req, EventEntry _ e) ) = maybe (Left $ pure ()) Right $ newRequestToNewPipe dhSK req $ makePipeMessage <$> e
+          makeNewPipe (Left (pID, EventEntry h _) ) = Left . h $ pipePacketTimeOut pID
           
 
 

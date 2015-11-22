@@ -118,7 +118,7 @@ buildRessources dhPK uID kP packetE = do (resE, ansE) <- splitEither packetE
                                           reactimate $ onOrder (meModifier bhv) <$> orderE
                                           reactimate . filterJust $ apply (fireKey <$> meLastValue bhv) ansE
                                           pure $ (eAddHandler <$>) <$> meChanges bhv
-            where onOrder h (rID,b) = if b then (h . M.insert rID) =<< newEventEntry (pure True)
+            where onOrder h (rID,b) = if b then (h . M.insert rID) =<< newEventEntry 
                                            else h $ M.delete rID
 
 
