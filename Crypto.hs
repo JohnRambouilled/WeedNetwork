@@ -20,40 +20,44 @@ type Payload = RawData
 
 emptyPayload = Data.ByteString.Lazy.empty :: Payload
 
-class SignedClass a where scHash :: a -> RawData
-                          scKeyHash :: a -> KeyHash
-                          scSignature :: a -> Signature
-                          scPushSignature :: a -> Signature -> a
+{- | Classe de type des packets signés -}
+class SignedClass a where scHash :: a -> RawData    -- ^ Hash du packet (utilisé pour signer, et vérifier les signatures)
+                          scKeyHash :: a -> KeyHash     -- ^ KeyHash de la clef publique utilisée pour signer le packet
+                          scSignature :: a -> Signature  -- ^ Signature du packet
+                          scPushSignature :: a -> Signature -> a   -- ^ fonction de remplacement de la signature (permet de signer)
 
-instance SignedClass a => IDable a KeyHash where extractID = scKeyHash
+instance SignedClass a => IDable a KeyHash where extractID = scKeyHash  -- ^ Instance de IDable des packets signés (identifiés par le KeyHash)
 
+
+{- | Classe de type des packets introduisant une clef : il s'agit de packets signés, contenant de plus une clef publique -}
 class SignedClass a => IntroClass a where icPubKey :: a -> PubKey
 
-type CryptoMap t a = ModEvent t (M.Map KeyHash a)
-type CryptoEvent t a i = Event t (Either (KeyHash, a) (i, a))
 
+type CryptoMap t e = BehaviorC t (M.Map KeyHash (EventC e))  -- ^ map des events de packets signés, triés par keyHash
+type CryptoEvent t i e = Event t (Either i (i, EventC e))    -- ^ Event de nouvelles connexions
 
-buildCryptoMap :: (Frameworks t, IntroClass i, SignedClass e, EventManager a e) 
-                => Time -> (i -> IO a) -> Event t i -> Event t KeyHash -> Event t e -> Moment t (CryptoMap t a, CryptoEvent t a i)
-buildCryptoMap t toEntry introE decoE packetE = do modE <- newModEvent M.empty --creation de la Map
-                                                   ceE <- insertCryptoKey modE 
-                                                   reactimate . packetActions $ meLastValue modE    --On fire les packets dans la map
-                                                   pure (restrictModEvent (snd . snd <$>) (flip $ pure id) modE, makeCryptoE <$> ceE)
-    where --insertCryptoKey :: (Frameworks t, IntroClass i, SignedClass e) => ModEvent t (CryptoMapTO e) -> Moment t (CryptoEntryEvent t e i)
-          insertCryptoKey mod = do (ceE, ceH) <- newEvent
-                                   reactimate $ onIntro ceH <$> filterE checkIntro introE
-                                   timeOE <- insertTOEvent t mod $ insertI <$> ceE
-                                   deleteTOReactimate mod decoE
-                                   pure $ union (Left <$> timeOE) (Right <$> ceE)
-                                where onIntro h intro = do entry <- toEntry intro
-                                                           h $ (intro, (checkSig $ icPubKey intro, entry))
-                                      insertI (i, e) = (scKeyHash i, e)
-          packetActions eM = filterJust $ apply (fireKeyWith (fireEntry . snd) <$> eM) packetE 
-          fireEntry (sigCheck, a) e = if sigCheck e then emFire a $ e else pure ()
+{- | Construction de la cryptoMap a partir d'un Event d'introduce, et d'un Event de packets. 
+ -   Les signatures des packets sont vérifiées. Renvoi la Map des events, l'Event de nouvelles connexions  
+ -   [TODO] : gestion des refresh? -}
+buildCryptoMap :: (Frameworks t, IntroClass i, SignedClass e) => Event t i -> Event t e -> Moment t (CryptoMap t e, CryptoEvent t i e)
+buildCryptoMap introE packetE = do (cryptoE, cryptoH) <- newEvent
+                                   (buildE, buildH) <- newEvent
+                                   cMap <- buildEventCMapWith buildE
+                                   reactimate $ apply (onIntro cryptoH buildH <$> bmLastValue cMap) $ filterE checkIntro introE
+                                   fireKeyBhv (bmLastValue cMap) packetE
+                                   pure ((eEventC <$>) <$> bmBhvC cMap, cryptoE)
+    where makeCloseEvent i = do (h,ce) <- newEventC
+                                let ce' = ce{ceAddHandler = filterSig i $ ceAddHandler ce}
+                                pure (i, EventEntry h ce)
+          filterSig i = filterIO (pure . checkSig (icPubKey i))
+          onIntro :: (IntroClass i, SignedClass e) => Handler (Either i (i, EventC e)) -> Handler ((KeyHash, EventC e), EventEntry e) -> M.Map KeyHash (EventEntry e) -> i -> IO ()
+          onIntro ch bh m i = case scKeyHash i `M.lookup` m of 
+                                  Just _ -> ch $ Left i
+                                  Nothing -> do (i, ee) <- makeCloseEvent i
+                                                bh ((scKeyHash i, eEventC ee), ee)
+                                                ch $ Right (i, eEventC ee)
+                                
           checkIntro i = checkSig (icPubKey i) i -- && computeHashFromKey (icPubKey i) == scKeyHash i 
-          makeCryptoE (Right (i, (_,a))) = Right (i,a)
-          makeCryptoE (Left (i, (_,a))) = Left (i,a)
-
 
 checkSig :: SignedClass a => PubKey -> a -> Bool
 checkSig k a  = checkSignature k (scSignature a) $ scHash a

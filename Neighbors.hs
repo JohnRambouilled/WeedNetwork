@@ -2,13 +2,12 @@
 module Neighbors where
 
 import Crypto
-import Routing
+import PipePackets
 import Class
 import Ressource
 import Timer
 
 import Data.Binary
-import qualified Data.Map as M
 import Reactive.Banana
 import Reactive.Banana.Frameworks
 import GHC.Generics

@@ -19,6 +19,7 @@ import Neighbors
 import Timer
 import Ressource
 import Routing
+import PipePackets
 import Pipes
 
 type ClientShow = [(String, [AddHandler String])]

@@ -14,25 +14,42 @@ import Control.Monad
 class EventManager a e where emAddHandler :: a -> AddHandler e
                              emFire :: a -> Handler e
 
-    -- | data minimale d'Event
-data EventEntry e = EventEntry { eFire :: Handler e,
-                                 eAddHandler :: AddHandler e}
-instance EventManager (EventEntry e) e where emAddHandler = eAddHandler
+data EventC e = EventC {ceAddHandler :: AddHandler e,
+                        ceClose :: Handler (),
+                        ceCloseEvent :: AddHandler ()}
+instance Functor EventC where fmap f e = e{ceAddHandler = f <$> ceAddHandler e}
+
+
+data EventEntry e = EventEntry {eFire :: Handler e,
+                                eEventC :: EventC e}
+instance EventManager (EventEntry e) e where emAddHandler = ceAddHandler . eEventC 
                                              emFire = eFire
 
-    -- | Behavior container : LastValue (Behavior a)
-    --                        Changes (Event a)
-    --                        Modifier ((a -> a) -> IO ())
-    --  Derniere valeur, event des modifications, et modifieur.
+data BehaviorC t a = BehaviorC {bcLastValue :: Behavior t a, 
+                                bcChanges :: Event t a}
+instance Functor (BehaviorC t) where fmap f b = BehaviorC (f <$> bcLastValue b) (f <$> bcChanges b)
+
 type Modifier a = Handler (a -> a)
-data ModEvent t a = ModEvent {meLastValue :: Behavior t a, 
-                              meChanges :: Event t a,
-                              meModifier :: Modifier a}
+data BehaviorMod t a = BehaviorMod {bmBhvC :: BehaviorC t a,
+                                    bmModifier :: Modifier a}
+bmLastValue = bcLastValue . bmBhvC
+bmChanges = bcChanges . bmBhvC
+
+
+buildCloseHandle :: (Ord k, Frameworks t) => Behavior t (EventCMap k e) -> Moment t (k -> IO ())
+buildCloseHandle mapB = do (closeE, closeH) <- newEvent
+                           reactimate $ apply (close <$> mapB) closeE
+                           pure closeH
+        where close map k = case k `M.lookup` map of
+                                Nothing -> pure ()
+                                Just ec -> ceClose ec $ ()
+
 
 type ParamMap a k e = M.Map k (a e)  -- ^ syntax-helper pour les types paramétriques
 type EventEntryMap k e = ParamMap EventEntry k e  -- ^ Map k (EventEntry e) : map d'eventEntry
 type EventMap k e = ParamMap AddHandler k e       -- ^ AddHandler map : version sans fire
 
+type EventCMap k e = M.Map k (EventC e)
 
 
 -- | Class de type des data contenant une clef d'identification
@@ -46,10 +63,13 @@ class (Ord k) => IDable e k where
 
 -- | Extraction d'un event-compilé d'une data. (par exemple l'union de tout les event d'une map)
 class Mergeable a e where allAddHandlers :: a -> AddHandler e
-instance Mergeable (EventEntry e) e where allAddHandlers = eAddHandler
+instance Mergeable (EventC e) e where allAddHandlers = ceAddHandler
+instance Mergeable (EventEntry e) e where allAddHandlers = ceAddHandler . eEventC
 instance Mergeable (AddHandler e) e where allAddHandlers = id
 instance Mergeable a e => Mergeable (M.Map k a) e where allAddHandlers = mergeAddHandlersList . (allAddHandlers <$>) . M.elems
 
+
+ 
 -- | Switch : a chaque nouvelle valeur a, l'event-compilé de a est utilisé comme nouvel event.
 mergeEvents :: (Frameworks t, Mergeable a e) => Event t a -> Moment t (Event t e)
 mergeEvents = mergeAddHandlers . (allAddHandlers <$>)
@@ -78,8 +98,17 @@ mergeAddHandlersList l = AddHandler $ \h -> sequence_ <$> forM l (`register` h)
 --      modifieur du ModEvent
 --      dernière valeur du ModEvent
 --      valeur de l'Event
-applyMod :: (Modifier a -> a -> e -> b) -> ModEvent t a -> Event t e -> Event t b
-applyMod f m = apply (f (meModifier m) <$> meLastValue m) 
+applyMod :: (Modifier a -> a -> e -> b) -> BehaviorMod t a -> Event t e -> Event t b
+applyMod f m = apply (f (bmModifier m) <$> bcLastValue (bmBhvC m)) 
+
+fireKeyBhv :: (Frameworks t, IDable e k, EventManager a e) =>  Behavior t (M.Map k a) -> Event t e -> Moment t ()
+fireKeyBhv bhv e = reactimate . filterJust $ (f <$> bhv) <@> e
+    where f map e = fireKey map e
+
+-- | Close if predicate is True
+closeOnEC :: (e -> Bool) -> EventC e -> IO (IO ()) 
+closeOnEC f ec = ceAddHandler ec `register` cl
+    where cl e = if f e then ceClose ec $ () else pure ()
 
 {-| Fires the value on the specified key event |-}
 fireKey :: (IDable e k, EventManager a e) => M.Map k a -> e -> Maybe (IO ())
@@ -99,12 +128,10 @@ kEvents m k = emAddHandler <$> k `M.lookup` m
 -- | permet de restreindre un ModEvent a une sous-partie : 
 -- necessite une fonction a -> b de restriction (exctraction de la sous-partie)
 -- et une fonction a -> b -> a de remplacement de la sous partie dans l'ensemble
-restrictModEvent :: (a -> b) -> (a -> b -> a) -> ModEvent t a -> ModEvent t b
-restrictModEvent f app m = m{meChanges = f <$> meChanges m,
-                             meLastValue = f <$> meLastValue m,
-                             meModifier = meModifier m . red}
+restrictBehaviorMod :: (a -> b) -> (a -> b -> a) -> BehaviorMod t a -> BehaviorMod t b
+restrictBehaviorMod f app m = m{bmBhvC = f <$> bmBhvC m,
+                                bmModifier = bmModifier m . red}
         where red g a = app a $ g $ f a
-
 
 
                 -- ***** Spliting the Events *****
@@ -124,17 +151,37 @@ splitEither e = do ((leftE, leftH), (rightE, rightH)) <- (,) <$> newEvent <*> ne
 
 
                 -- ***** Constructeurs *****
+
+buildEventCMap ::  (Frameworks t, Ord k) => Event t (k, EventC e) -> Moment t (BehaviorMod t (EventCMap k e))
+buildEventCMap = buildEventCMapWith . ((\(k,e) -> ((k,e), e)) <$>)
+
+buildEventCMapWith :: (Frameworks t, Ord k) => Event t ((k, EventC e), a) -> Moment t (BehaviorMod t (M.Map k a))
+buildEventCMapWith e = do map <- newBehaviorMod M.empty
+                          reactimate $ applyMod insert map e
+                          pure map
+    where insert mod map ((k,ce),a) = do mod $ M.insert k a
+                                         ceCloseEvent ce `register` pure (mod $ M.delete k)
+                                         pure ()
+
+newEventC :: IO (Handler e, EventC e)
+newEventC = do (eE, eF) <- newAddHandler
+               (cE, cF) <- newAddHandler
+               pure (eF, EventC eE cF cE)
+
 newEventEntry :: IO (EventEntry e)
-newEventEntry = do (eE,eF) <- newAddHandler
-                   pure $ EventEntry eF eE
+newEventEntry = do (eH,eC) <- newEventC
+                   pure $ EventEntry eH eC
 
 -- | Prend une valeur initiale, et construit un nouveau ModEvent
-newModEvent :: Frameworks t => a -> Moment t (ModEvent t a)
-newModEvent i = do (e, h) <- newEvent
-                   let (e', b) = mapAccum i $ (\f a -> (f a, f a)) <$> e
-                   pure $ ModEvent b e' h
+newBehaviorMod :: Frameworks t => a -> Moment t (BehaviorMod t a)
+newBehaviorMod i = do (e, h) <- newEvent
+                      let (e', b) = mapAccum i $ (\f a -> (f a, f a)) <$> e
+                      pure $ BehaviorMod (BehaviorC b e') h
 
-
+liftIOEvent :: Frameworks t => Event t (IO a) -> Moment t (Event t a)
+liftIOEvent e = do (e', h) <- newEvent
+                   reactimate $ (h =<<) <$> e
+                   pure e'
 
 -- | DO NOT USE : ça a l'air cool, mais ça leak! Mais je sais pas pourquoi, alors je laisse ça la
 mergeAddHandlersLeak :: Frameworks t => Event t [AddHandler e] -> Moment t (Event t e)

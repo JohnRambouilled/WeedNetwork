@@ -13,17 +13,48 @@ import Class
 type TimeOutID = ThreadId
 type Time = POSIXTime
 
-type TimeMap k a = M.Map k (TimeOutEntry, a)
-
-
-
 data TimeOutEntry = TimeOutEntry {toeID :: TimeOutID,
                                     toeAction :: IO ()}
 
-lookupTO :: Ord k => k -> TimeMap k a -> Maybe a
-lookupTO k m = snd <$> M.lookup k m
+
+buildTimeOut :: (Frameworks t, Ord k) => Time -> Event t (k, EventC e) -> Event t k -> Moment t ()
+buildTimeOut t addE refE = do buildE <- liftIOEvent $ genTime <$> addE
+                              toMap <- buildEventCMapWith buildE
+                              reactimate $ applyMod refresh toMap refE
+    where genTime (k,ce) = do toE <- newTimeOutEntry t $ ceClose ce $ ()
+                              pure ((k,ce), toE)
+          refresh mod toMap k = case k `M.lookup` toMap of
+                                  Nothing -> pure ()
+                                  Just toE -> mod . M.insert k =<< refreshTimeOutEntry toE
 
 
+newRepeater :: Maybe Int -> Time -> IO () -> IO TimeOutEntry
+newRepeater nM t a = let action = (case nM of
+                                    Just n -> replicateM_ n
+                                    Nothing -> forever) $ waitFor t >> a 
+                    in do a
+                          TimeOutEntry <$> forkIO action <*> pure action
+
+newTimeOutEntry ::  Time -> IO () -> IO TimeOutEntry 
+newTimeOutEntry delay close = do let action = waitFor delay >> close
+                                 id <- forkIO action
+                                 pure $ TimeOutEntry id action 
+
+refreshTimeOutEntry :: TimeOutEntry -> IO TimeOutEntry
+refreshTimeOutEntry e = do killThread $ toeID e
+                           id <- forkIO $ toeAction e
+                           pure e{toeID = id}
+
+killTimeOut :: TimeOutEntry -> IO ()
+killTimeOut = killThread . toeID
+
+waitFor :: Time -> IO ()
+waitFor = threadDelay . round . (*10^6)
+
+getTime :: MonadIO m => m Time
+getTime = liftIO $ getPOSIXTime
+
+{-
 insertTOEvent :: (Ord k, Frameworks t ) => Time -> ModEvent t (TimeMap k a) -> Event t (k, a) -> Moment t (Event t (k,a))
 insertTOEvent t me e = do (decoE, decoH) <- newEvent
                           reactimate $ applyMod (insertTOWith t (flip $ curry decoH)) me e
@@ -56,29 +87,4 @@ deleteTO mod map k = case k `M.lookup` map of
                         Nothing -> pure ()
                         Just e -> do killTimeOut $ fst e
                                      mod $ M.delete k
-
-newRepeater :: Maybe Int -> Time -> IO () -> IO TimeOutEntry
-newRepeater nM t a = let action = (case nM of
-                                    Just n -> replicateM_ n
-                                    Nothing -> forever) $ waitFor t >> a 
-                    in do a
-                          TimeOutEntry <$> forkIO action <*> pure action
-
-newTimeOutEntry ::  Time -> IO () -> IO TimeOutEntry 
-newTimeOutEntry delay close = do let action = waitFor delay >> close
-                                 id <- forkIO action
-                                 pure $ TimeOutEntry id action 
-
-refreshTimeOutEntry :: TimeOutEntry -> IO TimeOutEntry
-refreshTimeOutEntry e = do killThread $ toeID e
-                           id <- forkIO $ toeAction e
-                           pure e{toeID = id}
-
-killTimeOut :: TimeOutEntry -> IO ()
-killTimeOut = killThread . toeID
-
-waitFor :: Time -> IO ()
-waitFor = threadDelay . round . (*10^6)
-
-getTime = getPOSIXTime
-
+-}

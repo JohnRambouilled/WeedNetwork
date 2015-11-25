@@ -8,6 +8,7 @@ import qualified Data.Map as M
 import Ressource
 import Neighbors
 import Routing
+import PipePackets
 import Pipes
 import Ed25519
 import Crypto

@@ -4,6 +4,7 @@ module Pipes where
 import Crypto
 import Routing 
 import Class
+import PipePackets
 
 
 import Reactive.Banana
@@ -16,6 +17,8 @@ type NewSourceEvent t = Event t (SourceID, AddHandler NewPipe)
 
 
 type PipesMap = M.Map PipeID (AddHandler PipeMessage, PipesSender)
+
+
 
 data PipeManagerEntry =  PipeManagerEntry { pmeFireNP :: Handler NewPipe,
                                             pmeUnregister :: IO (),
