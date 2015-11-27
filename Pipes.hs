@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric, TypeSynonymInstances #-}
 module Pipes where
 
 import Crypto
@@ -11,6 +11,54 @@ import Reactive.Banana
 import Reactive.Banana.Frameworks
 import qualified Data.Map as M
 
+
+type SourceMap = M.Map SourceID SourceEntry
+
+type SourceEntry = EventEntry PipeMessage
+
+data PipeEntry = PipeEntry {pePipe :: EventC PipeMessage,
+                            peSender :: Handler PipeMessage}
+
+type PipeMap = M.Map PipeID PipeEntry
+
+buildSourceMap :: Frameworks t => Event t NewPipe -> Moment t (BehaviorC t SourceMap)
+buildSourceMap newPipeE = do sMap <- newBehaviorMod M.empty
+                             reactimate $ applyMod onNewPipe sMap newPipeE
+                             pure $ bmBhvC sMap
+    where onNewPipe ::  Modifier SourceMap -> SourceMap -> NewPipe -> IO ()
+          onNewPipe mod map np = case sID `M.lookup` map of
+                                       Just (_,h) -> h np
+                                       Nothing -> do sE <- newSourceEntry
+                                                     snd sE $ np
+                                                     mod $ M.insert sID sE
+                    where sID = npSource np
+                    
+
+
+newSourceEntry :: IO (SourceEntry, Handler NewPipe)
+newSourceEntry = do (sourceE, sourceH) <- newEventC
+                    (sendE, sendH) <- newAddHandler
+                    (newPipeE, newPipeH) <- newAddHandler
+                    actuate =<< compile (buildSource newPipeE sourceH sendE)
+                    pure (EventEntry sourceE sendH, newPipeH)
+
+
+
+buildSource :: Frameworks t => AddHandler NewPipe -> Handler PipeMessage -> AddHandler PipeMessage -> Moment t ()
+buildSource npERaw receiveH toSendERaw = do (newPipeE, toSendE) <- (,) <$> fromAddHandler npERaw <*> fromAddHandler toSendERaw
+                                            pipeMap <- buildEventCMapWith $ makePipeEntry <$> newPipeE
+                                            receiveE <- mergeEvents $ (pePipe <$>) <$> bmChanges pipeMap
+                                            reactimate $ receiveH <$> receiveE
+                                            reactimate $ apply (sendToSource <$> bmLastValue pipeMap) toSendE
+    where sendToSource :: PipeMap -> Handler PipeMessage 
+          sendToSource pMap = sendOnPipe . head $ M.elems pMap
+          sendOnPipe :: PipeEntry -> Handler PipeMessage
+          sendOnPipe = peSender
+          makePipeEntry :: NewPipe -> ((PipeID, EventC PipeMessage), PipeEntry)
+          makePipeEntry np = ((npPipeID np, npMessageEvent np), PipeEntry (npMessageEvent np) $ npSender np)
+
+
+{-
 type PipesSender = Handler PipeMessage
 type PipeCloser = Handler (SourceID, PipeID)
 type NewSourceEvent t = Event t (SourceID, AddHandler NewPipe)
@@ -120,3 +168,4 @@ deletePipe pID pme = pme{pmePipeMap = M.delete pID $ pmePipeMap pme}
 showDataManager :: Frameworks t => Event t DataManager -> Moment t (Event t String)
 showDataManager e = mergeEvents $ M.mapWithKey showE <$> e
     where showE sID ah = (("Source : " ++ show sID ++ " -> ") ++) . show <$> ah
+    -}

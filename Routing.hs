@@ -23,7 +23,7 @@ type RoutingMapBhv t = BehaviorC t RoutingMap
 data NewPipe = NewPipe {npRoad :: Road,
                         npSource :: SourceID,
                         npPubKey :: PubKey,
-                        npSender :: PipeMessage -> PipePacket,
+                        npSender :: Handler PipeMessage,
                         npPipeID :: PipeID,
                         npTime :: Time,
                         npContent :: RawData,
@@ -34,10 +34,10 @@ data NewRoad = NewRoad {nrRoad :: Road,
                         nrSourceID :: SourceID,
                         nrContent :: RawData}
 
-newRequestToNewPipe :: DHPrivKey -> NewRequest -> EventC PipeMessage -> Maybe NewPipe
-newRequestToNewPipe uk (IncomingRequest (Request n _ r epk t pK pID _ cnt)) e = (\s -> NewPipe r (head r) pK s pID t cnt e) <$> sender
-            where sender = pipeMessageToPipePacket n False <$> decryptKeyPair epk uk
-newRequestToNewPipe _ (OutgoingRequest (Request _ _ r _ t pK pID _ cnt) sender) e = Just $ NewPipe r (head r) pK sender pID t cnt e
+newRequestToNewPipe :: Handler PipePacket -> DHPrivKey -> NewRequest -> EventC PipeMessage -> Maybe NewPipe
+newRequestToNewPipe sendH uk (IncomingRequest (Request n _ r epk t pK pID _ cnt)) e = (\s -> NewPipe r (head r) pK s pID t cnt e) <$> sender
+            where sender = (sendH <$>) . pipeMessageToPipePacket n False <$> decryptKeyPair epk uk 
+newRequestToNewPipe sendH _ (OutgoingRequest (Request _ _ r _ t pK pID _ cnt) sender) e = Just $ NewPipe r (head r) pK (sendH . sender) pID t cnt e
 
 
 
@@ -45,7 +45,7 @@ data Routing t = Routing {routingLocMap :: RoutingMapBhv t,
                           routingRelMap :: RoutingMapBhv t,
 
                           routingNewPipes :: Event t NewPipe,
-                          routingRelayedPackets :: Event t PipePacket,
+                          routingOutgoingPackets :: Event t PipePacket,
                           routingOutgoingRequest :: Event t Request,
 
                           routingLocClose :: Handler PipeID,
@@ -58,6 +58,7 @@ pipeTimeOut = 10 :: Time
 
 buildRouting :: Frameworks t => UserID -> DHPrivKey -> Event t NewRoad -> Event t Request -> Event t PipePacket -> Moment t (Routing t)
 buildRouting uID dhSK newRoadE reqEuc packetE = do
+                     (packetOutE, packetOutH) <- newEvent
                      (reqLogs, reqE) <- splitEither =<< liftIOEvent (checkRequest uID <$> reqEuc) --Checking request validity
                      (reqRelE, reqLocE) <- splitEvent isLocalRequest reqE                         --Splitting local from relayed requests
                      reqOutE <- routOpenPipe newRoadE                                             --Building Request from NewRoad 
@@ -73,9 +74,10 @@ buildRouting uID dhSK newRoadE reqEuc packetE = do
                      (locRefreshE, locNewE) <- splitEither cryptoLocE
                      let logs = unions [("AcceptedRequest : " ++) . show <$> reqE,
                                         ("Rejected request : " ++) <$> reqLogs]
-                         newPipeE = filterJust $ makeNewPipe <$> locNewE                         --Event of NewPipes
+                         newPipeE = filterJust $ makeNewPipe packetOutH <$> locNewE                         --Event of NewPipes
+                         newReqE = union relNewE $ (\(r,e) -> (nrReq r,e)) <$> locNewE 
                      [relClose, locClose] <- forM [relayMap, localMap] $ buildCloseHandle . bcLastValue     --Generating close handles 
-                     pure $ Routing localMap relayMap newPipeE relayPacketE requestOut locClose relClose logs      --Producing output
+                     pure $ Routing localMap relayMap newPipeE (union packetOutE relayPacketE) requestOut locClose relClose logs      --Producing output
     where relayPackets :: PipePacket -> PipePacket
           relayPackets p = p{pipePosition = if pipeDirection p then pipePosition p + 1 else pipePosition p - 1} 
           relayRequest :: Request -> Request
@@ -86,7 +88,7 @@ buildRouting uID dhSK newRoadE reqEuc packetE = do
             where closeP eC = void $ ceAddHandler eC `register` filterPipeClose (ceClose eC)
                   filterPipeClose h (PipeClose _ _ _ _ _) = h ()
                   filterPipeClose _ _ = pure ()
-          makeNewPipe (req, e ) = newRequestToNewPipe dhSK req $ makePipeMessage <$> e
+          makeNewPipe sendH (req, e ) = newRequestToNewPipe sendH dhSK req $ makePipeMessage <$> e
           
           
 
