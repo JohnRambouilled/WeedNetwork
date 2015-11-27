@@ -33,18 +33,16 @@ defaultListenPolitic = False
 type LocalAnswer = (Time, RawData) --Durée de validité, et contenu
 
 type ResPolMap = M.Map RessourceID Bool
-type ResPolMapBhv t = ModEvent t ResPolMap
+type ResPolMapBhv t = BehaviorMod t ResPolMap
 
 type AnswerMap = TimeMap RessourceID Answer --Map des Answers disponnibles
-type AnswerMapBhv t = ModEvent t AnswerMap
+type AnswerMapBhv t = BehaviorMod t AnswerMap
 
 type LocalAnswerMap = M.Map RessourceID LocalAnswer
-type LocalAnswerMapBhv t = ModEvent t LocalAnswerMap
-
-type AnswerEventMap = EventEntryMap RessourceID Answer --Map des Answers écoutées
+type LocalAnswerMapBhv t = BehaviorMod t LocalAnswerMap
 
 type RelayMap = TimeMap RessourceID ()
-type RelayMapBhv t = ModEvent t RelayMap 
+type RelayMapBhv t = BehaviorMod t RelayMap 
 
 --type LocalRessourceMap = M.Map RessourceID (Int, Time, RawData) --Nombre de répetition, et temps d'attente, contenue des réponses 
 --genLocalResMap :: [RessourceID] -> LocalRessourceMap
@@ -66,18 +64,18 @@ genResearch :: RessourceID -> RessourcePacket
 genResearch rID = Left $ Research rID ttlMax [] emptyPayload
 
 offerRessource :: Frameworks t => Ressources t -> (Time, RawData, RessourceID) -> IO ()
-offerRessource res (t,d,rID) = meModifier (resLocalAnswerMap res) $ M.insert rID (t,d)
+offerRessource res (t,d,rID) = bmModifier (resLocalAnswerMap res) $ M.insert rID (t,d)
 
 buildRessources :: Frameworks t => DHPubKey -> UserID -> KeyPair -> Event t RessourcePacket -> Moment t (Ressources t)
 buildRessources dhPK uID kP packetE = do (resE, ansE) <- splitEither packetE
-                                         [relPol, stoPol] <- forM [1..2] $ pure $ newModEvent M.empty
-                                         ansB <- newModEvent M.empty
-                                         locAnsB <- newModEvent M.empty
-                                         relB <- newModEvent M.empty
+                                         [relPol, stoPol] <- forM [1..2] $ pure $ newBehaviorMod M.empty
+                                         ansB <- newBehaviorMod M.empty
+                                         locAnsB <- newBehaviorMod M.empty
+                                         relB <- newBehaviorMod M.empty
                                          (listenE, listenH) <- newEvent
                                          (packetOE, packetOH) <- newEvent
-                                         let onResB = onResearch packetOH (meModifier relB) <$> meLastValue relB <*> meLastValue ansB <*> meLastValue locAnsB <*> meLastValue relPol
-                                             onAnsB = onAnswer packetOH (meModifier ansB) <$> meLastValue ansB <*> meLastValue relB <*> meLastValue stoPol
+                                         let onResB = onResearch packetOH (bmModifier relB) <$> bmLastValue relB <*> bmLastValue ansB <*> bmLastValue locAnsB <*> bmLastValue relPol
+                                             onAnsB = onAnswer packetOH (bmModifier ansB) <$> bmLastValue ansB <*> bmLastValue relB <*> bmLastValue stoPol
                                          reactimate $ apply onResB resE
                                          reactimate $ apply onAnsB ansE
                                          listenB <- buildListenMap listenE ansE
@@ -113,10 +111,10 @@ buildRessources dhPK uID kP packetE = do (resE, ansE) <- splitEither packetE
                                      Nothing -> True 
 
           buildListenMap :: Frameworks t => Event t (RessourceID, Bool) -> Event t Answer -> Moment t (Event t (EventMap RessourceID Answer))
-          buildListenMap orderE ansE = do bhv <- newModEvent M.empty 
-                                          reactimate $ onOrder (meModifier bhv) <$> orderE
-                                          reactimate . filterJust $ apply (fireKey <$> meLastValue bhv) ansE
-                                          pure $ (eAddHandler <$>) <$> meChanges bhv
+          buildListenMap orderE ansE = do bhv <- newBehaviorMod M.empty 
+                                          reactimate $ onOrder (bmModifier bhv) <$> orderE
+                                          reactimate . filterJust $ apply (fireKey <$> bmLastValue bhv) ansE
+                                          pure $ (eAddHandler <$>) <$> bmChanges bhv
             where onOrder h (rID,b) = if b then (h . M.insert rID) =<< newEventEntry 
                                            else h $ M.delete rID
 
@@ -140,55 +138,6 @@ sendAnswer dhPK pK uID h (v,c) rID = do t <- getTime
 
 
 
-{-
-buildRelayMap :: Frameworks t => DHPubKey -> UserID -> KeyPair -> LocalRessourceMap -> Event t Research -> Event t Answer -> Moment t (RelayMapBhv t, Event t RessourcePacket)
-buildRelayMap dhPK uID (pK,sK) locRMap resE ansE = do relModE <- newModEvent M.empty
-                                                      (resFE, locAnsE) <- answerResearch resE 
-                                                      let resP = filterJust $  applyMod onResearch relModE resFE 
-                                                          ansP = filterJust $ applyMod (pure onAnswer) relModE ansE 
-                                                      insertTOReactimate_ relayTimeOut relModE $ (\r -> (resID r, ())) <$> resP
-                                                      pure (relModE, unions [Left <$> resP, Right <$> ansP, Right <$> locAnsE ])
-        where answerResearch :: Frameworks t => Event t Research -> Moment t (Event t Research, Event t Answer)
-              answerResearch e = do (ansE, ansH) <- newEvent
-                                    let e' = f ansH <$> e
-                                    reactimate $ fst  <$> e'
-                                    pure (filterJust $ snd  <$> e', ansE)
-                        where f h res = case resID res `M.lookup` locRMap of
-                                            Nothing -> (pure (), Just res)
-                                            Just (n,t,c) -> (void . newRepeater (Just n) t $ sendAnswer h c (resID res), Nothing)
-
-              onResearch :: Modifier RelayMap -> RelayMap -> Research -> Maybe Research
-              onResearch mod map res = case resID res `M.lookup` map of
-                                            Just _ -> Nothing
-                                            Nothing ->  Just $ relayRes res
-              onAnswer :: RelayMap -> Answer -> Maybe Answer
-              onAnswer map ans = pure (relayAns ans) <$> extractID ans `M.lookup` map 
-              relayAns :: Answer -> Answer
-              relayAns a = a{ansTTL = ansTTL a - 1, ansRoad = uID : ansRoad a}
-              relayRes :: Research -> Research
-              relayRes res = res{resTTL = resTTL res - 1}
-              sendAnswer :: Handler Answer -> (Time, RawData) -> RessourceID -> IO ()
-              sendAnswer h c rID = do t <- getTime
-                                      let cert = RessourceCert dhPK pK t rID emptySignature
-                                      h $ Answer cert ttlMax [uID] uID c
-
-
-
-
-{- | Event des recherches sortantes, et des Answer entrantes. Construit la map des Event Answer nous concernants.-}
-buildAnswerMap :: Frameworks t => Event t RessourceID -> Event t Answer -> Moment t (AnswerMapBhv t)
-buildAnswerMap rE aE = do  aModE <- newModEvent M.empty
-                           -- listening the researchs
-                           reactimate $ applyMod onResearch aModE rE
-                           reactimate . filterJust $ apply (fireKey <$> meLastValue aModE) aE
-                           pure aModE
-    where onResearch :: Modifier AnswerMap -> AnswerMap -> RessourceID -> IO ()
-          onResearch order aMap r = case r `M.lookup` aMap of
-                                      Just _ -> pure ()
-                                      Nothing ->  do e <- newEventEntry $ (r==) . extractID
-                                                     order $ M.insert r e
-
--}
 answerToNewRoad :: UserID -> Answer -> NewRoad
 answerToNewRoad uID = NewRoad <$> (uID :) . ansRoad <*> cResSourceDHKey . ansCert <*> ansSourceID <*> pure (encode "wooobdidoo")
 

@@ -77,14 +77,14 @@ compileClient = do
                                                                                                 <*> eh (nbhForceDeco . clNeighbors)
                                                                                                 <*> eh (pipesClosePipe . clPipes)
                                                                                                 <*> eh (pipesRemoveSource . clPipes) )
-                                                                            <*> (ClientEvents   <$> em (nbhNeighMap . clNeighbors)
+                                                                            <*> (ClientEvents   <$> ec (nbhNeighMap . clNeighbors)
                                                                                                 <*> ( (,) <$> eah (nbhRequests . clNeighbors) 
                                                                                                           <*> eah (nbhRessources . clNeighbors) )
-                                                                                                <*> eah (meChanges . resAnswerMap . clRessources)
-                                                                                                <*> eah (meChanges . resLocalAnswerMap . clRessources)
+                                                                                                <*> eah (bmChanges . resAnswerMap . clRessources)
+                                                                                                <*> eah (bmChanges . resLocalAnswerMap . clRessources)
                                                                                                 <*> eah (resListenMap . clRessources)
-                                                                                                <*> em (routingLocMap . clRouting)
-                                                                                                <*> em (routingRelMap . clRouting)
+                                                                                                <*> ec (routingLocMap . clRouting)
+                                                                                                <*> ec (routingRelMap . clRouting)
                                                                                                 <*> eah clReceived 
                                                                                                 <*> eah (routingLogs . clRouting)
                                                                                                 <*> eah exctractPipeManager
@@ -106,10 +106,12 @@ compileClient = do
           eah ::  BananEvent a -> WBanan (AddHandler a)
           eah = extractEvent
           exctractPipeManager :: Client t -> Event t (M.Map SourceID PipesMap)
-          exctractPipeManager c = (pmePipeMap <$>) <$> (meChanges . pipesManager $ clPipes c)
+          exctractPipeManager c = (pmePipeMap <$>) <$> (bmChanges . pipesManager $ clPipes c)
 
-          em :: (forall t. Frameworks t => Client t -> ModEvent t (EventEntryMap k a)) -> WBanan (AddHandler (EventMap k a))
-          em f = eah (((eAddHandler <$>) <$>) .  meChanges . f)
+          em :: (forall t. Frameworks t => Client t -> BehaviorMod t (EventEntryMap k a)) -> WBanan (AddHandler (EventMap k a))
+          em f = eah (((eAddHandler <$>) <$>) .  bmChanges . f)
+          ec :: (forall t. Frameworks t => Client t -> BehaviorC t (EventCMap k a)) -> WBanan (AddHandler (EventMap k a))
+          ec f = eah (((ceAddHandler <$>) <$>) .  bcChanges . f)
           eh :: BananHandler a -> WBanan (Handler a)
           eh = extractHandler
 

@@ -22,6 +22,10 @@ instance Functor EventC where fmap f e = e{ceAddHandler = f <$> ceAddHandler e}
 
 data EventEntry e = EventEntry {eFire :: Handler e,
                                 eEventC :: EventC e}
+eAddHandler = ceAddHandler . eEventC
+eClose = ceClose . eEventC
+eCloseEvent = ceCloseEvent . eEventC
+
 instance EventManager (EventEntry e) e where emAddHandler = ceAddHandler . eEventC 
                                              emFire = eFire
 

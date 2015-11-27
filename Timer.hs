@@ -13,16 +13,18 @@ import Class
 type TimeOutID = ThreadId
 type Time = POSIXTime
 
+type TimeMap k a = M.Map k (TimeOutEntry, a)
+
 data TimeOutEntry = TimeOutEntry {toeID :: TimeOutID,
                                     toeAction :: IO ()}
 
 
-buildTimeOut :: (Frameworks t, Ord k) => Time -> Event t (k, EventC e) -> Event t k -> Moment t ()
+buildTimeOut :: (Frameworks t, IDable i k) => Time -> Event t (i, EventC e) -> Event t k -> Moment t ()
 buildTimeOut t addE refE = do buildE <- liftIOEvent $ genTime <$> addE
                               toMap <- buildEventCMapWith buildE
                               reactimate $ applyMod refresh toMap refE
-    where genTime (k,ce) = do toE <- newTimeOutEntry t $ ceClose ce $ ()
-                              pure ((k,ce), toE)
+    where genTime (i,ce) = do toE <- newTimeOutEntry t $ ceClose ce $ ()
+                              pure ((extractID i,ce), toE)
           refresh mod toMap k = case k `M.lookup` toMap of
                                   Nothing -> pure ()
                                   Just toE -> mod . M.insert k =<< refreshTimeOutEntry toE
@@ -54,6 +56,25 @@ waitFor = threadDelay . round . (*10^6)
 getTime :: MonadIO m => m Time
 getTime = liftIO $ getPOSIXTime
 
+
+lookupTO :: Ord k => k -> TimeMap k a -> Maybe a
+lookupTO k m = snd <$> k `M.lookup` m
+
+deleteTO :: Ord k => Modifier (TimeMap k a) -> TimeMap k a -> k -> IO ()
+deleteTO mod map k = case k `M.lookup` map of
+                        Nothing -> pure ()
+                        Just e -> do killTimeOut $ fst e
+                                     mod $ M.delete k
+
+insertTO :: Ord k => Time -> Modifier (TimeMap k a) -> TimeMap k a -> (k, a) -> IO ()
+insertTO t = insertTOWith t $ pure . pure . pure ()
+
+insertTOWith :: Ord k => Time -> (a -> k -> IO ()) -> Modifier (TimeMap k a) -> TimeMap k a -> (k, a) -> IO ()
+insertTOWith delay f mod map (k, a) = do e <- newTimeOutEntry delay $ f a k >> (mod $ M.delete k)
+                                         case k `M.lookup` map of Nothing -> pure ()
+                                                                  Just e -> killTimeOut $ fst e
+                                         mod $ M.insert k (e,a)
+
 {-
 insertTOEvent :: (Ord k, Frameworks t ) => Time -> ModEvent t (TimeMap k a) -> Event t (k, a) -> Moment t (Event t (k,a))
 insertTOEvent t me e = do (decoE, decoH) <- newEvent
@@ -70,21 +91,9 @@ insertTOReactimate t f me = reactimate . applyMod (insertTOWith t f) me
 insertTOReactimate_ :: (Ord k, Frameworks t) => Time -> ModEvent t (TimeMap k a) -> Event t (k, a) -> Moment t ()
 insertTOReactimate_ t = insertTOReactimate t $ pure . pure . pure ()
 
-insertTO :: Ord k => Time -> Modifier (TimeMap k a) -> TimeMap k a -> (k, a) -> IO ()
-insertTO t = insertTOWith t $ pure . pure . pure ()
 
-insertTOWith :: Ord k => Time -> (a -> k -> IO ()) -> Modifier (TimeMap k a) -> TimeMap k a -> (k, a) -> IO ()
-insertTOWith delay f mod map (k, a) = do e <- newTimeOutEntry delay $ f a k >> (mod $ M.delete k)
-                                         case k `M.lookup` map of Nothing -> pure ()
-                                                                  Just e -> killTimeOut $ fst e
-                                         mod $ M.insert k (e,a)
 
 deleteTOReactimate :: (Ord k, Frameworks t) => ModEvent t (TimeMap k a) -> Event t k -> Moment t ()
 deleteTOReactimate me = reactimate . applyMod deleteTO me
 
-deleteTO :: Ord k => Modifier (TimeMap k a) -> TimeMap k a -> k -> IO ()
-deleteTO mod map k = case k `M.lookup` map of
-                        Nothing -> pure ()
-                        Just e -> do killTimeOut $ fst e
-                                     mod $ M.delete k
 -}

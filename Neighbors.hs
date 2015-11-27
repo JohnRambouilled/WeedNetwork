@@ -11,6 +11,7 @@ import Data.Binary
 import Reactive.Banana
 import Reactive.Banana.Frameworks
 import GHC.Generics
+import qualified Data.Map as M
 
 neighTimeOut = 15 :: Time
 neighRepeatTime = 1 :: Time
@@ -22,8 +23,8 @@ data NeighData  = NeighData  {neighDKeyID :: KeyHash, neighDSig :: Signature, ne
                   NeighClose {neighDKeyID :: KeyHash, neighDSig :: Signature, neighCPayload :: Payload}
 
 data NeighDataContent = NeighReq Request | NeighRes RessourcePacket deriving Generic
-type NeighMap = EventEntryMap KeyHash NeighData
-type NeighMapBhv t = ModEvent t NeighMap 
+type NeighMap = EventCMap KeyHash NeighData
+type NeighMapBhv t = BehaviorC t NeighMap 
 
 data Neighborhood t = Neighborhood {nbhNeighMap :: NeighMapBhv t,
                                     nbhRequests :: Event t Request,
@@ -47,10 +48,16 @@ buildNeighborhood packetE  = do (introE, dataE) <- splitEither packetE
                                 (reqE, reqH) <- newEvent
                                 (resE, resH) <- newEvent
                                 (decoE, decoH) <- newEvent
-                                (nMod, _) <- buildCryptoMap neighTimeOut (pure newEventEntry) introE decoE dataE 
-                                allEvents <- mergeEvents $ meChanges nMod
+                                (nMap, cryptoE) <- buildCryptoMap introE dataE 
+                                (refreshE, newNeighE) <- splitEither cryptoE
+                                buildTimeOut neighTimeOut newNeighE $ scKeyHash <$> refreshE
+                                allEvents <- mergeEvents $ bcChanges nMap
+                                reactimate $ closePipe <$> bcLastValue nMap <@> decoE
                                 reactimate $ onDataEvent decoH reqH resH <$> allEvents
-                                pure $ Neighborhood nMod reqE resE decoH
+                                pure $ Neighborhood nMap reqE resE decoH
+        where closePipe m k = case k `M.lookup` m of
+                                Just ce -> ceClose ce $ ()
+                                Nothing -> pure ()
 
 
 onDataEvent :: Handler KeyHash -> Handler Request -> Handler RessourcePacket -> NeighData -> IO ()

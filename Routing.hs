@@ -63,6 +63,7 @@ buildRouting uID dhSK newRoadE reqEuc packetE = do
                      reqOutE <- routOpenPipe newRoadE                                             --Building Request from NewRoad 
                      (relayMap, cryptoRelE) <- buildCryptoMap reqRelE packetE                     --Building Relayed RoutingMap
                      (relRefreshE, relNewE) <- splitEither cryptoRelE
+                     buildTimeOut pipeTimeOut relNewE (never :: Event t KeyHash) --[TODO] Refresh
                      let reqRelOE = relayRequest <$> (union relRefreshE $ fst <$> relNewE)       --Request relayed to transmit
                          newReqE = union (IncomingRequest <$> reqLocE) reqOutE                   --Local Request (incoming and outgoing)
                          requestOut = union reqRelOE $ nrReq <$> reqOutE                         --Request output 

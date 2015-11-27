@@ -16,17 +16,17 @@ type PipeCloser = Handler (SourceID, PipeID)
 type NewSourceEvent t = Event t (SourceID, AddHandler NewPipe)
 
 
-type PipesMap = M.Map PipeID (AddHandler PipeMessage, PipesSender)
+type PipesMap = M.Map PipeID (EventC PipeMessage, PipesSender)
 
 
 
 data PipeManagerEntry =  PipeManagerEntry { pmeFireNP :: Handler NewPipe,
                                             pmeUnregister :: IO (),
                                             pmePipeMap :: PipesMap,
-                                            pmeModifier :: Modifier PipesMap}
+                                            pbmModifier :: Modifier PipesMap}
 
 type PipesManager = M.Map SourceID PipeManagerEntry
-type PipesManagerBhv t = ModEvent t PipesManager
+type PipesManagerBhv t = BehaviorMod t PipesManager
 
 data Pipes t = Pipes {pipesManager :: PipesManagerBhv t,
                       pipesDataManager :: Event t DataManager,
@@ -44,10 +44,10 @@ buildPipes npE = do (closeE, closeH) <- newEvent
                     --Contruction du pipeManager
                     (pipeManB, sendE, newSourceE) <- buildPipeManager npE
                     --Reactimate des suppressions de pipes et de sources
-                    reactimate $ closePipe (meModifier pipeManB) <$> closeE
+                    reactimate $ closePipe (bmModifier pipeManB) <$> closeE
                     reactimate $ applyMod removeSource pipeManB remSE
                     --Fermeture des pipes lors de receptions de PipeClose
-                    let dataMan = buildDataManager $ meChanges pipeManB
+                    let dataMan = buildDataManager $ bmChanges pipeManB
                     reactimate . (closeH <$>) =<< closePipeEvent dataMan
                     sendH <- sendOnPipe pipeManB 
                     --Retour de la structure
@@ -64,7 +64,7 @@ buildPipes npE = do (closeE, closeH) <- newEvent
           -   [TODO] : closePipe sur les pipeClose Messages
           -   [TODO] : keeplogs -}
           sendOnPipe pm = do (sE,sH) <- newEvent
-                             reactimate $ apply (send <$> meLastValue pm) sE
+                             reactimate $ apply (send <$> bmLastValue pm) sE
                              pure sH
               where send :: PipesManager -> (SourceID, PipeID, RawData) -> IO ()
                     send pm (sID,pID,d) = maybe (pure ()) (makeMessage pID d) $ M.lookup sID pm >>= M.lookup pID . pmePipeMap 
@@ -87,7 +87,7 @@ buildDataManager pManaB = (mergeEntry <$> ) <$> pManaB
 
 {-| Converts the map of physical neighbors into a map of recipients |-}
 buildPipeManager :: Frameworks t =>  Event t NewPipe -> Moment t (PipesManagerBhv t, Event t PipePacket, NewSourceEvent t)
-buildPipeManager npE = do manM <- newModEvent M.empty
+buildPipeManager npE = do manM <- newBehaviorMod M.empty
                           (nsE, nsH) <- newEvent
                           (sendE, sendH) <- newEvent
                           reactimate $ applyMod (onNewPipe nsH sendH) manM npE
