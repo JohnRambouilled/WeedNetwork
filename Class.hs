@@ -58,7 +58,7 @@ type EventCMap k e = ParamMap EventC k e
 -- | Class de type des data contenant une clef d'identification
 class (Ord k) => IDable e k where
         extractID :: e -> k
-
+--instance Ord k => IDable k k where extractID = id
 
                 -- ***** Switch et Merges *****
 -- Mergeable définit la classe des structures permettant d'extraire un event (éventuellement compilé).
@@ -165,6 +165,14 @@ newBehaviorMod i = do (e, h) <- newEvent
 
 liftIOEvent :: Event (IO a) -> MomentIO (Event a)
 liftIOEvent = execute . (liftIO <$>)
+
+
+deleteLookup :: Ord k => k -> M.Map k a -> Maybe (a, M.Map k a)
+deleteLookup k m = case M.updateLookupWithKey f k m of
+                    (Just a, m) -> Just (a,m)
+                    (Nothing, _) -> Nothing
+    where f _ _ = Nothing
+
     --do (e', h) <- newEvent
                   -- reactimate $ (h =<<) <$> e
                   -- pure e'

@@ -33,16 +33,16 @@ defaultListenPolitic = False
 type LocalAnswer = (Time, RawData) --Durée de validité, et contenu
 
 type ResPolMap = M.Map RessourceID Bool
-type ResPolMapBhv t = BehaviorMod t ResPolMap
+type ResPolMapBhv = BehaviorMod ResPolMap
 
 type AnswerMap = TimeMap RessourceID Answer --Map des Answers disponnibles
-type AnswerMapBhv t = BehaviorMod t AnswerMap
+type AnswerMapBhv = BehaviorMod AnswerMap
 
 type LocalAnswerMap = M.Map RessourceID LocalAnswer
-type LocalAnswerMapBhv t = BehaviorMod t LocalAnswerMap
+type LocalAnswerMapBhv = BehaviorMod LocalAnswerMap
 
 type RelayMap = TimeMap RessourceID ()
-type RelayMapBhv t = BehaviorMod t RelayMap 
+type RelayMapBhv = BehaviorMod RelayMap 
 
 --type LocalRessourceMap = M.Map RessourceID (Int, Time, RawData) --Nombre de répetition, et temps d'attente, contenue des réponses 
 --genLocalResMap :: [RessourceID] -> LocalRessourceMap
@@ -51,24 +51,24 @@ type RelayMapBhv t = BehaviorMod t RelayMap
 
 
 
-data Ressources t = Ressources {resAnswerMap :: AnswerMapBhv t,
-                                resLocalAnswerMap :: LocalAnswerMapBhv t,
-                                resListenMap :: Event t (EventMap RessourceID Answer),
-                                resRelayMap :: RelayMapBhv t,
-                                resRelayPolitic :: ResPolMapBhv t,
-                                resStorePolitic :: ResPolMapBhv t,
-                                resListenHandler :: Handler (RessourceID, Bool),
-                                resRelPackets :: Event t RessourcePacket }
+data Ressources = Ressources {resAnswerMap :: AnswerMapBhv,
+                              resLocalAnswerMap :: LocalAnswerMapBhv,
+                              resListenMap :: Event (EventMap RessourceID Answer),
+                              resRelayMap :: RelayMapBhv,
+                              resRelayPolitic :: ResPolMapBhv,
+                              resStorePolitic :: ResPolMapBhv,
+                              resListenHandler :: Handler (RessourceID, Bool),
+                              resRelPackets :: Event RessourcePacket }
 
 genResearch :: RessourceID -> RessourcePacket
 genResearch rID = Left $ Research rID ttlMax [] emptyPayload
 
-offerRessource :: Frameworks t => Ressources t -> (Time, RawData, RessourceID) -> IO ()
+offerRessource :: Ressources -> (Time, RawData, RessourceID) -> IO ()
 offerRessource res (t,d,rID) = bmModifier (resLocalAnswerMap res) $ M.insert rID (t,d)
 
-buildRessources :: Frameworks t => DHPubKey -> UserID -> KeyPair -> Event t RessourcePacket -> Moment t (Ressources t)
-buildRessources dhPK uID kP packetE = do (resE, ansE) <- splitEither packetE
-                                         [relPol, stoPol] <- forM [1..2] $ pure $ newBehaviorMod M.empty
+buildRessources :: DHPubKey -> UserID -> KeyPair -> Event RessourcePacket -> MomentIO Ressources
+buildRessources dhPK uID kP packetE = let (resE, ansE) = split packetE in
+                                      do [relPol, stoPol] <- forM [1..2] $ pure $ newBehaviorMod M.empty
                                          ansB <- newBehaviorMod M.empty
                                          locAnsB <- newBehaviorMod M.empty
                                          relB <- newBehaviorMod M.empty
@@ -110,13 +110,13 @@ buildRessources dhPK uID kP packetE = do (resE, ansE) <- splitEither packetE
                                      Just a -> compareAnswer a ans 
                                      Nothing -> True 
 
-          buildListenMap :: Frameworks t => Event t (RessourceID, Bool) -> Event t Answer -> Moment t (Event t (EventMap RessourceID Answer))
+          buildListenMap :: Event (RessourceID, Bool) -> Event Answer -> MomentIO (Event (EventMap RessourceID Answer))
           buildListenMap orderE ansE = do bhv <- newBehaviorMod M.empty 
-                                          reactimate $ onOrder (bmModifier bhv) <$> orderE
+                                          execute $ onOrder (bmModifier bhv) <$> orderE
                                           reactimate . filterJust $ apply (fireKey <$> bmLastValue bhv) ansE
-                                          pure $ (eAddHandler <$>) <$> bmChanges bhv
-            where onOrder h (rID,b) = if b then (h . M.insert rID) =<< newEventEntry 
-                                           else h $ M.delete rID
+                                          pure $ fmap eEvent <$> bmChanges bhv
+            where onOrder h (rID,b) = if b then (liftIO . h . M.insert rID) =<< newEventEntry 
+                                           else liftIO . h $ M.delete rID
 
 
           relayAnswer :: Answer -> Answer

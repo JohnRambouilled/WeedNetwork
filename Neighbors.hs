@@ -24,12 +24,12 @@ data NeighData  = NeighData  {neighDKeyID :: KeyHash, neighDSig :: Signature, ne
 
 data NeighDataContent = NeighReq Request | NeighRes RessourcePacket deriving Generic
 type NeighMap = EventCMap KeyHash NeighData
-type NeighMapBhv t = BehaviorC t NeighMap 
+type NeighMapBhv = BehaviorC NeighMap 
 
-data Neighborhood t = Neighborhood {nbhNeighMap :: NeighMapBhv t,
-                                    nbhRequests :: Event t Request,
-                                    nbhRessources :: Event t RessourcePacket,
-                                    nbhForceDeco :: Handler UserID}
+data Neighborhood = Neighborhood {nbhNeighMap :: NeighMapBhv,
+                                  nbhRequests :: Event Request,
+                                  nbhRessources :: Event RessourcePacket,
+                                  nbhForceDeco :: Handler UserID}
 
 
 sendNeighData :: UserID -> KeyPair -> NeighDataContent -> NeighPacket
@@ -38,19 +38,19 @@ sendNeighData uID k cnt = Right . sign k $ NeighData uID emptySignature cnt
 sendNeighIntro :: UserID -> KeyPair -> Payload -> NeighPacket
 sendNeighIntro uID k p = Left . sign k $ NeighIntro uID (fst k) emptySignature p
 
-repeatNeighIntro :: Frameworks t => Time -> UserID -> KeyPair -> Payload -> Moment t (TimeOutEntry, Event t NeighPacket)
+repeatNeighIntro :: Time -> UserID -> KeyPair -> Payload -> MomentIO (TimeOutEntry, Event NeighPacket)
 repeatNeighIntro t uID k p = do (e,h) <- newEvent
                                 toe <- liftIO $ newRepeater Nothing t $ h $ sendNeighIntro uID k p
                                 pure (toe, e)
 
-buildNeighborhood :: Frameworks t => Event t NeighPacket -> Moment t (Neighborhood t)
-buildNeighborhood packetE  = do (introE, dataE) <- splitEither packetE
-                                (reqE, reqH) <- newEvent
+buildNeighborhood :: Event NeighPacket -> MomentIO Neighborhood
+buildNeighborhood packetE  = let (introE, dataE) = split packetE in
+                             do (reqE, reqH) <- newEvent
                                 (resE, resH) <- newEvent
                                 (decoE, decoH) <- newEvent
                                 (nMap, cryptoE) <- buildCryptoMap introE dataE 
-                                (refreshE, newNeighE) <- splitEither cryptoE
-                                buildTimeOut neighTimeOut newNeighE $ scKeyHash <$> refreshE
+                                let (refreshE, newNeighE) = split cryptoE
+                                buildTimeOutIDable neighTimeOut newNeighE $ scKeyHash <$> refreshE
                                 allEvents <- mergeEvents $ bcChanges nMap
                                 reactimate $ closePipe <$> bcLastValue nMap <@> decoE
                                 reactimate $ onDataEvent decoH reqH resH <$> allEvents
