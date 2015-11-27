@@ -18,7 +18,7 @@ import Data.Time.Clock.POSIX
 
 
 type RoutingMap = EventCMap UserID PipePacket
-type RoutingMapBhv t = BehaviorC t RoutingMap
+type RoutingMapBhv = BehaviorC RoutingMap
 
 data NewPipe = NewPipe {npRoad :: Road,
                         npSource :: SourceID,
@@ -41,58 +41,61 @@ newRequestToNewPipe sendH _ (OutgoingRequest (Request _ _ r _ t pK pID _ cnt) se
 
 
 
-data Routing t = Routing {routingLocMap :: RoutingMapBhv t,
-                          routingRelMap :: RoutingMapBhv t,
+data Routing = Routing {routingLocMap :: RoutingMapBhv,
+                        routingRelMap :: RoutingMapBhv, 
 
-                          routingNewPipes :: Event t NewPipe,
-                          routingOutgoingPackets :: Event t PipePacket,
-                          routingOutgoingRequest :: Event t Request,
+                        routingNewPipes :: Event NewPipe,
+                        routingOutgoingPackets :: Event PipePacket,
+                        routingOutgoingRequest :: Event Request,
 
-                          routingLocClose :: Handler PipeID,
-                          routingRelClose :: Handler PipeID,
+                        routingLocClose :: Handler PipeID,
+                        routingRelClose :: Handler PipeID,
 
-                          routingLogs :: Event t String}
+                        routingLogs :: Event String}
 
 pipeTimeOut = 10 :: Time
 
 
-buildRouting :: Frameworks t => UserID -> DHPrivKey -> Event t NewRoad -> Event t Request -> Event t PipePacket -> Moment t (Routing t)
+buildRouting :: UserID -> DHPrivKey -> Event NewRoad -> Event Request -> Event PipePacket -> MomentIO Routing
 buildRouting uID dhSK newRoadE reqEuc packetE = do
                      (packetOutE, packetOutH) <- newEvent
-                     (reqLogs, reqE) <- splitEither =<< liftIOEvent (checkRequest uID <$> reqEuc) --Checking request validity
-                     (reqRelE, reqLocE) <- splitEvent isLocalRequest reqE                         --Splitting local from relayed requests
+                     (reqLogs, reqE) <- split <$> liftIOEvent (checkRequest uID <$> reqEuc)       --Checking request validity
+                     let (reqRelE, reqLocE) = splitEvent isLocalRequest reqE                     --Splitting local from relayed requests
                      reqOutE <- routOpenPipe newRoadE                                             --Building Request from NewRoad 
                      (relayMap, cryptoRelE) <- buildCryptoMap reqRelE packetE                     --Building Relayed RoutingMap
-                     (relRefreshE, relNewE) <- splitEither cryptoRelE
-                     buildTimeOut pipeTimeOut relNewE (never :: Event t KeyHash) --[TODO] Refresh
-                     let reqRelOE = relayRequest <$> (union relRefreshE $ fst <$> relNewE)       --Request relayed to transmit
-                         newReqE = union (IncomingRequest <$> reqLocE) reqOutE                   --Local Request (incoming and outgoing)
-                         requestOut = union reqRelOE $ nrReq <$> reqOutE                         --Request output 
-                     relayPacketE <- (relayPackets <$>) <$> mergeEvents (bcChanges relayMap)      --Relayed packets output 
-                     closePipes relNewE                                                       --Closing relayed pipe on PipeClose packets
+                     let (relRefreshE, relNewE) = split cryptoRelE
+                     buildTimeOut pipeTimeOut relNewE (never :: Event KeyHash)            --[TODO] Refresh
+                     newReqE <- unionM [IncomingRequest <$> reqLocE, reqOutE]                     --Local Request (incoming and outgoing)
+                     requestOut <- unionM [relayRequest <$> relRefreshE,
+                                          relayRequest . fst <$> relNewE,
+                                          nrReq <$> reqOutE]                                     --Request output 
+                     closePipes relNewE                                                          --Closing relayed pipe on PipeClose packets
                      (localMap, cryptoLocE) <- buildCryptoMap newReqE packetE                     --Building Local RoutingMap 
-                     (locRefreshE, locNewE) <- splitEither cryptoLocE
-                     let logs = unions [("AcceptedRequest : " ++) . show <$> reqE,
-                                        ("Rejected request : " ++) <$> reqLogs]
-                         newPipeE = filterJust $ makeNewPipe packetOutH <$> locNewE                         --Event of NewPipes
-                         newReqE = union relNewE $ (\(r,e) -> (nrReq r,e)) <$> locNewE 
+                     let (locRefreshE, locNewE) = split cryptoLocE
+                         newPipeE = filterJust $ makeNewPipe packetOutH <$> locNewE              --Event of NewPipes
+--                         newReqE = union relNewE $ (\(r,e) -> (nrReq r,e)) <$> locNewE 
+                     relayPacketE <- fmap relayPackets <$> mergeEvents (bcChanges relayMap)       --Relayed packets output 
+                     packetsOut <- unionM [packetOutE, relayPacketE]                       
+                     logs <- unionM [("AcceptedRequest : " ++) . show <$> reqE,
+                                    ("Rejected request : " ++) <$> reqLogs]
                      [relClose, locClose] <- forM [relayMap, localMap] $ buildCloseHandle . bcLastValue     --Generating close handles 
-                     pure $ Routing localMap relayMap newPipeE (union packetOutE relayPacketE) requestOut locClose relClose logs      --Producing output
+                     pure $ Routing localMap relayMap newPipeE packetsOut requestOut locClose relClose logs      --Producing output
     where relayPackets :: PipePacket -> PipePacket
           relayPackets p = p{pipePosition = if pipeDirection p then pipePosition p + 1 else pipePosition p - 1} 
           relayRequest :: Request -> Request
           relayRequest r = r{reqPosition = reqPosition r + 1}
           isLocalRequest req = reqPosition req == reqLength req - 1
-          closePipes :: Frameworks t => Event t (Request, EventC PipePacket) -> Moment t () 
-          closePipes cE = reactimate $ closeP . snd <$> cE
-            where closeP eC = void $ ceAddHandler eC `register` filterPipeClose (ceClose eC)
+          closePipes :: Event (Request, EventC PipePacket) -> MomentIO () 
+          closePipes cE = void . execute $ closeP . snd <$> cE
+            where closeP eC = reactimate $ filterPipeClose (ceClose eC) <$> ceEvent eC
                   filterPipeClose h (PipeClose _ _ _ _ _) = h ()
                   filterPipeClose _ _ = pure ()
+          makeNewPipe :: Handler PipePacket -> (NewRequest, EventC PipePacket) -> Maybe NewPipe
           makeNewPipe sendH (req, e ) = newRequestToNewPipe sendH dhSK req $ makePipeMessage <$> e
           
           
 
-routOpenPipe :: Frameworks t => Event t NewRoad -> Moment t (Event t NewRequest)
+routOpenPipe :: Event NewRoad -> MomentIO (Event NewRequest)
 routOpenPipe newRE = do 
                         (reqE, reqH) <- newEvent
                         reactimate $ onNewRoad reqH <$> newRE

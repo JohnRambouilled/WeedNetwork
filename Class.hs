@@ -65,17 +65,26 @@ class (Ord k) => IDable e k where
 -- mergeEvents renvoi un event égal au dernier event total reçu.
 
 -- | Extraction d'un event-compilé d'une data. (par exemple l'union de tout les event d'une map)
-class Mergeable a e where allEvents :: a -> Event e
-instance Mergeable (EventC e) e where allEvents = ceEvent
-instance Mergeable (EventEntry e) e where allEvents = ceEvent . eEventC
+class Mergeable a e where allEvents :: a -> Event [e]
+instance Mergeable (EventC e) e where allEvents = (pure <$>) . ceEvent
+instance Mergeable (EventEntry e) e where allEvents = (pure <$>) . ceEvent . eEventC
 --instance Mergeable (AddHandler e) e where allEvents = id
 instance Mergeable a e => Mergeable (M.Map k a) e where allEvents = foldr (unionWith $ pure id) never . (allEvents <$>) . M.elems
 instance Mergeable a e => Mergeable (Event a) e where allEvents = switchE . (allEvents <$>)
 
- 
--- | Switch : a chaque nouvelle valeur a, l'event-compilé de a est utilisé comme nouvel event.
---mergeEvents :: Mergeable a e => Event a -> Event e
---mergeEvents = switchE . (allEvents <$>)
+unionL :: [Event a] -> Event [a]
+unionL eL = ($ []) <$> unions (((\a s -> a : s) <$>) <$> eL)
+
+spillEvent :: Event [a] -> MomentIO (Event a)
+spillEvent e = do (e',h) <- newEvent
+                  reactimate $ mapM_ h <$> e
+                  pure e'
+
+mergeEvents :: Mergeable a e => a -> MomentIO (Event e)
+mergeEvents = spillEvent . allEvents
+
+unionM :: [Event a] -> MomentIO (Event a)
+unionM = spillEvent . unionL
 
         -- ***** Fonctions utiles *****
         
@@ -155,9 +164,10 @@ newBehaviorMod i = do (e, h) <- newEvent
                       pure $ BehaviorMod (BehaviorC b e') h
 
 liftIOEvent :: Event (IO a) -> MomentIO (Event a)
-liftIOEvent e = do (e', h) <- newEvent
-                   reactimate $ (h =<<) <$> e
-                   pure e'
+liftIOEvent = execute . (liftIO <$>)
+    --do (e', h) <- newEvent
+                  -- reactimate $ (h =<<) <$> e
+                  -- pure e'
 
 {-
 -- | DO NOT USE : ça a l'air cool, mais ça leak! Mais je sais pas pourquoi, alors je laisse ça la

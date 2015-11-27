@@ -33,29 +33,29 @@ instance SignedClass a => IDable a KeyHash where extractID = scKeyHash  -- ^ Ins
 class SignedClass a => IntroClass a where icPubKey :: a -> PubKey
 
 
-type CryptoMap t e = BehaviorC t (M.Map KeyHash (EventC e))  -- ^ map des events de packets signés, triés par keyHash
-type CryptoEvent t i e = Event t (Either i (i, EventC e))    -- ^ Event de nouvelles connexions
+type CryptoMap e = BehaviorC (M.Map KeyHash (EventC e))  -- ^ map des events de packets signés, triés par keyHash
+type CryptoEvent i e = Event (Either i (i, EventC e))    -- ^ Event de nouvelles connexions
 
 {- | Construction de la cryptoMap a partir d'un Event d'introduce, et d'un Event de packets. 
  -   Les signatures des packets sont vérifiées. Renvoi la Map des events, l'Event de nouvelles connexions  
  -   [TODO] : gestion des refresh? -}
-buildCryptoMap :: (Frameworks t, IntroClass i, SignedClass e) => Event t i -> Event t e -> Moment t (CryptoMap t e, CryptoEvent t i e)
-buildCryptoMap introE packetE = do (cryptoE, cryptoH) <- newEvent
+buildCryptoMap :: (IntroClass i, SignedClass e) => Event i -> Event e -> MomentIO (CryptoMap e, CryptoEvent i e)
+buildCryptoMap introE packetE = do --(cryptoE, cryptoH) <- newEvent
                                    (buildE, buildH) <- newEvent
                                    cMap <- buildEventCMapWith buildE
-                                   reactimate $ apply (onIntro cryptoH buildH <$> bmLastValue cMap) $ filterE checkIntro introE
+                                   cryptoE <- execute $ apply (onIntro buildH <$> bmLastValue cMap) $ filterE checkIntro introE
                                    fireKeyBhv (bmLastValue cMap) packetE
                                    pure ((eEventC <$>) <$> bmBhvC cMap, cryptoE)
     where makeCloseEvent i = do (h,ce) <- newEventC
-                                let ce' = ce{ceAddHandler = filterSig i $ ceAddHandler ce}
-                                pure (i, EventEntry h ce)
-          filterSig i = filterIO (pure . checkSig (icPubKey i))
-          onIntro :: (IntroClass i, SignedClass e) => Handler (Either i (i, EventC e)) -> Handler ((KeyHash, EventC e), EventEntry e) -> M.Map KeyHash (EventEntry e) -> i -> IO ()
-          onIntro ch bh m i = case scKeyHash i `M.lookup` m of 
-                                  Just _ -> ch $ Left i
-                                  Nothing -> do (i, ee) <- makeCloseEvent i
-                                                bh ((scKeyHash i, eEventC ee), ee)
-                                                ch $ Right (i, eEventC ee)
+                                let ce' = ce{ceEvent = filterSig i $ ceEvent ce}
+                                pure  $ EventEntry h ce'
+          filterSig i = filterE (checkSig (icPubKey i))
+          onIntro :: (IntroClass i, SignedClass e) => Handler ((KeyHash, EventC e), EventEntry e) -> M.Map KeyHash (EventEntry e) -> i -> MomentIO (Either i (i, EventC e))
+          onIntro bh m i = case scKeyHash i `M.lookup` m of 
+                                  Just _ -> pure $ Left i
+                                  Nothing -> do ee <- makeCloseEvent i
+                                                liftIO $ bh ((scKeyHash i, eEventC ee), ee)
+                                                pure $ Right (i, eEventC ee)
                                 
           checkIntro i = checkSig (icPubKey i) i -- && computeHashFromKey (icPubKey i) == scKeyHash i 
 

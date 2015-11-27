@@ -19,7 +19,7 @@ data TimeOutEntry = TimeOutEntry {toeID :: TimeOutID,
                                     toeAction :: IO ()}
 
 
-buildTimeOut :: (Frameworks t, IDable i k) => Time -> Event t (i, EventC e) -> Event t k -> Moment t ()
+buildTimeOut :: IDable i k => Time -> Event (i, EventC e) -> Event k -> MomentIO ()
 buildTimeOut t addE refE = do buildE <- liftIOEvent $ genTime <$> addE
                               toMap <- buildEventCMapWith buildE
                               reactimate $ applyMod refresh toMap refE
