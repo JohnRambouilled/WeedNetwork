@@ -5,6 +5,7 @@ import Crypto
 import Class
 import Timer
 import PipePackets
+import Pipes
 
 import Reactive.Banana
 import Reactive.Banana.Frameworks
@@ -19,15 +20,6 @@ import Data.Time.Clock.POSIX
 
 type RoutingMap = EventCMap UserID PipePacket
 type RoutingMapBhv = BehaviorC RoutingMap
-
-data NewPipe = NewPipe {npRoad :: Road,
-                        npSource :: SourceID,
-                        npPubKey :: PubKey,
-                        npSender :: Handler PipeMessage,
-                        npPipeID :: PipeID,
-                        npTime :: Time,
-                        npContent :: RawData,
-                        npMessageEvent :: EventC PipeMessage}
 
 data NewRoad = NewRoad {nrRoad :: Road,
                         nrDHPubKey :: DHPubKey,
@@ -44,7 +36,8 @@ newRequestToNewPipe sendH _ (OutgoingRequest (Request _ _ r _ t pK pID _ cnt) se
 data Routing = Routing {routingLocMap :: RoutingMapBhv,
                         routingRelMap :: RoutingMapBhv, 
 
-                        routingNewPipes :: Event NewPipe,
+                        --routingNewPipes :: Event NewPipe,
+                        routingSourceMap :: BehaviorC SourceMap,
                         routingOutgoingPackets :: Event PipePacket,
                         routingOutgoingRequest :: Event Request,
 
@@ -53,7 +46,6 @@ data Routing = Routing {routingLocMap :: RoutingMapBhv,
 
                         routingLogs :: Event String}
 
-pipeTimeOut = 10 :: Time
 
 
 buildRouting :: UserID -> DHPrivKey -> Event NewRoad -> Event Request -> Event PipePacket -> MomentIO Routing
@@ -79,7 +71,8 @@ buildRouting uID dhSK newRoadE reqEuc packetE = do
                      logs <- unionM [("AcceptedRequest : " ++) . show <$> reqE,
                                     ("Rejected request : " ++) <$> reqLogs]
                      [relClose, locClose] <- forM [relayMap, localMap] $ buildCloseHandle . bcLastValue     --Generating close handles 
-                     pure $ Routing localMap relayMap newPipeE packetsOut requestOut locClose relClose logs      --Producing output
+                     sourceMap <- buildSourceMap newPipeE
+                     pure $ Routing localMap relayMap sourceMap packetsOut requestOut locClose relClose logs      --Producing output
     where relayPackets :: PipePacket -> PipePacket
           relayPackets p = p{pipePosition = if pipeDirection p then pipePosition p + 1 else pipePosition p - 1} 
           relayRequest :: Request -> Request

@@ -2,7 +2,7 @@
 module Pipes where
 
 import Crypto
-import Routing 
+--import Routing 
 import Class
 import PipePackets
 import Timer
@@ -12,10 +12,25 @@ import Reactive.Banana
 import Reactive.Banana.Frameworks
 import qualified Data.Map as M
 
+pipeTimeOut = 10 :: Time
+
+
+data NewPipe = NewPipe {npRoad :: Road,
+                        npSource :: SourceID,
+                        npPubKey :: PubKey,
+                        npSender :: Handler PipeMessage,
+                        npPipeID :: PipeID,
+                        npTime :: Time,
+                        npContent :: RawData,
+                        npMessageEvent :: EventC PipeMessage}
+
+
 type SourceMap = M.Map SourceID SourceEntry
 type SourceMapH = M.Map SourceID (SourceEntry, Handler NewPipe)
 
-type SourceEntry = EventEntry Payload
+data SourceEntry = SourceEntry {seReceiver :: EventC Payload,
+                                seSender :: Handler Payload,
+                                sePipeMap :: BehaviorC PipeMap}
 
 data PipeEntry = PipeEntry {pePipe :: EventC PipeMessage,
                             peSender :: Handler PipeMessage}
@@ -39,11 +54,11 @@ buildSourceMap newPipeE = do sMap <- newBehaviorMod M.empty
 newSourceEntry :: MomentIO (SourceEntry, Handler NewPipe)
 newSourceEntry = do (sendE, sendH) <- newEvent
                     (newPipeE, newPipeH) <- newEvent
-                    sourceE <- buildSource newPipeE sendE
-                    pure (EventEntry sendH sourceE, newPipeH)
+                    (sourceE,pipeMap) <- buildSource newPipeE sendE
+                    pure (SourceEntry sourceE sendH pipeMap, newPipeH)
 
 -- | Manage a single source : take the event of opening pipes, and the event of message to send to se source. Return the messages received from the source (with the close Event of the source)
-buildSource :: Event NewPipe -> Event Payload -> MomentIO (EventC Payload)
+buildSource :: Event NewPipe -> Event Payload -> MomentIO (EventC Payload, BehaviorC PipeMap)
 buildSource newPipeE toSendE = do (closeSourceE, closeSourceH) <- newEvent
                                   let newPipeEntryE = makePipeEntry <$> newPipeE
                                   pipeMap <- buildEventCMapWith newPipeEntryE 
@@ -53,7 +68,8 @@ buildSource newPipeE toSendE = do (closeSourceE, closeSourceH) <- newEvent
                                   reactimate $ applyMod closePipe pipeMap closeE
                                   reactimate $ apply (sendToSource <$> bmLastValue pipeMap) toSendE
                                   reactimate $ applyMod closeSource pipeMap closeSourceE
-                                  pure $ EventC (snd <$> msgE) closeSourceH closeSourceE 
+                                  pure (EventC (snd <$> msgE) closeSourceH closeSourceE,
+                                        bmBhvC pipeMap)
     where sendToSource :: PipeMap -> Handler Payload
           sendToSource pMap = sendOnPipe . head $ M.assocs pMap
           sendOnPipe :: (PipeID, PipeEntry) -> Handler Payload
