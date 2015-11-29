@@ -42,15 +42,9 @@ data TestClient = TestClient {tcOfferedR :: [RessourceID],
 testValidity = 5 :: Time
 
 
-nombredEuler = zipWith (-) harm $ map log [1..]
-    where harm = scanl1 (+) $ map (1/) [1..]
-
-
 testMain :: [TestClient] -> IO ()
 testMain tcL = do 
               print "Building display"
---              (displayIO, handles) <- buildApp (2 * moduleShowCount) (moduleNameList ++ moduleNameList)
---              ciL@[ci1,ci2] <- [] <$> compileClient c1H <*> compileClient c2H
               ciL <- forM tcL (pure compileClient)
               print "Launching interface"
               mv <- myForkIO $ renderClients ciL

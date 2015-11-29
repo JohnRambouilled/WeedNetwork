@@ -19,24 +19,24 @@ import Timer
 type Packet = Either NeighPacket PipePacket 
 
 
-data Client t = Client {clNeighbors :: Neighborhood t,
-                        clRouting :: Routing t,
-                        clRessources :: Ressources t,
-                        clPipes :: Pipes t,
-                        clDHKeys :: DHKeyPair,
-                        clKeys :: KeyPair,
-                        clUserID :: UserID,
-                      
-                        clReceived :: Event t Packet,
-                        clToSend :: Event t Packet,
-                        clSendH :: Handler Packet,
+data Client = Client {clNeighbors :: Neighborhood,
+                      clRouting :: Routing,
+                      clRessources :: Ressources,
+--                      clPipes :: Pipes t,
+                      clDHKeys :: DHKeyPair,
+                      clKeys :: KeyPair,
+                      clUserID :: UserID,
+                    
+                      clReceived :: Event Packet,
+                      clToSend :: Event Packet,
+                      clSendH :: Handler Packet,
   
-                        clNewRoadH :: Handler NewRoad,
-                        clSendToPeer :: Handler (SourceID, RawData)}
+                      clNewRoadH :: Handler NewRoad,
+                      clSendToPeer :: Handler (SourceID, RawData)}
 
-buildClient :: Frameworks t => Event t Packet -> DHKeyPair -> KeyPair -> UserID -> Moment t (Client t)
+buildClient :: Event Packet -> DHKeyPair -> KeyPair -> UserID -> MomentIO Client
 buildClient packetsE (dhPK,dhSK) (pK,sK) uID = do 
-                          (neighPE, pipesPE) <- splitEither packetsE
+                          let (neighPE, pipesPE) = split packetsE
                           (newRoadE, newRoadH) <- newEvent
                           (locMsgE, locMsgH) <- newEvent
                           (sendE,sendH) <- newEvent
@@ -46,33 +46,33 @@ buildClient packetsE (dhPK,dhSK) (pK,sK) uID = do
                           neighs <- buildNeighborhood neighPE
                           res <- buildRessources dhPK uID (pK, sK) (nbhRessources neighs) 
                           rout <- buildRouting uID dhSK newRoadE (nbhRequests neighs) pipesPE
-                          pipes <- buildPipes $ routingNewPipes rout
+--                          pipes <- buildPipes $ routingNewPipes rout
 
                           liftIO . print $ "connecting handlers"
-                          ansE <- mergeEvents $ resListenMap res
+                          ansE <- mergeEvents . bcChanges $ resListenMap res
                           reactimate $ newRoadH . answerToNewRoad uID <$> ansE
 
                           liftIO . print $ "starting neighIntro repeater"
                           (stopRepeatIntro, introE) <- repeatNeighIntro neighRepeatTime uID (pK,sK) emptyPayload
-                        
-                          let toSend = unions [sendE, Left <$> union dataE introE, Right <$> union (pipesMessagesOut pipes) (routingRelayedPackets rout)]
-                              dataE = unions $ (sendNeighData uID (pK,sK) <$>) <$>  [NeighReq <$> routingOutgoingRequest rout,
-                                                                                     NeighRes <$> resRelPackets res] 
-                                            
+                          
+                          neighDataE <- unionM $ (sendNeighData uID (pK,sK) <$>) <$>  [NeighReq <$> routingOutgoingRequest rout,
+                                                                                      NeighRes <$> resRelPackets res] 
+                          neighPacketE <- unionM [neighDataE, introE]
+                          toSend <- unionM [sendE, Left <$> neighPacketE , Right <$> routingOutgoingPackets rout]
+                          sendLocalMessages rout locMsgE
+                          pure $ Client neighs rout res (dhPK, dhSK) (pK,sK) uID packetsE toSend sendH newRoadH locMsgH 
 
-                          pure $ Client neighs rout res pipes (dhPK, dhSK) (pK,sK) uID packetsE toSend sendH newRoadH locMsgH 
 
-
-clSendNeighData :: Client t -> Handler NeighDataContent
+clSendNeighData :: Client -> Handler NeighDataContent
 clSendNeighData c d = clSendH c . Left $ ((sendNeighData <$> clUserID <*> clKeys <*> pure d) $ c)
 
-clSendResearch :: Client t -> Handler RessourceID 
+clSendResearch :: Client -> Handler RessourceID 
 clSendResearch c = clSendNeighData c . NeighRes . genResearch
 
-clResearch :: Client t -> RessourceID -> IO ()
+clResearch :: Client -> RessourceID -> IO ()
 clResearch c rID = do void $ newRepeater Nothing 5 $ clSendResearch c rID
                       resListenHandler (clRessources c) (rID, True)
 
 
-clSendAnswer :: Client t -> Handler (Time, RawData, RessourceID)
+clSendAnswer :: Client -> Handler (Time, RawData, RessourceID)
 clSendAnswer c (t,d,rid) = sendAnswer (fst $ clDHKeys c) (fst $ clKeys c) (clUserID c) (clSendNeighData c . NeighRes) (t,d) rid

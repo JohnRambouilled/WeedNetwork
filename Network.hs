@@ -22,16 +22,64 @@ import Routing
 import PipePackets
 import Pipes
 
-type ClientShow = [(String, [AddHandler String])]
+
+type ClientEvent a = Client -> Handler a -> MomentIO ()
+type ClientHandler a = Client -> Event a -> MomentIO ()
+type BananAction = Client -> MomentIO ()
+type BananWriter = WriterT [BananAction] IO
+type ShowHandle = AddHandler String
 type Logs = String
 
+data ClientInterface = ClientInterface{ ciInput :: Handler Packet,
+                                        ciOutput :: AddHandler Packet,
+                                        ciIDs :: (UserID, KeyPair, DHKeyPair)}
+
+compileClient :: BananWriter a -> IO (ClientInterface, a)
+compileClient bwA = do (inE,inH) <- newAddHandler
+                       (outE, outH) <- newAddHandler
+                       (keys,dhKeys) <- (,) <$> generateKeyPair <*> generateDHKeyPair
+
+                       (a, act) <- runWriterT bwA
+
+                       let uID = computeHashFromKey $ fst keys
+                           mkClient :: MomentIO ()
+                           mkClient = do inEv <- fromAddHandler inE 
+                                         c <- buildClient inEv dhKeys keys uID
+                                         reactimate $ outH <$> clToSend c
+                                         forM_ act ($c)
+                                         pure ()
+                           ci = ClientInterface inH outE (uID, keys, dhKeys)
+                       actuate =<< compile mkClient 
+                       pure (ci,a)
+
+
+getClientEvent :: ClientEvent a -> BananWriter (AddHandler a)
+getClientEvent ce = do (e,h) <- liftIO $ newAddHandler
+                       tell [flip ce $ h]
+                       pure e
+getClientHandler :: ClientHandler a -> BananWriter (Handler a)
+getClientHandler ch = do (e,h) <- liftIO $ newAddHandler
+                         tell [\c -> ch c =<< fromAddHandler e]
+                         pure h
+
+
+extractAddHandler :: (Client -> Event a) -> BananWriter (AddHandler a)
+extractAddHandler f = getClientEvent $ \c h -> reactimate (h <$> f c)
+
+extractHandler :: (Client -> Handler a) -> BananWriter (Handler a)
+extractHandler f = getClientHandler ch
+    where ch c e = reactimate $ f c <$> e
+
+extractKeyList :: (Client -> BehaviorC (M.Map k a)) -> BananWriter (AddHandler [k])
+extractKeyList f = extractAddHandler $ fmap M.keys . bcChanges . f
+
+{-
 data ClientInterface = ClientInterface {ciInput :: Handler Packet,
                                         ciOutput :: AddHandler Packet,
                                         ciIDs :: (UserID, KeyPair, DHKeyPair),
                                         ciResearch :: Handler RessourceID,
                                         ciOfferRessource :: Handler (Time, Payload, RessourceID),
                                         ciSend :: Handler (SourceID, RawData),
-                                        ciReceive :: AddHandler DataManager,
                                         ciHandlers :: ClientHandlers,
                                         ciEvents :: ClientEvents}
 
@@ -41,20 +89,19 @@ data ClientHandlers = ClientHandlers {clhSendResearch :: Handler RessourceID,
                                       ciSendOnPipe :: Handler (SourceID, PipeID, RawData),
                                       clhSendNeighIntro :: Handler RawData,
                                       clhBanNeighbor :: Handler UserID,
-                                      clhClosePipe :: Handler (SourceID, PipeID),
+                                      clhCloseLocPipe :: Handler PipeID,
+                                      clhCloseRelPipe :: Handler PipeID,
                                       clhCloseSource :: Handler SourceID}
 
-data ClientEvents = ClientEvents {cleNeighborsMap :: AddHandler (EventMap KeyHash NeighData),
+data ClientEvents = ClientEvents {cleNeighborsList :: AddHandler [UserID],
                                   cleNeighborsData :: (AddHandler Request, AddHandler RessourcePacket),
                                   cleResAnswerMap :: AddHandler AnswerMap,
                                   cleResLocalMap :: AddHandler LocalAnswerMap,
-                                  cleResListenMap :: AddHandler (EventMap RessourceID Answer),
-                                  cleRoutingLocalMap :: AddHandler (EventMap UserID PipePacket),
-                                  cleRoutingRelayedMap :: AddHandler (EventMap UserID PipePacket),
+                                  cleResListenList :: AddHandler [RessourceID],
+                                  cleRoutingLocalList :: AddHandler [PipeID],
+                                  cleRoutingRelayedList :: AddHandler [PipeID],
                                   cleReceivedMessage :: AddHandler Packet,
-                                  cleRoutingLogs :: AddHandler Logs,
-                                  clePipeManager :: AddHandler (M.Map SourceID PipesMap),
-                                  clePipeLogs :: AddHandler Logs}
+                                  cleRoutingLogs :: AddHandler Logs}
 
 compileClient :: IO ClientInterface
 compileClient = do 
@@ -68,34 +115,32 @@ compileClient = do
                                                                             <*> eh clResearch
                                                                             <*> eh (offerRessource . clRessources)
                                                                             <*> eh clSendToPeer 
-                                                                            <*> eah (pipesDataManager . clPipes)
                                                                             <*> (ClientHandlers <$> eh clSendResearch
                                                                                                 <*> eh clSendAnswer
                                                                                                 <*> eh clNewRoadH
-                                                                                                <*> eh (pipesSendOnPipe . clPipes)
+                                                                                                <*> ech (sendOnPipe . clRouting)
                                                                                                 <*> eh (\c -> clSendH c . Left . sendNeighIntro uID keys)
                                                                                                 <*> eh (nbhForceDeco . clNeighbors)
-                                                                                                <*> eh (pipesClosePipe . clPipes)
-                                                                                                <*> eh (pipesRemoveSource . clPipes) )
-                                                                            <*> (ClientEvents   <$> ec (nbhNeighMap . clNeighbors)
+                                                                                                <*> eh (routingLocClose . clRouting)
+                                                                                                <*> eh (routingRelClose . clRouting)
+                                                                                                <*> ech (closeSources . clRouting) )
+                                                                            <*> (ClientEvents   <$> ekl (nbhNeighMap . clNeighbors)
                                                                                                 <*> ( (,) <$> eah (nbhRequests . clNeighbors) 
                                                                                                           <*> eah (nbhRessources . clNeighbors) )
                                                                                                 <*> eah (bmChanges . resAnswerMap . clRessources)
                                                                                                 <*> eah (bmChanges . resLocalAnswerMap . clRessources)
-                                                                                                <*> eah (resListenMap . clRessources)
-                                                                                                <*> ec (routingLocMap . clRouting)
-                                                                                                <*> ec (routingRelMap . clRouting)
+                                                                                                <*> ekl (resListenMap . clRessources)
+                                                                                                <*> ekl (routingLocMap . clRouting)
+                                                                                                <*> ekl (routingRelMap . clRouting)
                                                                                                 <*> eah clReceived 
-                                                                                                <*> eah (routingLogs . clRouting)
-                                                                                                <*> eah exctractPipeManager
-                                                                                                <*> eah (pipesLogs . clPipes) )
+                                                                                                <*> eah (routingLogs . clRouting))
 
 
 
-                               let mkClient :: Frameworks t => Moment t ()
+                               let mkClient :: MomentIO ()
                                    mkClient = do inEv <- fromAddHandler inE 
                                                  c <- buildClient inEv dhKeys keys uID
-                                                 forM_ act $ \a -> getBA a $ c
+                                                 forM_ act $ \a -> a $ c
                                                  pure ()
                                actuate =<< compile mkClient 
                                
@@ -103,65 +148,10 @@ compileClient = do
 
     where 
           nah = newAddHandler
-          eah ::  BananEvent a -> WBanan (AddHandler a)
-          eah = extractEvent
-          exctractPipeManager :: Client t -> Event t (M.Map SourceID PipesMap)
-          exctractPipeManager c = (pmePipeMap <$>) <$> (bmChanges . pipesManager $ clPipes c)
-
-          em :: (forall t. Frameworks t => Client t -> BehaviorMod t (EventEntryMap k a)) -> WBanan (AddHandler (EventMap k a))
-          em f = eah (((eAddHandler <$>) <$>) .  bmChanges . f)
-          ec :: (forall t. Frameworks t => Client t -> BehaviorC t (EventCMap k a)) -> WBanan (AddHandler (EventMap k a))
-          ec f = eah (((ceAddHandler <$>) <$>) .  bcChanges . f)
-          eh :: BananHandler a -> WBanan (Handler a)
+          eah = extractAddHandler
           eh = extractHandler
-
-
-newtype BananAction = BananAction {getBA :: forall t. Frameworks t => Client t -> Moment t ()}
-type BananEvent a = forall t. Frameworks t => Client t -> Event t a
-type BananHandler a = forall t. Frameworks t => Client t -> Handler a
-type WBanan = WriterT [BananAction] IO
-
-extractHandler :: BananHandler a -> WBanan (Handler a)
-extractHandler f = do (ah,h) <- liftIO newAddHandler
-                      let b :: forall t. Frameworks t => Client t -> Moment t ()
-                          b c = do liftIO . void $ register ah (f c)
-                      tell [BananAction b]
-                      pure h
-
-extractEvent ::  BananEvent a -> WBanan (AddHandler a)
-extractEvent f = do (ah,h) <- liftIO newAddHandler
-                    let b :: forall t. Frameworks t => Client t -> Moment t ()
-                        b c = reactimate $ h <$> f c
-                    tell [BananAction b]
-                    pure ah
-
-
-{-
-test :: AddHandler a -> (forall t. Frameworks t => Client t -> Handler a) -> BananAction
-test ah bh = x
-    where x :: forall t. Frameworks t => Client t -> Moment t ()
-          x c = do liftIO $ register ah (bh c)
-                   pure ()
-
-compileClient ::[WidgetHandler] -> IO (AddHandler Packet, Handler Packet)
-compileClient = (f <$>) . compileClientRes []
-    where f (a,b,_) = (a,b)
-
-compileClientRes :: [RessourceID] -> [WidgetHandler] -> IO (AddHandler Packet, Handler Packet, Handler RessourceID)
-compileClientRes rIDL wL = do (inE,inH) <- newAddHandler
-                              (outE,outH) <- newAddHandler
-                              (resE,resH) <- newAddHandler
-                              print "building Client"
-                              actuate =<< compile (cClient resE outH inE)
-                              print "done"
-                              pure (outE, inH, resH)
-                      
-    where cClient :: Frameworks t => AddHandler RessourceID -> Handler Packet -> AddHandler Packet -> Moment t ()
-          cClient rh s h = do packetE <- fromAddHandler h
-                              resE <- fromAddHandler rh
-                              c <- buildClient packetE resE rIDL
-                              reactimate $ s <$> clToSend c
-                              showClient c wL
-
-
+          ece = getClientEvent
+          ech = getClientHandler
+          ekl = extractKeyList
 -}
+

@@ -53,7 +53,7 @@ type RelayMapBhv = BehaviorMod RelayMap
 
 data Ressources = Ressources {resAnswerMap :: AnswerMapBhv,
                               resLocalAnswerMap :: LocalAnswerMapBhv,
-                              resListenMap :: Event (EventMap RessourceID Answer),
+                              resListenMap :: BehaviorC (EventMap RessourceID Answer),
                               resRelayMap :: RelayMapBhv,
                               resRelayPolitic :: ResPolMapBhv,
                               resStorePolitic :: ResPolMapBhv,
@@ -110,11 +110,11 @@ buildRessources dhPK uID kP packetE = let (resE, ansE) = split packetE in
                                      Just a -> compareAnswer a ans 
                                      Nothing -> True 
 
-          buildListenMap :: Event (RessourceID, Bool) -> Event Answer -> MomentIO (Event (EventMap RessourceID Answer))
+          buildListenMap :: Event (RessourceID, Bool) -> Event Answer -> MomentIO (BehaviorC (EventMap RessourceID Answer))
           buildListenMap orderE ansE = do bhv <- newBehaviorMod M.empty 
                                           execute $ onOrder (bmModifier bhv) <$> orderE
                                           reactimate . filterJust $ apply (fireKey <$> bmLastValue bhv) ansE
-                                          pure $ fmap eEvent <$> bmChanges bhv
+                                          pure $ fmap eEvent <$> bmBhvC bhv
             where onOrder h (rID,b) = if b then (liftIO . h . M.insert rID) =<< newEventEntry 
                                            else liftIO . h $ M.delete rID
 

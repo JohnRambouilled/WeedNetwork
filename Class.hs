@@ -52,6 +52,7 @@ buildCloseHandle mapB = do (closeE, closeH) <- newEvent
 type ParamMap a k e = M.Map k (a e)  -- ^ syntax-helper pour les types paramétriques
 type EventEntryMap k e = ParamMap EventEntry k e  -- ^ Map k (EventEntry e) : map d'eventEntry
 type EventMap k e = ParamMap Event k e       -- ^ AddHandler map : version sans fire
+type AddHMap k e = ParamMap AddHandler k e
 type EventCMap k e = ParamMap EventC k e 
 
 
@@ -66,25 +67,28 @@ class (Ord k) => IDable e k where
 
 -- | Extraction d'un event-compilé d'une data. (par exemple l'union de tout les event d'une map)
 class Mergeable a e where allEvents :: a -> Event [e]
+instance Mergeable (Event e) e where allEvents = fmap pure 
 instance Mergeable (EventC e) e where allEvents = (pure <$>) . ceEvent
 instance Mergeable (EventEntry e) e where allEvents = (pure <$>) . ceEvent . eEventC
 --instance Mergeable (AddHandler e) e where allEvents = id
 instance Mergeable a e => Mergeable (M.Map k a) e where allEvents = foldr (unionWith $ pure id) never . (allEvents <$>) . M.elems
-instance Mergeable a e => Mergeable (Event a) e where allEvents = switchE . (allEvents <$>)
 
-unionL :: [Event a] -> Event [a]
-unionL eL = ($ []) <$> unions (((\a s -> a : s) <$>) <$> eL)
+switchEE :: Mergeable a e => Event a -> Event [e]
+switchEE = switchE . (allEvents <$>)
 
 spillEvent :: Event [a] -> MomentIO (Event a)
 spillEvent e = do (e',h) <- newEvent
                   reactimate $ mapM_ h <$> e
                   pure e'
 
-mergeEvents :: Mergeable a e => a -> MomentIO (Event e)
-mergeEvents = spillEvent . allEvents
+mergeEvents :: Mergeable a e => Event a -> MomentIO (Event e)
+mergeEvents = spillEvent . switchEE
 
 unionM :: [Event a] -> MomentIO (Event a)
 unionM = spillEvent . unionL
+
+unionL :: [Event a] -> Event [a]
+unionL eL = ($ []) <$> unions (((\a s -> a : s) <$>) <$> eL)
 
         -- ***** Fonctions utiles *****
         

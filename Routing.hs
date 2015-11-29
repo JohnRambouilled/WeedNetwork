@@ -9,12 +9,9 @@ import Pipes
 
 import Reactive.Banana
 import Reactive.Banana.Frameworks
-import GHC.Generics
-import Data.Binary
 import Control.Monad
-import qualified Data.Map as M
-import Data.Time.Clock
 import Data.Time.Clock.POSIX
+import qualified Data.Map as M
 
 
 
@@ -36,7 +33,6 @@ newRequestToNewPipe sendH _ (OutgoingRequest (Request _ _ r _ t pK pID _ cnt) se
 data Routing = Routing {routingLocMap :: RoutingMapBhv,
                         routingRelMap :: RoutingMapBhv, 
 
-                        --routingNewPipes :: Event NewPipe,
                         routingSourceMap :: BehaviorC SourceMap,
                         routingOutgoingPackets :: Event PipePacket,
                         routingOutgoingRequest :: Event Request,
@@ -105,4 +101,23 @@ routOpenPipe newRE = do
                                                            send $ OutgoingRequest req sender
 
 
+sendLocalMessages :: Routing -> Event (SourceID, Payload) -> MomentIO ()
+sendLocalMessages rout = reactimate . apply sendB 
+    where sendB = sendToSource <$> bcLastValue (routingSourceMap rout)
+
+
+sendOnPipe :: Routing -> Event (SourceID, PipeID, Payload) -> MomentIO ()
+sendOnPipe rout e = do (b,_) <- newBehavior M.empty
+                       reactimate $ apply (send <$> pipeMapB b) e
+    where pipeMapB :: Behavior PipeMap -> Behavior PipeMap
+          pipeMapB b = switchB b . filterJust $ apply (getPM <$> bcLastValue (routingSourceMap rout)) e
+          getPM sm (sID, _,_) = bcLastValue . sePipeMap <$> sID `M.lookup` sm
+          send pm (_, pID, d) = case pID `M.lookup` pm of
+                                    Nothing -> pure ()
+                                    Just pe -> peSender pe $ Right (pID,d)
+
+
+closeSources :: Routing -> Event SourceID -> MomentIO ()
+closeSources rout = reactimate . apply (close <$> bcLastValue (routingSourceMap rout))
+    where close m sID = maybe (pure ()) (($ ()) . ceClose . seReceiver)   $ sID `M.lookup` m
 
