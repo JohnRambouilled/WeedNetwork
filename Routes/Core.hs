@@ -8,13 +8,24 @@ import Neighbors
 import Reactive.Banana
 import Reactive.Banana.Frameworks
 import Data.Tree
-import Data.Tree.Zipper
+import Data.Tree.Zipper hiding (isLeaf)
 import Data.Maybe
+import Data.Traversable
 
 data NeighBreak = NeighBreak {nbPartialRoad :: [UserID]}
 data RoutingData = RoutingNode UserID
-                 | RoutingLeaf PipeID
-            deriving Eq
+                 | RoutingLeaf (PipeID,EventC PipeMessage)
+instance Eq RoutingData where
+         (RoutingNode uID) == (RoutingNode uID') = uID == uID'
+         (RoutingLeaf (pID, _)) == (RoutingLeaf (pID',_)) = pID == pID'
+         _ == _ = False
+
+isLeaf (RoutingLeaf _) = True
+isLeaf _ = False
+
+
+fromLeaf (RoutingLeaf x) = x
+fromLeaf _ = error "fromLeaf on node."
 
 data RoutingTree = RoutingTree {leechsTree :: Tree RoutingData,
                                 seedsTree :: Tree RoutingData}
@@ -25,8 +36,8 @@ data RoutingTree = RoutingTree {leechsTree :: Tree RoutingData,
     - [Leachs] ++ [PipeID]
     - [Sources] ++ [PipeID]
 -}
-splitRoads :: UserID -> ([UserID], PipeID) -> ([RoutingData], [RoutingData])
-splitRoads me (road,pID) = (leechRoad ++ [RoutingLeaf pID] , seedRoad ++ [RoutingLeaf pID]) 
+splitRoads :: UserID -> ([UserID], PipeID, EventC PipeMessage) -> ([RoutingData], [RoutingData])
+splitRoads me (road,pID, pipeC) = (leechRoad ++ [RoutingLeaf (pID, pipeC)] , seedRoad ++ [RoutingLeaf (pID, pipeC)]) 
   where (leechRoad, seedRoad ) = splitPartialRoads me road
 splitPartialRoads :: UserID -> [UserID] -> ([RoutingData], [RoutingData])
 splitPartialRoads me road = (leechRoad, seedRoad) 
@@ -41,22 +52,43 @@ addRoad (leechRoad, seedRoad) (RoutingTree leechT seedT) = RoutingTree (toTree $
 
 
 {- Retire les sous routes spécifiées -}
-delRoad :: ([RoutingData], [RoutingData]) -> RoutingTree -> RoutingTree
-delRoad (leechRoad,seedRoad) (RoutingTree leechT seedT) = RoutingTree (removeRoad leechRoad leechT) (removeRoad seedRoad seedT) 
-  where removeRoad :: [RoutingData] -> Tree RoutingData -> Tree RoutingData
-        removeRoad road tree = maybe tree id (toTree <$> removeSubRoad road tree)
+--delRoad :: ([RoutingData], [RoutingData]) -> RoutingTree -> Maybe (RoutingTree, Tree RoutingData, Tree RoutingData)
+delRoad :: ([RoutingData], [RoutingData]) -> RoutingTree -> (RoutingTree, Maybe (Tree RoutingData), Maybe (Tree RoutingData))
+delRoad (leechRoad,seedRoad) (RoutingTree leechT seedT) = let leechRet = removeSubRoad leechRoad leechT --RoutingTree (removeRoad leechRoad leechT) (removeRoad seedRoad seedT) 
+                                                              seedRet = removeSubRoad seedRoad seedT
+
+                                                          in (RoutingTree (maybe leechT fst leechRet) (maybe  seedT fst seedRet), snd <$> leechRet, snd <$> seedRet)
 
 
-buildRoutingTable ::  UserID -> Event (Request, EventC PipeMessage) -> Event NeighBreak -> MomentIO (BehaviorMod RoutingTree)
+
+
+buildRoutingTable ::  UserID  -- Me
+                  -> Event (Request, EventC PipeMessage)  -- Raw stream containing the requests relayed
+                  -> Event NeighBreak -- Raw stream of breaks
+                  -> MomentIO (BehaviorMod RoutingTree, Event NeighBreak) -- the tree and the stream of breaks we have to send
 buildRoutingTable me reqE breakE = do routingTree <- newBehaviorMod (RoutingTree (makeTree [RoutingNode me]) (makeTree [RoutingNode me]))
+                                      (relayE, relayF) <- newEvent
                                       execute $ onRequest (bmModifier routingTree) <$> reqE
-                                      reactimate $ onNeighBreak (bmModifier routingTree) <$> breakE
-                                      pure routingTree
+                                      reactimate $ applyMod (onNeighBreak relayF) routingTree $ (me:) . nbPartialRoad <$> breakE
+                                      pure (routingTree, relayE)
 
   where onRequest :: Modifier RoutingTree -> (Request, EventC PipeMessage) -> MomentIO ()                              
-        onRequest mod (req, pipeC) = do let road = splitRoads me (reqRoad req, reqPipeID req) 
+        onRequest mod (req, pipeC) = do let road = splitRoads me (reqRoad req, reqPipeID req, pipeC) 
                                         liftIO $ mod $ addRoad road
-                                        reactimate $ fmap (pure $ mod $ delRoad  road) (ceCloseEvent pipeC)
-        onNeighBreak mod nb = mod $ delRoad (splitPartialRoads me $ nbPartialRoad nb)
+                                        reactimate $ fmap (pure $ mod $ fst3.delRoad  road) (ceCloseEvent pipeC)
+        onNeighBreak :: Handler NeighBreak -> Modifier RoutingTree -> RoutingTree -> [UserID] -> IO ()
+        onNeighBreak nbFire mod tr partialRoad = case delRoad (splitPartialRoads me partialRoad) tr of
+                                                      (routingTree', Just rmLeech, _) -> do closeTree mod routingTree' rmLeech >> nbFire (NeighBreak partialRoad)
+                                                      (routingTree',_, Just rmSeed) -> closeTree mod routingTree' rmSeed >> nbFire (NeighBreak partialRoad)
+                                                      (routingTree',_,_) -> mod $ pure routingTree'
+                                                      
+        closes t = filter isLeaf $ flatten t
+        closeTree :: Modifier RoutingTree -> RoutingTree -> Tree RoutingData -> IO ()
+        closeTree mod newTr closeTr  = do mod $ pure newTr
+                                          sequence (($()) . ceClose . snd . fromLeaf <$> closes closeTr)
+                                          pure ()
 
     
+
+fst3 (x,_,_) = x
+
