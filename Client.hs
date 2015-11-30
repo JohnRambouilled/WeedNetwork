@@ -3,6 +3,7 @@ module Client where
 import Reactive.Banana
 import Reactive.Banana.Frameworks
 import Control.Monad
+import Data.Binary
 import qualified Data.Map as M
 
 import Ressource
@@ -44,7 +45,7 @@ buildClient packetsE (dhPK,dhSK) (pK,sK) uID = do
 
                           neighs <- buildNeighborhood neighPE
                           res <- buildRessources dhPK uID (pK, sK) (nbhRessources neighs) 
-                          rout <- buildRouting uID dhSK newRoadE (nbhRequests neighs) pipesPE
+                          rout <- buildRouting uID dhSK newRoadE (nbhRequests neighs) pipesPE (nbhNeighBreak neighs) 
 --                          pipes <- buildPipes $ routingNewPipes rout
 
                           liftIO . print $ "connecting handlers"
@@ -54,7 +55,7 @@ buildClient packetsE (dhPK,dhSK) (pK,sK) uID = do
                           liftIO . print $ "starting neighIntro repeater"
                           (stopRepeatIntro, introE) <- repeatNeighIntro neighRepeatTime uID (pK,sK) emptyPayload
                           
-                          neighDataE <- unionM $ (sendNeighData uID (pK,sK) <$>) <$>  [NeighReq <$> routingOutgoingRequest rout,
+                          neighDataE <- unionM $ (sendNeighData uID (pK,sK) <$>) <$>  [routingOutgoingNeighPacket rout,
                                                                                       NeighRes <$> resRelPackets res] 
                           neighPacketE <- unionM [neighDataE, introE]
                           toSend <- unionM [sendE, Left <$> neighPacketE , Right <$> routingOutgoingPackets rout]
@@ -75,3 +76,9 @@ clResearch c rID = do void $ newRepeater Nothing 5 $ clSendResearch c rID
 
 clSendAnswer :: Client -> Handler (Time, RawData, RessourceID)
 clSendAnswer c (t,d,rid) = sendAnswer (fst $ clDHKeys c) (fst $ clKeys c) (clUserID c) (clSendNeighData c . NeighRes) (t,d) rid
+
+
+answerToNewRoad :: UserID -> Answer -> NewRoad
+answerToNewRoad uID = NewRoad <$> (uID :) . ansRoad <*> cResSourceDHKey . ansCert <*> ansSourceID <*> pure (encode "wooobdidoo")
+
+

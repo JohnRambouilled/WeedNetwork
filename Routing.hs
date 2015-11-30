@@ -4,8 +4,10 @@ module Routing where
 import Crypto 
 import Class
 import Timer
+import Neighbors
 import PipePackets
 import Pipes
+import Routes.Core
 
 import Reactive.Banana
 import Reactive.Banana.Frameworks
@@ -32,10 +34,11 @@ newRequestToNewPipe sendH _ (OutgoingRequest (Request _ _ r _ t pK pID _ cnt) se
 
 data Routing = Routing {routingLocMap :: RoutingMapBhv,
                         routingRelMap :: RoutingMapBhv, 
-
                         routingSourceMap :: BehaviorC SourceMap,
+                        routingTree :: BehaviorC RoutingTree,
+
                         routingOutgoingPackets :: Event PipePacket,
-                        routingOutgoingRequest :: Event Request,
+                        routingOutgoingNeighPacket :: Event NeighDataContent,
 
                         routingLocClose :: Handler PipeID,
                         routingRelClose :: Handler PipeID,
@@ -44,8 +47,8 @@ data Routing = Routing {routingLocMap :: RoutingMapBhv,
 
 
 
-buildRouting :: UserID -> DHPrivKey -> Event NewRoad -> Event Request -> Event PipePacket -> MomentIO Routing
-buildRouting uID dhSK newRoadE reqEuc packetE = do
+buildRouting :: UserID -> DHPrivKey -> Event NewRoad -> Event Request -> Event PipePacket -> Event NeighBreak -> MomentIO Routing
+buildRouting uID dhSK newRoadE reqEuc packetE neighBE = do
                      (packetOutE, packetOutH) <- newEvent
                      (reqLogs, reqE) <- split <$> liftIOEvent (checkRequest uID <$> reqEuc)       --Checking request validity
                      let (reqRelE, reqLocE) = splitEvent isLocalRequest reqE                     --Splitting local from relayed requests
@@ -54,21 +57,23 @@ buildRouting uID dhSK newRoadE reqEuc packetE = do
                      let (relRefreshE, relNewE) = split cryptoRelE
                      buildTimeOutIDable pipeTimeOut relNewE (never :: Event KeyHash)            --[TODO] Refresh
                      newReqE <- unionM [IncomingRequest <$> reqLocE, reqOutE]                     --Local Request (incoming and outgoing)
-                     requestOut <- unionM [relayRequest <$> relRefreshE,
-                                          relayRequest . fst <$> relNewE,
-                                          nrReq <$> reqOutE]                                     --Request output 
                      closePipes relNewE                                                          --Closing relayed pipe on PipeClose packets
                      (localMap, cryptoLocE) <- buildCryptoMap newReqE packetE                     --Building Local RoutingMap 
                      let (locRefreshE, locNewE) = split cryptoLocE
                          newPipeE = filterJust $ makeNewPipe packetOutH <$> locNewE              --Event of NewPipes
---                         newReqE = union relNewE $ (\(r,e) -> (nrReq r,e)) <$> locNewE 
+                     newReqE <- unionM [relNewE, (\(r,e) -> (nrReq r,e)) <$> locNewE ]
+                     (routTree, nbOutE) <- buildRoutingTable uID newReqE neighBE
+                     requestOut <- unionM [NeighReq . relayRequest <$> relRefreshE,
+                                          NeighReq . relayRequest . fst <$> relNewE,
+                                          NeighReq . nrReq <$> reqOutE,
+                                          NeighBrk <$> nbOutE ]                                     --Request output 
                      relayPacketE <- fmap relayPackets <$> mergeEvents (bcChanges relayMap)       --Relayed packets output 
                      packetsOut <- unionM [packetOutE, relayPacketE]                       
                      logs <- unionM [("AcceptedRequest : " ++) . show <$> reqE,
                                     ("Rejected request : " ++) <$> reqLogs]
                      [relClose, locClose] <- forM [relayMap, localMap] $ buildCloseHandle . bcLastValue     --Generating close handles 
                      sourceMap <- buildSourceMap newPipeE
-                     pure $ Routing localMap relayMap sourceMap packetsOut requestOut locClose relClose logs      --Producing output
+                     pure $ Routing localMap relayMap sourceMap routTree packetsOut requestOut locClose relClose logs      --Producing output
     where relayPackets :: PipePacket -> PipePacket
           relayPackets p = p{pipePosition = if pipeDirection p then pipePosition p + 1 else pipePosition p - 1} 
           relayRequest :: Request -> Request

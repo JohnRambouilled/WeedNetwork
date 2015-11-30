@@ -3,7 +3,7 @@ module Ressource where
 
 import Class
 import Crypto
-import Routing
+--import Routing
 import PipePackets
 import Timer
 
@@ -138,8 +138,6 @@ sendAnswer dhPK pK uID h (v,c) rID = do t <- getTime
 
 
 
-answerToNewRoad :: UserID -> Answer -> NewRoad
-answerToNewRoad uID = NewRoad <$> (uID :) . ansRoad <*> cResSourceDHKey . ansCert <*> ansSourceID <*> pure (encode "wooobdidoo")
 
 {-
 checkCert source time (RessourceCert dhKey pKey sendTime rID sig) = time - sendTime < maxDelay
