@@ -41,9 +41,12 @@ insertRoad :: (Eq a) => [a] -> Tree a -> TreePos Full a
 insertRoad road = insertRoadP road . fromTree
 
 {-| Retire une route et toutes ses eventuelles prolongations |-}
-removeSubRoadP :: (Eq a) => [a] -> TreePos Full a -> Maybe (TreePos Full a)
-removeSubRoadP r t = root <$> (join $ parent . delete <$> exploreTreePath r t)
+removeSubRoadP :: (Eq a) => [a] -> TreePos Full a -> Maybe (Tree a, Tree a)
+removeSubRoadP r t = do retPos <- exploreTreePath r t
+                        cleanedTree <- root <$> parent (delete retPos) 
+                        pure (toTree cleanedTree, toTree retPos)
+--removeSubRoadP r t = root <$> (join $ parent . delete <$> exploreTreePath r t)
 
-removeSubRoad :: (Eq a) => [a] -> Tree a -> Maybe (TreePos Full a)
+removeSubRoad :: (Eq a) => [a] -> Tree a -> Maybe (Tree a, Tree a) --(TreePos Full a)
 removeSubRoad road = removeSubRoadP road . fromTree
 
