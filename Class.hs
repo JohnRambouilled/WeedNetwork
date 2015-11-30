@@ -97,7 +97,7 @@ unionL eL = ($ []) <$> unions (((\a s -> a : s) <$>) <$> eL)
 --      dernière valeur du ModEvent
 --      valeur de l'Event
 applyMod :: (Modifier a -> a -> e -> b) -> BehaviorMod a -> Event e -> Event b
-applyMod f m = apply (f (bmModifier m) <$> bcLastValue (bmBhvC m)) 
+applyMod f m = apply (f (bmModifier m) <$> bmLastValue m) 
 
 fireKeyBhv :: (IDable e k, EventManager a e) =>  Behavior (M.Map k a) -> Event e -> MomentIO ()
 fireKeyBhv bhv e = reactimate . filterJust $ (f <$> bhv) <@> e

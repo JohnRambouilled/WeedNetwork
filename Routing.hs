@@ -15,7 +15,7 @@ import qualified Data.Map as M
 
 
 
-type RoutingMap = EventCMap UserID PipePacket
+type RoutingMap = EventCMap PipeID PipePacket
 type RoutingMapBhv = BehaviorC RoutingMap
 
 data NewRoad = NewRoad {nrRoad :: Road,

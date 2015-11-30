@@ -22,7 +22,6 @@ type Packet = Either NeighPacket PipePacket
 data Client = Client {clNeighbors :: Neighborhood,
                       clRouting :: Routing,
                       clRessources :: Ressources,
---                      clPipes :: Pipes t,
                       clDHKeys :: DHKeyPair,
                       clKeys :: KeyPair,
                       clUserID :: UserID,

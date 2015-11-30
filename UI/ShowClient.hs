@@ -1,6 +1,8 @@
 {-# LANGUAGE ImpredicativeTypes, RankNTypes, FlexibleInstances #-}
 module UI.ShowClient where
 
+import Prelude hiding (showList)
+
 import Reactive.Banana
 import Reactive.Banana.Frameworks
 import qualified Data.Map as M
@@ -12,6 +14,7 @@ import Routing
 import Ressource
 import Neighbors
 import Pipes
+import PipePackets
 import Client
 import Network
 import UI.App
@@ -22,9 +25,53 @@ type ShowModule = (String, Array (BananWriter (AddHandler String)) )
 
 renderClient :: [ShowModule] -> BananWriter ShowClient
 renderClient = mapM renderModule
-    where renderModule :: (String, Array (BananWriter (AddHandler String))) -> BananWriter (String, AddHandler String)
+    where renderModule :: (String, Array (BananWriter (AddHandler String))) -> BananWriter (String, Array (AddHandler String))
           renderModule (name, arr) = do arr' <- sequence arr
-                                        (name, arr')
+                                        pure (name, arr')
+
+
+
+showModuleList :: [ShowModule]
+showModuleList = [("Routing", A.array ((1,1),(2,2)) [((1,1), showMap "ROUTING LOCAL" $ routingLocMap . clRouting),
+                                                     ((1,2), showMap "ROUTING RELAY" $ routingRelMap . clRouting),
+                                                     ((2,1), showMap "NEIGHBORS" $ nbhNeighMap . clNeighbors),
+                                                     ((2,2), showPipes "PIPE MAP" $ routingSourceMap . clRouting)]),
+                  ("Ressources", A.array ((1,1),(2,1)) [((1,1), showMap "RESSOURCE LOCAL" $ resLocalAnswerMap . clRessources),
+                                                        ((2,1), showMap "RESSOURCE LISTEN" $ resListenMap . clRessources)]),
+--                  ("Logs", A.Array ((1,1),(1,1)) [((1,1), extractAddHandler $ 
+                  ("Packets", A.array ((1,1),(2,1)) [extractAddHandler $ accumStrings "RECV" . fmap showPacket . clReceived,
+                                                     extractAddHandler $ accumStrings "SEND" . fmap showPacket . clToSend]) ]
+
+    where showMap :: String -> (Client -> BehaviorC (M.Map k a)) -> BananWriter (AddHandler String)
+          showMap name acc = extractAddHandler $ \c -> showList name . M.elems <$> bcChanges (acc c)
+
+          showPipes :: String -> (Client -> BehaviorC SourceMap) -> BananWriter (AddHandler String)
+          showPipes name acc = getClientEvent $ \c -> showSourceMap name (bcChanges $ acc c)
+          showSourceMap :: String -> Event SourceMap -> Handler String -> MomentIO ()
+          showSourceMap name sm h = reactimate' . (fmap h <$>) =<< changes mapBhv
+            where mapBhv :: Behavior (M.Map SourceID PipeMap)
+                  mapBhv = switchB $ sequenceA . bcLastValue . sePipeMap <$> sm
+
+
+
+
+showList :: Show k => String -> [k] -> String
+showList name l = name ++"\n\n" ++ unlines $ show <$> l
+showPipeMap :: (Show k, Show l) => M.Map k (M.Map l a) -> String
+showPipeMap m = unlines ("PIPES\n\n":map f (M.toList m))
+  where f (k,v) = show k ++ "\n"
+                ++ unlines (map (\l -> "....." ++ show l) (M.keys v))
+
+          
+
+accumStrings :: String -> Int -> Event String -> Event String
+accumStrings name n e = ((name ++ "\n") ++) . concat <$> (accumE [] $ f <$> e)
+  where f s l = take n $ (s ++ "\n") : l
+showPacket :: Packet -> String
+showPacket (Left (Left a)) = show a
+showPacket (Left (Right a)) = show a
+showPacket (Right a) = show a
+
 
 --showModuleList = [(Neighbors, A.Array ((1,1
 
@@ -48,21 +95,4 @@ showClientEvent' cInterface = [dump "NEIGHBORS" cleNeighborsList, dump "ROUTING 
                            interpretAsHandler (accumStrings "PIPES LOGS" 20) $ clePipeLogs $ ciEvents cInterface]
     where dump name f = showList name <$> f (ciEvents cInterface)
 
-
-showList :: Show k => String -> [k] -> String
-showList name l = name ++"\n\n" ++ (unlines $ show <$> l)
-showPipeMap :: (Show k, Show l) => M.Map k (M.Map l a) -> String
-showPipeMap m = unlines $ ("PIPES\n\n":map f (M.toList m))
-  where f (k,v) = show k ++ "\n"
-                ++ unlines (map (\l -> "....." ++ show l) (M.keys v))
-
-          
-
-accumStrings :: String -> Int -> Event t String -> Event t String
-accumStrings name n e = ((name ++ "\n") ++) . concat <$> (accumE [] $ f <$> e)
-  where f s l = take n $ (s ++ "\n") : l
-showPacket :: Packet -> String
-showPacket (Left (Left a)) = show a
-showPacket (Left (Right a)) = show a
-showPacket (Right a) = show a
 -}
