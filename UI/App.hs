@@ -12,8 +12,9 @@ import Data.Ix
 
 import Reactive.Banana.Frameworks
 
+type ShowClient = [(String, A.Array (Int,Int) (AddHandler String))]
 
-buildApp :: [(String,A.Array (Int,Int) (AddHandler String))] -> IO ()
+buildApp :: ShowClient -> IO ()
 buildApp binds = do 
         cfg <- standardIOConfig
         chan <- newChan

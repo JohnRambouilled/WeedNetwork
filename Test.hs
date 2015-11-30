@@ -8,6 +8,7 @@ import Control.Monad
 import Control.Concurrent
 import Control.Concurrent.MVar
 import Data.Binary
+import Control.Monad.Writer
 
 import UI.ShowClient
 import UI.App
@@ -44,21 +45,26 @@ testValidity = 5 :: Time
 
 testMain :: [TestClient] -> IO ()
 testMain tcL = do 
+              print "Building Clients"
+              ciL <- forM bananWriterL compileClient
               print "Building display"
-              ciL <- forM tcL (pure compileClient)
+              mv <- launchApp . concat $ fst . snd <$> ciL
+              mapM_ genTest (zip tcL $ snd . snd <$> ciL)
               print "Launching interface"
-              mv <- myForkIO $ renderClients ciL
-              let ciLZ = zip ciL tcL
+              let ciLZ = zip (fst <$> ciL) $ tcListen <$> tcL
               print "registering communications"
-              forM_ ciLZ $ \(ci,tc) -> do forM_ (tcOfferedR tc) $ \rID -> ciOfferRessource ci (testValidity, encode $ show rID, rID)
-                                          forM_ (tcListen tc) $ \i -> register (ciOutput ci) (ciInput $ ciL !! i)
-                                          forM_ (tcResearch tc) $ ciResearch ci
+              forM_ ciLZ $ \(ci, nl) -> forM_ nl $ \i -> ciOutput ci `register` ciInput (fst $ ciL !! i)
               readMVar mv
 
-    where myForkIO :: IO () -> IO (MVar ())
-          myForkIO io = do mvar <- newEmptyMVar
-                           forkIO (io >> putMVar mvar ())
-                           return mvar
+    where bananWriterL = map buildTestClient tcL :: [BananWriter (ShowClient, (Handler RessourceID, Handler RessourceID))]
+          buildTestClient :: TestClient -> BananWriter (ShowClient, (Handler RessourceID, Handler RessourceID))
+          buildTestClient tc = do offH <- extractHandler $ \c rID -> offerRessource (clRessources c) (testValidity, encode $ show rID, rID)
+                                  resH <- extractHandler clResearch
+                                  sc <- renderClient showModuleList
+                                  pure (sc, (offH, resH))
+          genTest :: (TestClient, (Handler RessourceID, Handler RessourceID)) -> IO () 
+          genTest (tc, (offH, resH)) = do forM_ (tcOfferedR tc) offH
+                                          forM_ (tcResearch tc) resH
               
 
               
