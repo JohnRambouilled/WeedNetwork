@@ -38,7 +38,7 @@ renderClient = mapM renderModule
                                         pure (name, arr')
 
 
-
+{-
 showModuleList :: [ShowModule]
 showModuleList = [("Routing", A.array ((1,1),(2,2)) [((1,1), showMap "ROUTING LOCAL" $ routingLocMap . clRouting),
                                                      ((1,2), showMap "ROUTING RELAY" $ routingRelMap . clRouting),
@@ -60,7 +60,7 @@ showModuleList = [("Routing", A.array ((1,1),(2,2)) [((1,1), showMap "ROUTING LO
             where mapBhv ::  Behavior (M.Map SourceID PipeMap) -> Behavior (M.Map SourceID PipeMap)
                   mapBhv b = switchB b $ sequenceA . fmap (bcLastValue . sePipeMap) <$> sm
 
-
+-}
 
 
 showList :: Show k => String -> [k] -> String

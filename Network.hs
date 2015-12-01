@@ -45,11 +45,18 @@ compileClient bwA = do (inE,inH) <- newAddHandler
                            mkClient :: MomentIO ()
                            mkClient = do inEv <- fromAddHandler inE 
                                          c <- buildClient inEv dhKeys keys uID
-                                         reactimate $ outH <$> clToSend c
+                                         reactimate $ outH' <$> clToSend c
                                          forM_ act ($c)
                                          pure ()
-                           ci = ClientInterface inH outE (uID, keys, dhKeys)
+                                where outH' p = do putStrLn $ "Sending packet : " ++ show p
+                                                   outH p
+                           inH' p = putStrLn ("zhzouhvoiuhz" ++ show p) >> inH p
+                           ci = ClientInterface inH' outE (uID, keys, dhKeys)
+                       inE `register` print
+                       outE `register` print
                        actuate =<< compile mkClient 
+                        
+
                        pure (ci,a)
 
 
