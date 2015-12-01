@@ -16,13 +16,18 @@ type ShowClient = [(String, A.Array (Int,Int) (AddHandler String))]
 
 buildApp :: ShowClient -> IO ()
 buildApp binds = do 
+        print "buildApp : 1 "
         cfg <- standardIOConfig
+        print "buildApp : 2 "
         chan <- newChan
+        print "buildApp : 3 "
 --        zipWithM_ (registerHook chan) modifiers hooks
 --        zipWithM_ (registerModifier chan) modifiers (snd <$> binds)
+        print "buildApp : 4 "
         sequence_ $ do (tab,modi) <- zip (snd <$> binds) (modifiers)
                        (i,j) <- range $ A.bounds tab
                        pure $ void $ registerModifier chan modi tab (i,j)
+        print "buildApp : 5 "
         void $ customMain (mkVty cfg) chan newClientApp client
         
 --        pure (void $ customMain (mkVty cfg) chan newClientApp client, buildModifier chan <$> modifiers)

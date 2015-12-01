@@ -48,13 +48,14 @@ testMain tcL = do
               print "Building Clients"
               ciL <- forM bananWriterL compileClient
               print "Building display"
-              mv <- launchApp . concat $ fst . snd <$> ciL
+--              mv <- launchApp . concat $ fst . snd <$> ciL
               mapM_ genTest (zip tcL $ snd . snd <$> ciL)
               print "Launching interface"
               let ciLZ = zip (fst <$> ciL) $ tcListen <$> tcL
               print "registering communications"
               forM_ ciLZ $ \(ci, nl) -> forM_ nl $ \i -> ciOutput ci `register` ciInput (fst $ ciL !! i)
-              readMVar mv
+              getLine
+              pure ()
 
     where bananWriterL = map buildTestClient tcL :: [BananWriter (ShowClient, (Handler RessourceID, Handler RessourceID))]
           buildTestClient :: TestClient -> BananWriter (ShowClient, (Handler RessourceID, Handler RessourceID))

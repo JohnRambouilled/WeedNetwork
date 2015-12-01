@@ -30,5 +30,5 @@ tests:
 
 
 profil: Main.hs   #obj/ethernet.o obj/receiver.o obj/udp.o
-		jhc -osuf p_o -prof -auto-all -threaded --make Main.hs  #obj/ethernet.o obj/receiver.o obj/udp.o --make Main.hs
+	ghc -osuf p_o -prof -auto-all -threaded --make Main.hs  #obj/ethernet.o obj/receiver.o obj/udp.o --make Main.hs
 			
