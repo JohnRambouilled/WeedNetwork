@@ -5,6 +5,7 @@ where
 import Data.ByteString.Lazy hiding (split)
 import Data.Binary
 import Control.Monad
+import Control.Lens
 import qualified Data.Map as M
 import GHC.Generics
 import Reactive.Banana
@@ -45,7 +46,7 @@ buildCryptoMap introE packetE = do --(cryptoE, cryptoH) <- newEvent
                                    cryptoE <- execute $ apply (onIntro <$> bmLastValue cMap) $ filterE checkIntro introE
                                    reactimate $ buildMap buildH <$> snd (split cryptoE)
                                    fireKeyBhv (bmLastValue cMap) packetE
-                                   pure ((eEventC <$>) <$> bmBhvC cMap, toDoWithLens <$> cryptoE)
+                                   pure ((eEventC <$>) <$> bmBhvC cMap, fmap (over _2 eEventC) <$> cryptoE)
     where makeCloseEvent i = do (h,ce) <- newEventC
                                 let ce' = ce{ceEvent = filterSig i $ ceEvent ce}
                                 pure  $ EventEntry h ce'
@@ -57,8 +58,6 @@ buildCryptoMap introE packetE = do --(cryptoE, cryptoH) <- newEvent
                                                 pure $ Right (i, ee)
           buildMap :: (IntroClass i, SignedClass e) => Handler ((KeyHash, EventC e), EventEntry e) -> (i, EventEntry e) -> IO ()
           buildMap h (i,e) = h ((scKeyHash i, eEventC e),e)
-          toDoWithLens (Left i) = Left i
-          toDoWithLens (Right (i,ee)) = Right (i, eEventC ee)
           checkIntro i = checkSig (icPubKey i) i -- && computeHashFromKey (icPubKey i) == scKeyHash i 
 
 
