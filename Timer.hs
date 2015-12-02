@@ -4,6 +4,7 @@ import Reactive.Banana
 import Reactive.Banana.Frameworks
 import Control.Concurrent
 import Control.Monad
+import Control.Lens
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 import qualified Data.Map as M
@@ -20,8 +21,7 @@ data TimeOutEntry = TimeOutEntry {toeID :: TimeOutID,
 
 
 buildTimeOutIDable :: IDable i k => Time -> Event (i, EventC e) -> Event k -> MomentIO ()
-buildTimeOutIDable t addE refE = buildTimeOut t (f <$> addE) refE
-    where f (i,e) = (extractID i, e)
+buildTimeOutIDable t addE = buildTimeOut t $ over _1 extractID <$> addE 
 
 buildTimeOut :: Ord k => Time -> Event (k, EventC e) -> Event k -> MomentIO ()
 buildTimeOut t addE refE = do buildE <- liftIOEvent $ genTime <$> addE

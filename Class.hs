@@ -146,11 +146,13 @@ buildEventCMap = buildEventCMapWith . ((\(k,e) -> ((k,e), e)) <$>)
 
 buildEventCMapWith :: Ord k => Event ((k, EventC e), a) -> MomentIO (BehaviorMod (M.Map k a))
 buildEventCMapWith e = do map <- newBehaviorMod M.empty
-                          execute $ applyMod insert map e  -- TO CKECK
+                          reactimate =<< (execute $ applyMod insert map e)  -- TO CKECK
                           pure map
-    where insert :: Ord k => Modifier (M.Map k a) -> M.Map k a -> ((k, EventC e), a) -> MomentIO ()
-          insert mod map ((k,ce),a) = do reactimate $ pure (mod $ M.delete k) <$> ceCloseEvent ce
-                                         liftIO (mod $ M.insert k a)
+    where insert :: Ord k => Modifier (M.Map k a) -> M.Map k a -> ((k, EventC e), a) -> MomentIO (IO ())
+          insert mod map ((k,ce),a) = do 
+                                         reactimate $ pure (mod $ M.delete k) <$> ceCloseEvent ce
+                                         pure (mod $ M.insert k a)
+
 
 newEventC :: MomentIO (Handler e, EventC e)
 newEventC = do (eE, eF) <- newEvent
@@ -177,6 +179,8 @@ deleteLookup k m = case M.updateLookupWithKey f k m of
                     (Nothing, _) -> Nothing
     where f _ _ = Nothing
 
+ioPutS :: MonadIO m => String -> m ()
+ioPutS = liftIO . Prelude.putStrLn
     --do (e', h) <- newEvent
                   -- reactimate $ (h =<<) <$> e
                   -- pure e'

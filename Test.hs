@@ -31,8 +31,8 @@ mainTestSolo = testMain [TestClient [] [] True []]
 
 
 mainTestBinaire :: IO ()
-mainTestBinaire = testMain [TestClient [res1] [] True [1],
-                            TestClient [] [res1] True [0]]
+mainTestBinaire = testMain [TestClient [] [] True [1],
+                            TestClient [] [] True [0]]
         where res1 = RessourceID (encode "This is the shit")
 
 
@@ -50,36 +50,26 @@ testMain tcL = do
               print "Building Clients"
               ciL <- forM bananWriterL compileClient
               print "Building display"
---              mv <- launchApp . concat $ fst . snd <$> ciL
---              mapM_ genTest (zip tcL $ snd . snd <$> ciL)
+              mv <- launchApp . concat $ fst . snd <$> ciL
+              mapM_ genTest (zip tcL $ snd . snd <$> ciL)
               print "Launching interface"
               let ciLZ = zip (fst <$> ciL) $ tcListen <$> tcL
               print "registering communications" 
-              print $ length tcL
-              print $ length ciL
-              forM_ ciLZ $ \(ci, nl) -> do putStrLn $ "nl : " ++ show nl
-                                           forM_ nl $ \i -> do print i 
-                                                               ciOutput ci `register` input' (ciInput (fst $ ciL !! i))
+              forM_ ciLZ $ \(ci, nl) -> forM_ nl $ \i -> ciOutput ci `register` ciInput (fst $ ciL !! i)
               print "Done"
-              getLine
-              pure ()
+              readMVar mv
 
-    where bananWriterL :: [BananWriter ()]
-          bananWriterL = map (pure $ pure ()) tcL
-          input' :: Handler Packet -> Handler Packet
-          input' h p = do putStrLn $ "ReceivedPacket : " ++ show p
-                          h p  
-{-
     where bananWriterL = map buildTestClient tcL :: [BananWriter (ShowClient, (Handler RessourceID, Handler RessourceID))]
           buildTestClient :: TestClient -> BananWriter (ShowClient, (Handler RessourceID, Handler RessourceID))
           buildTestClient tc = do offH <- extractHandler $ \c rID -> offerRessource (clRessources c) (testValidity, encode $ show rID, rID)
                                   resH <- extractHandler clResearch
-                                  sc <- renderClient [] --showModuleList
+                                  sc <- renderClient showModuleList
                                   pure (sc, (offH, resH))
           genTest :: (TestClient, (Handler RessourceID, Handler RessourceID)) -> IO () 
           genTest (tc, (offH, resH)) = do forM_ (tcOfferedR tc) offH
                                           forM_ (tcResearch tc) resH
 
+{-
               
 leakTestMain :: IO ()
 leakTestMain = do 

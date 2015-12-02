@@ -21,18 +21,18 @@ type Packet = Either NeighPacket PipePacket
 
 
 data Client = Client {clNeighbors :: Neighborhood,
---                      clRouting :: Routing,
---                      clRessources :: Ressources,
+                      clRouting :: Routing,
+                      clRessources :: Ressources,
                       clDHKeys :: DHKeyPair,
                       clKeys :: KeyPair,
                       clUserID :: UserID,
                     
                       clReceived :: Event Packet,
-                      clToSend :: Event Packet
---                      clSendH :: Handler Packet
+                      clToSend :: Event Packet,
+                      clSendH :: Handler Packet,
   
---                      clNewRoadH :: Handler NewRoad,
---                      clSendToPeer :: Handler (SourceID, RawData)
+                      clNewRoadH :: Handler NewRoad,
+                      clSendToPeer :: Handler (SourceID, RawData)
                       }
 
 buildClient :: Event Packet -> DHKeyPair -> KeyPair -> UserID -> MomentIO Client
@@ -42,31 +42,29 @@ buildClient packetsE (dhPK,dhSK) (pK,sK) uID = do
                           (locMsgE, locMsgH) <- newEvent
                           (sendE,sendH) <- newEvent
 
-                          reactimate $ print <$> packetsE
                         
                           liftIO . print $ "building Modules"
 
                           neighs <- buildNeighborhood neighPE
---                          res <- buildRessources dhPK uID (pK, sK) (nbhRessources neighs) 
---                          rout <- buildRouting uID dhSK newRoadE (nbhRequests neighs) pipesPE (nbhNeighBreak neighs) 
+                          res <- buildRessources dhPK uID (pK, sK) (nbhRessources neighs) 
+                          rout <- buildRouting uID dhSK newRoadE (nbhRequests neighs) pipesPE (nbhNeighBreak neighs) 
 
                           liftIO . print $ "connecting handlers"
---                          ansE <- mergeEvents . bcChanges $ resListenMap res
---                          reactimate $ newRoadH . answerToNewRoad uID <$> ansE
+                          ansE <- mergeEvents . bcChanges $ resListenMap res
+                          reactimate $ newRoadH . answerToNewRoad uID <$> ansE
 
                           liftIO . print $ "starting neighIntro repeater"
                           (stopRepeatIntro, introE) <- repeatNeighIntro neighRepeatTime uID (pK,sK) emptyPayload
                           
---                          neighDataE <- unionM $ (sendNeighData uID (pK,sK) <$>) <$>  [routingOutgoingNeighPacket rout,
---                                                                                      NeighRes <$> resRelPackets res] 
---                          neighPacketE <- unionM [neighDataE, introE]
-                          toSend <- unionM [sendE, Left <$> introE ]-- neighPacketE , Right <$> routingOutgoingPackets rout]
---                          sendLocalMessages rout locMsgE
---                          pure $ Client neighs rout res (dhPK, dhSK) (pK,sK) uID packetsE toSend sendH newRoadH locMsgH 
-                          pure $ Client neighs (dhPK, dhSK) (pK,sK) uID packetsE toSend 
+                          neighDataE <- unionM $ (sendNeighData uID (pK,sK) <$>) <$>  [routingOutgoingNeighPacket rout,
+                                                                                      NeighRes <$> resRelPackets res] 
+                          neighPacketE <- unionM [neighDataE, introE]
+                          toSend <- unionM [sendE, Left <$> neighPacketE , Right <$> routingOutgoingPackets rout]
+                          sendLocalMessages rout locMsgE
+                          pure $ Client neighs rout res (dhPK, dhSK) (pK,sK) uID packetsE toSend sendH newRoadH locMsgH 
+--                          pure $ Client neighs (dhPK, dhSK) (pK,sK) uID packetsE toSend 
 
 
-{-
 clSendNeighData :: Client -> Handler NeighDataContent
 clSendNeighData c d = clSendH c . Left $ ((sendNeighData <$> clUserID <*> clKeys <*> pure d) $ c)
 
@@ -84,4 +82,3 @@ clSendAnswer c (t,d,rid) = sendAnswer (fst $ clDHKeys c) (fst $ clKeys c) (clUse
 answerToNewRoad :: UserID -> Answer -> NewRoad
 answerToNewRoad uID = NewRoad <$> (uID :) . ansRoad <*> cResSourceDHKey . ansCert <*> ansSourceID <*> pure (encode "wooobdidoo")
 
--}
