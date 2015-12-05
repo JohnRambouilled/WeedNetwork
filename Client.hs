@@ -71,8 +71,11 @@ clSendNeighData c d = clSendH c . Left $ ((sendNeighData <$> clUserID <*> clKeys
 clSendResearch :: Client -> Handler RessourceID 
 clSendResearch c = clSendNeighData c . NeighRes . genResearch
 clResearch :: Client -> RessourceID -> IO ()
-clResearch c rID = do void $ newRepeater Nothing 5 $ clSendResearch c rID
+clResearch c rID = do putStrLn $ "beginning research for : " ++ show rID
+                      void $ newRepeater Nothing 5 $ clSendResearch c rID
+                      putStrLn $ "calling ressource handler"
                       resListenHandler (clRessources c) (rID, True)
+                      putStrLn $ "done"
 
 
 clSendAnswer :: Client -> Handler (Time, RawData, RessourceID)

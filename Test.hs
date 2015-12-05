@@ -31,8 +31,8 @@ mainTestSolo = testMain [TestClient [] [] True []]
 
 
 mainTestBinaire :: IO ()
-mainTestBinaire = testMain [TestClient [] [] True [1],
-                            TestClient [] [] True [0]]
+mainTestBinaire = testMain [TestClient [res1] [] True [1],
+                            TestClient [] [res1] True [0]]
         where res1 = RessourceID (encode "This is the shit")
 
 
@@ -58,6 +58,7 @@ testMain tcL = do
               forM_ ciLZ $ \(ci, nl) -> forM_ nl $ \i -> ciOutput ci `register` ciInput (fst $ ciL !! i)
               print "Done"
               readMVar mv
+--              getLine >> pure ()
 
     where bananWriterL = map buildTestClient tcL :: [BananWriter (ShowClient, (Handler RessourceID, Handler RessourceID))]
           buildTestClient :: TestClient -> BananWriter (ShowClient, (Handler RessourceID, Handler RessourceID))
@@ -68,6 +69,8 @@ testMain tcL = do
           genTest :: (TestClient, (Handler RessourceID, Handler RessourceID)) -> IO () 
           genTest (tc, (offH, resH)) = do forM_ (tcOfferedR tc) offH
                                           forM_ (tcResearch tc) resH
+          ciInput' :: ClientInterface -> Handler Packet
+          ciInput' ci p = print p >> (ciInput ci $ p)
 
 {-
               

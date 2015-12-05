@@ -112,11 +112,12 @@ buildRessources dhPK uID kP packetE = let (resE, ansE) = split packetE in
 
           buildListenMap :: Event (RessourceID, Bool) -> Event Answer -> MomentIO (BehaviorC (EventMap RessourceID Answer))
           buildListenMap orderE ansE = do bhv <- newBehaviorMod M.empty 
-                                          execute $ onOrder (bmModifier bhv) <$> orderE
+                                          reactimate . (bmModifier bhv <$>) =<< execute (onOrder <$> orderE)
                                           reactimate . filterJust $ apply (fireKey <$> bmLastValue bhv) ansE
                                           pure $ fmap eEvent <$> bmBhvC bhv
-            where onOrder h (rID,b) = if b then (liftIO . h . M.insert rID) =<< newEventEntry 
-                                           else liftIO . h $ M.delete rID
+            where onOrder :: (RessourceID, Bool) -> MomentIO (EventEntryMap RessourceID Answer -> EventEntryMap RessourceID Answer)
+                  onOrder (rID,b) = if b then (pure . M.insert rID) =<< newEventEntry 
+                                          else pure $ M.delete rID
 
 
           relayAnswer :: Answer -> Answer
