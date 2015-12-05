@@ -64,9 +64,8 @@ generateKeyPair = do (skBs,_) <- randomBytesGenerate keyByteSize <$> getSystemDR
 
 generateDHKeyPair :: IO (DHPubKey, DHPrivKey)
 generateDHKeyPair  = do (skBs,_) <- randomBytesGenerate keyByteSize <$> getSystemDRG
-                        case DH.secretKey (skBs :: BStrct.ByteString) of
-                                Left s -> fail s
-                                Right k -> pure (DH.toPublic k, k)
+                        sK <- throwCryptoErrorIO $ DH.secretKey (skBs :: BStrct.ByteString)
+                        pure (DH.toPublic sK, sK)
                  
 
 --privKeyToDHPrivKey :: PrivKey -> Maybe DHPrivKey
@@ -101,10 +100,7 @@ instance Binary PrivKey where put (PrivKey pk) = putByteString $ BA.convert pk
                               get = PrivKey <$> getCryptoFailable keyByteSize S.secretKey 
 
 instance Binary DH.PublicKey where put pk = putByteString $ BA.convert pk
-                                   get = do b <- DH.publicKey <$> getByteString dhPubKeyByteSize
-                                            case b of
-                                                    Left e -> fail (show e) 
-                                                    Right k -> pure k
+                                   get = getCryptoFailable dhPubKeyByteSize DH.publicKey
 
 prettyPrint :: RawData -> String
 prettyPrint = concat . map (flip showHex "") . B.unpack

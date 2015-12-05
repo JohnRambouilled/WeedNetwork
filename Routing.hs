@@ -61,6 +61,7 @@ buildRouting uID dhSK newRoadE reqEuc packetE neighBE = do
                      (localMap, cryptoLocE) <- buildCryptoMap newReqE packetE                     --Building Local RoutingMap 
                      let (locRefreshE, locNewE) = split cryptoLocE
                          newPipeE = filterJust $ makeNewPipe packetOutH <$> locNewE              --Event of NewPipes
+                     buildTimeOutIDable pipeTimeOut locNewE (never :: Event KeyHash)
                      newReqE <- unionM [relNewE, (\(r,e) -> (nrReq r,e)) <$> locNewE ]
                      (routTree, nbOutE) <- buildRoutingTable uID newReqE neighBE
                      requestOut <- unionM [NeighReq . relayRequest <$> relRefreshE,

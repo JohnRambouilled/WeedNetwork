@@ -19,6 +19,9 @@ data NeighBreak = NeighBreak {nbPartialRoad :: [UserID]} deriving (Generic, Show
 
 data RoutingData = RoutingNode UserID
                  | RoutingLeaf (PipeID,EventC PipePacket)
+instance Show RoutingData where show (RoutingNode uID) = "User : " ++ show uID
+                                show (RoutingLeaf (pID,_)) = "Pipe : " ++ show pID
+
 instance Eq RoutingData where
          (RoutingNode uID) == (RoutingNode uID') = uID == uID'
          (RoutingLeaf (pID, _)) == (RoutingLeaf (pID',_)) = pID == pID'

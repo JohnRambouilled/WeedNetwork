@@ -10,7 +10,9 @@ import Control.Monad
 import qualified Data.Array as A
 import Control.Concurrent
 import Control.Concurrent.MVar
+import Data.Tree
 
+import Routes.Core
 import Class
 import Routing
 import Ressource
@@ -43,6 +45,8 @@ showModuleList = [("Routing", A.array ((1,1),(2,2)) [((1,1), showMap "ROUTING LO
                                                      ((1,2), showMap "ROUTING RELAY" $ routingRelMap . clRouting),
                                                      ((2,1), showMap "NEIGHBORS" $ nbhNeighMap . clNeighbors),
                                                      ((2,2), showPipes "PIPE MAP" $ routingSourceMap . clRouting)]),
+                  ("Network", A.listArray ((1,1),(2,1)) [showTree "LEECH TREE" $ fmap leechsTree . routingTree . clRouting,
+                                                         showTree "SEEDS TREE" $ fmap seedsTree . routingTree . clRouting ]),
                   ("Ressources", A.array ((1,1),(2,1)) [((1,1), showMap "RESSOURCE LOCAL" $ bmBhvC . resLocalAnswerMap . clRessources),
                                                         ((2,1), showMap "RESSOURCE LISTEN" $ resListenMap . clRessources)]),
 --                  ("Logs", A.Array ((1,1),(1,1)) [((1,1), extractAddHandler $ 
@@ -51,6 +55,9 @@ showModuleList = [("Routing", A.array ((1,1),(2,2)) [((1,1), showMap "ROUTING LO
 
     where showMap :: Show k => String -> (Client -> BehaviorC (M.Map k a)) -> BananWriter (AddHandler String)
           showMap name acc = extractAddHandler $ \c -> showList name . M.keys <$> bcChanges (acc c)
+          
+          showTree :: Show a => String -> (Client -> BehaviorC (Tree a)) -> BananWriter (AddHandler String)
+          showTree name f = extractAddHandler $ \c -> drawTree . fmap show <$> bcChanges (f c)
 
           showPipes :: String -> (Client -> BehaviorC SourceMap) -> BananWriter (AddHandler String)
           showPipes name acc = getClientEvent $ \c -> showSourceMap name (bcChanges $ acc c)
