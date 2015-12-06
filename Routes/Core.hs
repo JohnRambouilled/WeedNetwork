@@ -70,19 +70,21 @@ delRoad (leechRoad,seedRoad) (RoutingTree leechT seedT) = let leechRet = removeS
 
 
 buildRoutingTable ::  UserID  -- Me
+                  -> Handler (String)
                   -> Event (Request, EventC PipePacket)  -- Raw stream containing the requests relayed
                   -> Event NeighBreak -- Raw stream of breaks
                   -> MomentIO (BehaviorC RoutingTree, Event NeighBreak) -- the tree and the stream of breaks we have to send
-buildRoutingTable me reqE breakE = do routingTree <- newBehaviorMod (RoutingTree (makeTree [RoutingNode me]) (makeTree [RoutingNode me]))
-                                      (relayE, relayF) <- newEvent
-                                      execute $ onRequest (bmModifier routingTree) <$> reqE
-                                      reactimate $ applyMod (onNeighBreak relayF) routingTree $ (me:) . nbPartialRoad <$> breakE
-                                      pure (bmBhvC routingTree, relayE)
+buildRoutingTable me log reqE breakE = do routingTree <- newBehaviorMod (RoutingTree (makeTree [RoutingNode me]) (makeTree [RoutingNode me]))
+                                          (relayE, relayF) <- newEvent
+--                                          reactimate $ log <$> 
+                                          execute  (onRequest (bmModifier routingTree) <$> reqE) >>= reactimate
+                                          reactimate $ applyMod (onNeighBreak relayF) routingTree $ (me:) . nbPartialRoad <$> breakE
+                                          pure (bmBhvC routingTree, relayE)
 
-  where onRequest :: Modifier RoutingTree -> (Request, EventC PipePacket) -> MomentIO ()                              
+  where onRequest :: Modifier RoutingTree -> (Request, EventC PipePacket) -> MomentIO (IO ())                            
         onRequest mod (req, pipeC) = do let road = splitRoads me (reqRoad req, reqPipeID req, pipeC) 
-                                        liftIO $ mod $ addRoad road
                                         reactimate $ fmap (pure $ mod $ fst3.delRoad  road) (ceCloseEvent pipeC)
+                                        pure $ mod $ addRoad road
         onNeighBreak :: Handler NeighBreak -> Modifier RoutingTree -> RoutingTree -> [UserID] -> IO ()
         onNeighBreak nbFire mod tr partialRoad = case delRoad (splitPartialRoads me partialRoad) tr of
                                                       (routingTree', Just rmLeech, _) -> do closeTree mod routingTree' rmLeech >> nbFire (NeighBreak partialRoad)
