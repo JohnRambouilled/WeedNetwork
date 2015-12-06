@@ -57,6 +57,11 @@ splitPartialRoads me road = (leechRoad, seedRoad)
 addRoad ::  ([RoutingData], [RoutingData]) -> RoutingTree -> RoutingTree --(Tree RoutingData,Tree RoutingData) -> (Tree RoutingData,Tree RoutingData)
 addRoad (leechRoad, seedRoad) (RoutingTree leechT seedT) = RoutingTree (toTree $ insertRoad leechRoad leechT) (toTree $ insertRoad seedRoad seedT)
 
+{- Retourne vrai si la route est dans la table -}
+checkRoads me (RoutingTree leechT seedT) road = isJust (exploreTreePath leechRoad leechP) && isJust (exploreTreePath seedRoad seedP)
+    where (leechRoad,seedRoad) = splitPartialRoads me road
+          (leechP,seedP) = (fromTree leechT, fromTree seedT)
+
 
 {- Retire les sous routes spécifiées -}
 --delRoad :: ([RoutingData], [RoutingData]) -> RoutingTree -> Maybe (RoutingTree, Tree RoutingData, Tree RoutingData)
