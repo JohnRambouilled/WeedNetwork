@@ -39,14 +39,14 @@ type PipeMap = M.Map PipeID PipeEntry
 
 buildSourceMap :: Event NewPipe -> MomentIO (BehaviorC SourceMap)
 buildSourceMap newPipeE = do sMap <- newBehaviorMod M.empty
-                             execute $ applyMod onNewPipe sMap newPipeE
+                             reactimate =<< execute (applyMod onNewPipe sMap newPipeE)
                              pure $ fmap fst <$> bmBhvC sMap
-    where onNewPipe ::  Modifier SourceMapH -> SourceMapH -> NewPipe -> MomentIO ()
+    where onNewPipe ::  Modifier SourceMapH -> SourceMapH -> NewPipe -> MomentIO (IO ())
           onNewPipe mod map np = case sID `M.lookup` map of
-                                       Just (_,h) -> liftIO $ h np
+                                       Just (_,h) -> pure $ h np
                                        Nothing -> do sE <- newSourceEntry
-                                                     liftIO . snd sE $ np
-                                                     liftIO . mod $ M.insert sID sE
+                                                     pure $ do snd sE $ np
+                                                               mod $ M.insert sID sE
                     where sID = npSource np
                     
 

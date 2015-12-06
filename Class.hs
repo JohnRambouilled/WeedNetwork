@@ -90,6 +90,12 @@ unionM = spillEvent . unionL
 unionL :: [Event a] -> Event [a]
 unionL eL = ($ []) <$> unions (((\a s -> a : s) <$>) <$> eL)
 
+switchBC :: Behavior a -> BehaviorC (BehaviorC a) -> BehaviorC a
+switchBC i bc = BehaviorC (switchB i (bcLastValue <$> e) )
+                          $ switchE (bcChanges <$> e)
+    where e = bcChanges bc
+
+
         -- ***** Fonctions utiles *****
         
 -- | apply adapté aux ModEvent : les arguments du premier parametre sont :

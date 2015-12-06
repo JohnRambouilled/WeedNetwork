@@ -20,6 +20,18 @@ import Ressource
 import Network
 
 
+mainTestWTF :: IO ()
+mainTestWTF = testMain [TestClient [r1] [r4] True [5],
+                        TestClient [r3] [r1] True [2,3,4],
+                        TestClient [r2] [r3] True [1,3,5],
+                        TestClient [r1] [r2] True [1,2,4,5],
+                        TestClient [r4] [r1] True [1,3,5],
+                        TestClient [r3] [r4] True [2,3,4,0]]
+        where r1 = RessourceID (encode "Ressource 1")
+              r2 = RessourceID (encode "Ressource 2")
+              r3 = RessourceID (encode "Ressource 3")
+              r4 = RessourceID (encode "Ressource 4")
+
 mainTestRelay :: IO ()
 mainTestRelay = testMain [TestClient [res1] [] True [1],
                           TestClient [] [] True [0,2],

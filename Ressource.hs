@@ -35,19 +35,21 @@ type LocalAnswer = (Time, RawData) --Durée de validité, et contenu
 type ResPolMap = M.Map RessourceID Bool
 type ResPolMapBhv = BehaviorMod ResPolMap
 
-type AnswerMap = TimeMap RessourceID Answer --Map des Answers disponnibles
+type AnswerMap = TimeMap RessourceID Answer --Map des Answers relayées
 type AnswerMapBhv = BehaviorMod AnswerMap
 
-type LocalAnswerMap = M.Map RessourceID LocalAnswer
+type LocalAnswerMap = M.Map RessourceID LocalAnswer  --Map des ressources diponnible localement (proposées)
 type LocalAnswerMapBhv = BehaviorMod LocalAnswerMap
 
-type RelayMap = TimeMap RessourceID ()
+type RelayMap = TimeMap RessourceID ()     --Map des recherches récement relayées
 type RelayMapBhv = BehaviorMod RelayMap 
 
+type ListenMap = EventMap RessourceID Answer   --Map des ressources écoutées (désirées)
+type ListenMapBhv = BehaviorC ListenMap
 
 data Ressources = Ressources {resAnswerMap :: AnswerMapBhv,
                               resLocalAnswerMap :: LocalAnswerMapBhv,
-                              resListenMap :: BehaviorC (EventMap RessourceID Answer),
+                              resListenMap :: ListenMapBhv,
                               resRelayMap :: RelayMapBhv,
                               resRelayPolitic :: ResPolMapBhv,
                               resStorePolitic :: ResPolMapBhv,
