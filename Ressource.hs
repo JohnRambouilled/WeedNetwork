@@ -22,7 +22,7 @@ newtype RessourceID = RessourceID RawData
 
 -- TODO
 ttlMax = 10
-maxDelay = 10
+ansMaxDelay = 10
 
 relayTimeOut = 10 :: Time
 
@@ -44,12 +44,6 @@ type LocalAnswerMapBhv = BehaviorMod LocalAnswerMap
 type RelayMap = TimeMap RessourceID ()
 type RelayMapBhv = BehaviorMod RelayMap 
 
---type LocalRessourceMap = M.Map RessourceID (Int, Time, RawData) --Nombre de répetition, et temps d'attente, contenue des réponses 
---genLocalResMap :: [RessourceID] -> LocalRessourceMap
---genLocalResMap rIDL = M.fromList $ f <$> rIDL
---    where f i = (i, (5, 5, encode i))
-
-
 
 data Ressources = Ressources {resAnswerMap :: AnswerMapBhv,
                               resLocalAnswerMap :: LocalAnswerMapBhv,
@@ -58,6 +52,7 @@ data Ressources = Ressources {resAnswerMap :: AnswerMapBhv,
                               resRelayPolitic :: ResPolMapBhv,
                               resStorePolitic :: ResPolMapBhv,
                               resListenHandler :: Handler (RessourceID, Bool),
+                              resLogs :: Event String,
                               resRelPackets :: Event RessourcePacket }
 
 genResearch :: RessourceID -> RessourcePacket
@@ -72,20 +67,21 @@ buildRessources dhPK uID kP packetE = let (resE, ansE) = split packetE in
                                          ansB <- newBehaviorMod M.empty
                                          locAnsB <- newBehaviorMod M.empty
                                          relB <- newBehaviorMod M.empty
+                                         (logsE, logsH) <- newEvent
                                          (listenE, listenH) <- newEvent
                                          (packetOE, packetOH) <- newEvent
-                                         let onResB = onResearch packetOH (bmModifier relB) <$> bmLastValue relB <*> bmLastValue ansB <*> bmLastValue locAnsB <*> bmLastValue relPol
-                                             onAnsB = onAnswer packetOH (bmModifier ansB) <$> bmLastValue ansB <*> bmLastValue relB <*> bmLastValue stoPol
+                                         let onResB = onResearch logsH packetOH (bmModifier relB) <$> bmLastValue relB <*> bmLastValue ansB <*> bmLastValue locAnsB <*> bmLastValue relPol
+                                             onAnsB = onAnswer logsH packetOH (bmModifier ansB) <$> bmLastValue relB <*> bmLastValue ansB <*> bmLastValue locAnsB <*> bmLastValue stoPol
                                          reactimate $ apply onResB resE
                                          reactimate $ apply onAnsB ansE
                                          listenB <- buildListenMap listenE ansE
-                                         pure $ Ressources ansB locAnsB listenB relB relPol stoPol listenH packetOE 
+                                         pure $ Ressources ansB locAnsB listenB relB relPol stoPol listenH logsE packetOE 
 
            {- Si la ressource est présente dans une des AnswerMap, on envoi la réponse. Sinon, on relay si elle est absente de la RelayMap et insert une entrée (time-out),
             - et on ignore si elle est présente dans la RelayMap -}
-    where onResearch :: Handler RessourcePacket -> Modifier RelayMap -> RelayMap -> AnswerMap -> LocalAnswerMap -> ResPolMap -> Research -> IO () 
-          onResearch packetH modRelM relM ansM locAnsM relPol res = when b $ case rID `M.lookup` locAnsM of
-                        Just locA -> sendAnswer dhPK (fst kP) uID packetH locA rID
+    where onResearch :: Handler String -> Handler RessourcePacket -> Modifier RelayMap -> RelayMap -> AnswerMap -> LocalAnswerMap -> ResPolMap -> Research -> IO () 
+          onResearch logH packetH modRelM relM ansM locAnsM relPol res = when b $ case rID `M.lookup` locAnsM of
+                        Just locA -> sendAnswer dhPK kP uID packetH locA rID
                         Nothing -> case rID `lookupTO` ansM of
                                     Just a -> packetH $ Right a
                                     Nothing -> case rID `lookupTO` relM of
@@ -98,17 +94,26 @@ buildRessources dhPK uID kP packetE = let (resE, ansE) = split packetE in
           {- Si la AnswerMap contient déja une meilleur Answer, on ignore.
            - Sinon, on relai si la ressource est présente dans la relayMap,
            - et on insère dans la AnswerMap si la politique le permet-}
-          onAnswer :: Handler RessourcePacket -> Modifier AnswerMap -> AnswerMap -> RelayMap -> ResPolMap -> Answer -> IO ()
-          onAnswer packetH modAnsM ansM relM stoPol ansUR = 
-                when b $ do case rID `M.lookup` relM of
-                                Nothing -> pure ()
-                                Just _ -> packetH . Right $ ans
-                            when (maybe defaultStorePolitic id $ rID `M.lookup` stoPol) $ insertTO (ansValidity ans) modAnsM ansM (rID, ans)
-                    where rID = cResID $ ansCert ans
-                          ans = relayAnswer ansUR
-                          b = case rID `lookupTO` ansM of
-                                     Just a -> compareAnswer a ans 
-                                     Nothing -> True 
+          onAnswer :: Handler String -> Handler RessourcePacket -> Modifier AnswerMap -> RelayMap -> AnswerMap -> LocalAnswerMap -> ResPolMap -> Answer -> IO ()
+          onAnswer logH packetH modAnsM relM ansM locAnsM  stoPol ansUR = do
+                eA <- checkAnswer uID ansUR
+                case eA of
+                    Left s -> logH s
+                    Right ans -> when (b ans) $ 
+                                    case rID `M.lookup` relM of
+                                            Nothing -> logH "ressource not present in relay Map"
+                                            Just _ -> do packetH . Right $ ans
+                                                         logH "Relaying answer"
+                                                         when (maybe defaultStorePolitic id $ rID `M.lookup` stoPol) $ do insertTO (ansValidity ans) modAnsM ansM (rID, ans)
+                                                                                                                          logH "Storing answer for future uses"
+                    where rID = cResID $ ansCert ansUR
+                          b ans = case rID `M.lookup` locAnsM of
+                                    Just _ -> False
+                                    Nothing -> case rID `lookupTO` ansM of Just a -> compareAnswer ans a
+                                                                           Nothing -> True
+                          
+                          
+                          --maybe False id $ pure . compareAnswer ans <$> rID `lookupTO` ansM  <*> rID `M.lookup` locAnsM
 
           buildListenMap :: Event (RessourceID, Bool) -> Event Answer -> MomentIO (BehaviorC (EventMap RessourceID Answer))
           buildListenMap orderE ansE = do bhv <- newBehaviorMod M.empty 
@@ -120,34 +125,39 @@ buildRessources dhPK uID kP packetE = let (resE, ansE) = split packetE in
                                           else pure $ M.delete rID
 
 
-          relayAnswer :: Answer -> Answer
-          relayAnswer a = a{ansTTL = ansTTL a - 1, ansRoad = uID : ansRoad a}
           relayResearch :: Research -> Research
           relayResearch res = res{resTTL = resTTL res - 1}
-            -- TODO : renvoi True si la deuxième est mieux que la première
+            -- TODO : renvoi True si la premiere est mieux que la deuxieme
           compareAnswer :: Answer -> Answer -> Bool
-          compareAnswer _ _ = True
+          compareAnswer a a' = ansRoad a < ansRoad a'
+            
+          
+
           ansValidity :: Answer -> Time
           ansValidity = cResValidity . ansCert
 
-sendAnswer :: DHPubKey -> PubKey -> UserID -> Handler RessourcePacket -> (Time, RawData) -> RessourceID -> IO ()
-sendAnswer dhPK pK uID h (v,c) rID = do t <- getTime
-                                        let cert = RessourceCert dhPK pK t v rID emptySignature
-                                        h . Right $ Answer cert ttlMax [uID] uID c
+sendAnswer :: DHPubKey -> KeyPair -> UserID -> Handler RessourcePacket -> (Time, RawData) -> RessourceID -> IO ()
+sendAnswer dhPK kp uID h (v,c) rID = do t <- getTime
+                                        let cert = RessourceCert dhPK (fst kp) t v rID emptySignature
+                                        h . Right . sign kp $ Answer cert ttlMax [uID] uID c
 
 
 
 
 
 
-{-
-checkCert source time (RessourceCert dhKey pKey sendTime rID sig) = time - sendTime < maxDelay
-                                                                    && computeHashFromKey pKey == source
-                                                                    && checkSig pKey sig (encode (dhKey,pKey,sendTime,rID))
-checkAnswer me time ans = ansTTL ans > 1 && ansTTL ans <= ttlMax &&
-                          me `Prelude.notElem` ansRoad ans && checkCert (ansSourceID ans) time (ansCert ans)
+checkAnswer :: UserID -> Answer -> IO (Either String Answer)
+checkAnswer uID ans = checkAns uID <$> getTime <*> pure ans
+    where checkAns me t ans@(Answer (RessourceCert _ pK ts val _ _) ttl r sID cnt)
+            | ttl <= 1 || ttl > ttlMax      = Left "Incorrect TTL"
+            | me `Prelude.elem` r          = Left "Already in the road" 
+            | t - ts > val                 = Left "Answer obsolete"
+            | computeHashFromKey pK /= sID  = Left "SourceID does not match PublicKey"
+            | checkSig pK ans              = Right (relayAnswer ans)
+            | otherwise                    = Left "Incorrect signature"
+          relayAnswer :: Answer -> Answer
+          relayAnswer a = a{ansTTL = ansTTL a - 1, ansRoad = uID : ansRoad a}
 
--}
 type RessourcePacket = Either Research Answer
 
 data Research = Research {resID :: RessourceID,
@@ -176,7 +186,7 @@ data RessourceCert = RessourceCert {cResSourceDHKey :: DHPubKey,
 instance IDable Answer RessourceID where
         extractID = cResID . ansCert
 
-instance SignedClass Answer where scHash (Answer c _ _ sID r) = encode (c, sID, r)
+instance SignedClass Answer where scHash (Answer (RessourceCert d k t t' rid _) _ _ sID r) = encode (d, k, t, t', rid, sID, r)
                                   scKeyHash = ansSourceID
                                   scSignature = cResSig . ansCert
                                   scPushSignature a s = a{ansCert = (ansCert a){cResSig = s} }

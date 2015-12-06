@@ -30,6 +30,7 @@ data Client = Client {clNeighbors :: Neighborhood,
                       clReceived :: Event Packet,
                       clToSend :: Event Packet,
                       clSendH :: Handler Packet,
+                      clLogs :: Event String,
   
                       clNewRoadH :: Handler NewRoad,
                       clSendToPeer :: Handler (SourceID, RawData)
@@ -61,7 +62,8 @@ buildClient packetsE (dhPK,dhSK) (pK,sK) uID = do
                           neighPacketE <- unionM [neighDataE, introE]
                           toSend <- unionM [sendE, Left <$> neighPacketE , Right <$> routingOutgoingPackets rout]
                           sendLocalMessages rout locMsgE
-                          pure $ Client neighs rout res (dhPK, dhSK) (pK,sK) uID packetsE toSend sendH newRoadH locMsgH 
+                          logsE <- unionM [routingLogs rout, resLogs res]
+                          pure $ Client neighs rout res (dhPK, dhSK) (pK,sK) uID packetsE toSend sendH logsE newRoadH locMsgH 
 --                          pure $ Client neighs (dhPK, dhSK) (pK,sK) uID packetsE toSend 
 
 
@@ -79,7 +81,7 @@ clResearch c rID = do putStrLn $ "beginning research for : " ++ show rID
 
 
 clSendAnswer :: Client -> Handler (Time, RawData, RessourceID)
-clSendAnswer c (t,d,rid) = sendAnswer (fst $ clDHKeys c) (fst $ clKeys c) (clUserID c) (clSendNeighData c . NeighRes) (t,d) rid
+clSendAnswer c (t,d,rid) = sendAnswer (fst $ clDHKeys c) (clKeys c) (clUserID c) (clSendNeighData c . NeighRes) (t,d) rid
 
 
 answerToNewRoad :: UserID -> Answer -> NewRoad

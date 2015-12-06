@@ -9,6 +9,7 @@ import PipePackets
 import Pipes
 import Routes.Core
 
+import Control.Lens
 import Reactive.Banana
 import Reactive.Banana.Frameworks
 import Control.Monad
@@ -62,7 +63,7 @@ buildRouting uID dhSK newRoadE reqEuc packetE neighBE = do
                      let (locRefreshE, locNewE) = split cryptoLocE
                          newPipeE = filterJust $ makeNewPipe packetOutH <$> locNewE              --Event of NewPipes
                      buildTimeOutIDable pipeTimeOut locNewE (never :: Event KeyHash)
-                     newReqE <- unionM [relNewE, (\(r,e) -> (nrReq r,e)) <$> locNewE ]
+                     newReqE <- unionM [relNewE, over _1 nrReq <$> locNewE ]
                      (routTree, nbOutE) <- buildRoutingTable uID newReqE neighBE
                      requestOut <- unionM [NeighReq . relayRequest <$> relRefreshE,
                                           NeighReq . relayRequest . fst <$> relNewE,

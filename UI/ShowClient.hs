@@ -49,7 +49,8 @@ showModuleList = [("Routing", A.array ((1,1),(2,2)) [((1,1), showMap "ROUTING LO
                                                          showTree "SEEDS TREE" $ fmap seedsTree . routingTree . clRouting ]),
                   ("Ressources", A.array ((1,1),(2,1)) [((1,1), showMap "RESSOURCE LOCAL" $ bmBhvC . resLocalAnswerMap . clRessources),
                                                         ((2,1), showMap "RESSOURCE LISTEN" $ resListenMap . clRessources)]),
---                  ("Logs", A.Array ((1,1),(1,1)) [((1,1), extractAddHandler $ 
+                  ("Logs", A.listArray ((1,1),(2,1)) [getClientEvent $ accumStrings "ROUTING LOG" 30 . routingLogs . clRouting,
+                                                      getClientEvent $ accumStrings "RESSOURCE LOG" 30 . resLogs . clRessources]),
                   ("Packets", A.listArray ((1,1),(2,1)) [getClientEvent $ accumStrings "RECV" 30 . fmap showPacket . clReceived,
                                                          getClientEvent $ accumStrings "SEND" 30 . fmap showPacket . clToSend]) ]
 
