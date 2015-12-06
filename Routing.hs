@@ -51,6 +51,7 @@ data Routing = Routing {routingLocMap :: RoutingMapBhv,
 buildRouting :: UserID -> DHPrivKey -> Event NewRoad -> Event Request -> Event PipePacket -> Event NeighBreak -> MomentIO Routing
 buildRouting uID dhSK newRoadE reqEuc packetE neighBE = do
                      (packetOutE, packetOutH) <- newEvent
+                     (logsE, logsH) <- newEvent
                      (reqLogs, reqE) <- split <$> liftIOEvent (checkRequest uID <$> reqEuc)       --Checking request validity
                      let (reqRelE, reqLocE) = splitEvent isLocalRequest reqE                     --Splitting local from relayed requests
                      reqOutE <- routOpenPipe newRoadE                                             --Building Request from NewRoad 
@@ -64,18 +65,18 @@ buildRouting uID dhSK newRoadE reqEuc packetE neighBE = do
                          newPipeE = filterJust $ makeNewPipe packetOutH <$> locNewE              --Event of NewPipes
                      buildTimeOutIDable pipeTimeOut locNewE (never :: Event KeyHash)
                      newReqE <- unionM [relNewE, over _1 nrReq <$> locNewE ]
-                     (routTree, nbOutE) <- buildRoutingTable uID newReqE neighBE
+                     (routTree, nbOutE) <- buildRoutingTable uID logsH newReqE neighBE
                      requestOut <- unionM [NeighReq . relayRequest <$> relRefreshE,
                                           NeighReq . relayRequest . fst <$> relNewE,
                                           NeighReq . nrReq <$> reqOutE,
                                           NeighBrk <$> nbOutE ]                                     --Request output 
                      relayPacketE <- fmap relayPackets <$> mergeEvents (bcChanges relayMap)       --Relayed packets output 
                      packetsOut <- unionM [packetOutE, relayPacketE]                       
-                     logs <- unionM [("AcceptedRequest : " ++) . show <$> reqE,
-                                    ("Rejected request : " ++) <$> reqLogs]
+                     reactimate . fmap logsH =<< unionM [("AcceptedRequest : " ++) . show <$> reqE,
+                                                         ("Rejected request : " ++) <$> reqLogs]
                      [relClose, locClose] <- forM [relayMap, localMap] $ buildCloseHandle . bcLastValue     --Generating close handles 
                      sourceMap <- buildSourceMap newPipeE
-                     pure $ Routing localMap relayMap sourceMap routTree packetsOut requestOut locClose relClose logs      --Producing output
+                     pure $ Routing localMap relayMap sourceMap routTree packetsOut requestOut locClose relClose logsE      --Producing output
     where relayPackets :: PipePacket -> PipePacket
           relayPackets p = p{pipePosition = if pipeDirection p then pipePosition p + 1 else pipePosition p - 1} 
           relayRequest :: Request -> Request
