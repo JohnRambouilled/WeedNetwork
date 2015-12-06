@@ -15,7 +15,7 @@ exploreForest1' fun v t = do c <- fun t
                                     else exploreForest1' next v c
 {- Cherche parmis les fils d'un arbre -}
 exploreTree1 :: (Eq a) => a -> TreePos Full a -> Maybe (TreePos Full a)
-exploreTree1 a t = exploreForest1' firstChild a t
+exploreTree1 a t = if label t == a then pure t else exploreForest1' firstChild a t
 
 {- Cherche un chemin dans un arbre -}
 exploreTreePath :: (Eq a) => [a] -> TreePos Full a -> Maybe (TreePos Full a)

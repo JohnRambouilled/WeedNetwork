@@ -76,7 +76,7 @@ buildRoutingTable ::  UserID  -- Me
                   -> MomentIO (BehaviorC RoutingTree, Event NeighBreak) -- the tree and the stream of breaks we have to send
 buildRoutingTable me log reqE breakE = do routingTree <- newBehaviorMod (RoutingTree (makeTree [RoutingNode me]) (makeTree [RoutingNode me]))
                                           (relayE, relayF) <- newEvent
---                                          reactimate $ log <$> 
+--                                          reactimate $ log . show . reqRoad . fst <$>  reqE
                                           execute  (onRequest (bmModifier routingTree) <$> reqE) >>= reactimate
                                           reactimate $ applyMod (onNeighBreak relayF) routingTree $ (me:) . nbPartialRoad <$> breakE
                                           pure (bmBhvC routingTree, relayE)
@@ -84,7 +84,7 @@ buildRoutingTable me log reqE breakE = do routingTree <- newBehaviorMod (Routing
   where onRequest :: Modifier RoutingTree -> (Request, EventC PipePacket) -> MomentIO (IO ())                            
         onRequest mod (req, pipeC) = do let road = splitRoads me (reqRoad req, reqPipeID req, pipeC) 
                                         reactimate $ fmap (pure $ mod $ fst3.delRoad  road) (ceCloseEvent pipeC)
-                                        pure $ mod $ addRoad road
+                                        pure (mod $ addRoad road)
         onNeighBreak :: Handler NeighBreak -> Modifier RoutingTree -> RoutingTree -> [UserID] -> IO ()
         onNeighBreak nbFire mod tr partialRoad = case delRoad (splitPartialRoads me partialRoad) tr of
                                                       (routingTree', Just rmLeech, _) -> do closeTree mod routingTree' rmLeech >> nbFire (NeighBreak partialRoad)
