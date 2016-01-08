@@ -5,6 +5,7 @@ import Reactive.Banana
 import Reactive.Banana.Frameworks
 import qualified Data.Map as M
 import Control.Monad
+import Control.Lens
 
                 -- ***** Structures de données *****
 -- Les Events sont gérés par des data instance d'EventManager (contenant une AddHandler et un Fire),
@@ -13,6 +14,9 @@ import Control.Monad
     -- | Class de type des structures contenant un event
 class EventManager a e where emEvent :: a -> Event e
                              emFire :: a -> Handler e
+
+type CloseEvent = (Event (), IO ())
+newCloseEvent = over _2 ($ ()) <$> newEvent :: MomentIO CloseEvent
 
 data EventC e = EventC {ceEvent :: Event e,
                         ceClose :: Handler (),

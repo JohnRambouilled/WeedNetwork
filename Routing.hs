@@ -4,6 +4,7 @@ module Routing where
 import Crypto 
 import Class
 import Timer
+import Ressource
 import Neighbors
 import PipePackets
 import Pipes
@@ -26,6 +27,8 @@ data NewRoad = NewRoad {nrRoad :: Road,
                         nrSourceID :: SourceID,
                         nrContent :: RawData}
 
+
+
 newRequestToNewPipe :: Handler PipePacket -> DHPrivKey -> NewRequest -> EventC PipeMessage -> Maybe NewPipe
 newRequestToNewPipe sendH uk (IncomingRequest (Request n _ r epk t pK pID _ cnt)) e = (\s -> NewPipe r (head r) pK s pID t cnt e) <$> sender
             where sender = (sendH <$>) . pipeMessageToPipePacket n False <$> decryptKeyPair epk uk 
@@ -35,7 +38,7 @@ newRequestToNewPipe sendH _ (OutgoingRequest (Request _ _ r _ t pK pID _ cnt) se
 
 data Routing = Routing {routingLocMap :: RoutingMapBhv,
                         routingRelMap :: RoutingMapBhv, 
-                        routingSourceMap :: BehaviorC SourceMap,
+                        routingSourceMap :: BehaviorMod SourceMap,
                         routingTree :: BehaviorC RoutingTree,
 
                         routingOutgoingPackets :: Event PipePacket,
@@ -111,14 +114,14 @@ routOpenPipe newRE = do
 
 sendLocalMessages :: Routing -> Event (SourceID, Payload) -> MomentIO ()
 sendLocalMessages rout = reactimate . apply sendB 
-    where sendB = sendToSource <$> bcLastValue (routingSourceMap rout)
+    where sendB = sendToSource <$> bmLastValue (routingSourceMap rout)
 
 
 sendOnPipe :: Routing -> Event (SourceID, PipeID, Payload) -> MomentIO ()
 sendOnPipe rout e = do (b,_) <- newBehavior M.empty
                        reactimate $ apply (send <$> pipeMapB b) e
     where pipeMapB :: Behavior PipeMap -> Behavior PipeMap
-          pipeMapB b = switchB b . filterJust $ apply (getPM <$> bcLastValue (routingSourceMap rout)) e
+          pipeMapB b = switchB b . filterJust $ apply (getPM <$> bmLastValue (routingSourceMap rout)) e
           getPM sm (sID, _,_) = bcLastValue . sePipeMap <$> sID `M.lookup` sm
           send pm (_, pID, d) = case pID `M.lookup` pm of
                                     Nothing -> pure ()
@@ -126,6 +129,12 @@ sendOnPipe rout e = do (b,_) <- newBehavior M.empty
 
 
 closeSources :: Routing -> Event SourceID -> MomentIO ()
-closeSources rout = reactimate . apply (close <$> bcLastValue (routingSourceMap rout))
+closeSources rout = reactimate . apply (close <$> bmLastValue (routingSourceMap rout))
     where close m sID = maybe (pure ()) (($ ()) . ceClose . seReceiver)   $ sID `M.lookup` m
+
+
+
+answerToNewRoad :: UserID -> Answer -> NewRoad
+answerToNewRoad uid ans = NewRoad r (cResSourceDHKey $ ansCert ans) (ansSourceID ans) $ ansCnt ans
+    where r = uid : ansRoad ans
 

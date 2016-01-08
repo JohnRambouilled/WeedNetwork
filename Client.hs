@@ -84,6 +84,4 @@ clSendAnswer :: Client -> Handler (Time, RawData, RessourceID)
 clSendAnswer c (t,d,rid) = sendAnswer (fst $ clDHKeys c) (clKeys c) (clUserID c) (clSendNeighData c . NeighRes) (t,d) rid
 
 
-answerToNewRoad :: UserID -> Answer -> NewRoad
-answerToNewRoad uID = NewRoad <$> (uID :) . ansRoad <*> cResSourceDHKey . ansCert <*> ansSourceID <*> pure (encode "wooobdidoo")
 

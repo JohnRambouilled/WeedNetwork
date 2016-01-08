@@ -26,10 +26,10 @@ data NewPipe = NewPipe {npRoad :: Road,
 
 
 type SourceMap = M.Map SourceID SourceEntry
-type SourceMapH = M.Map SourceID (SourceEntry, Handler NewPipe)
 
 data SourceEntry = SourceEntry {seReceiver :: EventC Payload,
                                 seSender :: Handler Payload,
+                                seAddPipe :: Handler NewPipe,
                                 sePipeMap :: BehaviorC PipeMap}
 
 data PipeEntry = PipeEntry {pePipe :: EventC PipeMessage,
@@ -37,16 +37,14 @@ data PipeEntry = PipeEntry {pePipe :: EventC PipeMessage,
 
 type PipeMap = M.Map PipeID PipeEntry
 
-buildSourceMap :: Event NewPipe -> MomentIO (BehaviorC SourceMap)
+buildSourceMap :: Event NewPipe -> MomentIO (BehaviorMod SourceMap)
 buildSourceMap newPipeE = do sMap <- newBehaviorMod M.empty
                              reactimate =<< execute (applyMod onNewPipe sMap newPipeE)
-                             pure $ fmap fst <$> bmBhvC sMap
-    where onNewPipe ::  Modifier SourceMapH -> SourceMapH -> NewPipe -> MomentIO (IO ())
+                             pure sMap
+    where onNewPipe ::  Modifier SourceMap -> SourceMap -> NewPipe -> MomentIO (IO ())
           onNewPipe mod map np = case sID `M.lookup` map of
-                                       Just (_,h) -> pure $ h np
-                                       Nothing -> do sE <- newSourceEntry
-                                                     pure $ do snd sE $ np
-                                                               mod $ M.insert sID sE
+                                       Just se -> pure . seAddPipe se $ np
+                                       Nothing -> insertNewSource mod np
                     where sID = npSource np
                     
 
@@ -61,12 +59,15 @@ sendToSource sM (sID, p) = case sID `M.lookup` sM of
 --    where dumpMap :: SourceMap -> MomentIO ([S
 
 
-
-newSourceEntry :: MomentIO (SourceEntry, Handler NewPipe)
-newSourceEntry = do (sendE, sendH) <- newEvent
-                    (newPipeE, newPipeH) <- newEvent
-                    (sourceE,pipeMap) <- buildSource newPipeE sendE
-                    pure (SourceEntry sourceE sendH pipeMap, newPipeH)
+insertNewSource :: Modifier SourceMap -> NewPipe -> MomentIO (IO ())
+insertNewSource mod np = do se <- newSourceEntry
+                            pure $ do seAddPipe se $ np
+                                      mod $ M.insert (npSource np) se
+  where newSourceEntry :: MomentIO SourceEntry
+        newSourceEntry = do (sendE, sendH) <- newEvent
+                            (newPipeE, newPipeH) <- newEvent
+                            (sourceE,pipeMap) <- buildSource newPipeE sendE
+                            pure (SourceEntry sourceE sendH newPipeH pipeMap)
 
 -- | Manage a single source : take the event of opening pipes, and the event of message to send to se source. Return the messages received from the source (with the close Event of the source)
 buildSource :: Event NewPipe -> Event Payload -> MomentIO (EventC Payload, BehaviorC PipeMap)
