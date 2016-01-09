@@ -32,7 +32,7 @@ data NewRoad = NewRoad {nrRoad :: Road,
 newRequestToNewPipe :: Handler PipePacket -> DHPrivKey -> NewRequest -> EventC PipeMessage -> Maybe NewPipe
 newRequestToNewPipe sendH uk (IncomingRequest (Request n _ r epk t pK pID _ cnt)) e = (\s -> NewPipe r (head r) pK s pID t cnt e) <$> sender
             where sender = (sendH <$>) . pipeMessageToPipePacket n False <$> decryptKeyPair epk uk 
-newRequestToNewPipe sendH _ (OutgoingRequest (Request _ _ r _ t pK pID _ cnt) sender) e = Just $ NewPipe r (head r) pK (sendH . sender) pID t cnt e
+newRequestToNewPipe sendH _ (OutgoingRequest (Request _ _ r _ t pK pID _ cnt) sender) e = Just $ NewPipe r (last r) pK (sendH . sender) pID t cnt e
 
 
 
@@ -119,8 +119,9 @@ sendLocalMessages rout = reactimate . apply sendB
 
 sendOnPipe :: Routing -> Event (SourceID, PipeID, Payload) -> MomentIO ()
 sendOnPipe rout e = do (b,_) <- newBehavior M.empty
-                       reactimate $ apply (send <$> pipeMapB b) e
-    where pipeMapB :: Behavior PipeMap -> Behavior PipeMap
+                       bS <- pipeMapB b
+                       reactimate $ apply (send <$> bS) e
+    where pipeMapB :: Behavior PipeMap -> MomentIO (Behavior PipeMap)
           pipeMapB b = switchB b . filterJust $ apply (getPM <$> bmLastValue (routingSourceMap rout)) e
           getPM sm (sID, _,_) = bcLastValue . sePipeMap <$> sID `M.lookup` sm
           send pm (_, pID, d) = case pID `M.lookup` pm of

@@ -2,7 +2,7 @@
 module Network where
 
 import Reactive.Banana
-import Reactive.Banana.Frameworks
+import Reactive.Banana.Frameworks hiding (liftIO)
 import qualified Data.Map as M
 import Control.Monad
 import Control.Concurrent

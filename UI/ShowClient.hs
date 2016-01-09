@@ -63,8 +63,8 @@ showModuleList = [("Routing", A.array ((1,1),(2,2)) [((1,1), showMap "ROUTING LO
           showPipes :: String -> (Client -> BehaviorC SourceMap) -> BananWriter (AddHandler String)
           showPipes name acc = getClientEvent $ \c -> showSourceMap name (bcChanges $ acc c)
           showSourceMap :: String -> Event SourceMap -> Handler String -> MomentIO ()
-          showSourceMap name sm h = reactimate' . (fmap (h . showPipeMap) <$>) =<< changes . mapBhv =<< (fst <$> newBehavior M.empty)
-            where mapBhv ::  Behavior (M.Map SourceID PipeMap) -> Behavior (M.Map SourceID PipeMap)
+          showSourceMap name sm h = reactimate' . (fmap (h . showPipeMap) <$>) =<< changes =<< mapBhv =<< (fst <$> newBehavior M.empty)
+            where mapBhv ::  Behavior (M.Map SourceID PipeMap) -> MomentIO (Behavior (M.Map SourceID PipeMap))
                   mapBhv b = switchB b $ sequenceA . fmap (bcLastValue . sePipeMap) <$> sm
 
 

@@ -77,7 +77,7 @@ instance Mergeable (EventEntry e) e where allEvents = (pure <$>) . ceEvent . eEv
 --instance Mergeable (AddHandler e) e where allEvents = id
 instance Mergeable a e => Mergeable (M.Map k a) e where allEvents = foldr (unionWith $ pure id) never . (allEvents <$>) . M.elems
 
-switchEE :: Mergeable a e => Event a -> Event [e]
+switchEE :: (MonadMoment m, Mergeable a e) => Event a -> m (Event [e])
 switchEE = switchE . (allEvents <$>)
 
 spillEvent :: Event [a] -> MomentIO (Event a)
@@ -86,7 +86,7 @@ spillEvent e = do (e',h) <- newEvent
                   pure e'
 
 mergeEvents :: Mergeable a e => Event a -> MomentIO (Event e)
-mergeEvents = spillEvent . switchEE
+mergeEvents e = spillEvent =<< switchEE e
 
 unionM :: [Event a] -> MomentIO (Event a)
 unionM = spillEvent . unionL
@@ -94,9 +94,9 @@ unionM = spillEvent . unionL
 unionL :: [Event a] -> Event [a]
 unionL eL = ($ []) <$> unions (((\a s -> a : s) <$>) <$> eL)
 
-switchBC :: Behavior a -> BehaviorC (BehaviorC a) -> BehaviorC a
-switchBC i bc = BehaviorC (switchB i (bcLastValue <$> e) )
-                          $ switchE (bcChanges <$> e)
+switchBC :: MonadMoment m => Behavior a -> BehaviorC (BehaviorC a) -> m (BehaviorC a)
+switchBC i bc = BehaviorC <$> switchB i (bcLastValue <$> e)
+                          <*> switchE (bcChanges <$> e)
     where e = bcChanges bc
 
 

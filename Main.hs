@@ -3,4 +3,4 @@ module Main where
 --import Network
 import Test
 
-main = mainTestWTF -- mainTestBinaire -- pure <$> ciEvents <$>compileClient >>= renderClients --testMainRes
+main = mainTestBinaire -- mainTestWTF -- -- pure <$> ciEvents <$>compileClient >>= renderClients --testMainRes
