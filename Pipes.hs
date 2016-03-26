@@ -80,7 +80,7 @@ buildSource newPipeE toSendE = do (closeSourceE, closeSourceH) <- newEvent
                                   reactimate $ applyMod closePipe pipeMap closeE
                                   reactimate $ apply (sendToSource <$> bmLastValue pipeMap) toSendE
                                   reactimate $ applyMod closeSource pipeMap closeSourceE
-                                  pure (EventC (snd <$> msgE) closeSourceH closeSourceE,
+                                  pure (EventC (snd <$> msgE) (closeSourceH $ ()) closeSourceE,
                                         bmBhvC pipeMap)
     where sendToSource :: PipeMap -> Handler Payload
           sendToSource pMap = sendOnPipe . head $ M.assocs pMap
@@ -90,10 +90,10 @@ buildSource newPipeE toSendE = do (closeSourceE, closeSourceH) <- newEvent
           makePipeEntry np = ((npPipeID np, npMessageEvent np), PipeEntry (npMessageEvent np) $ npSender np)
           closePipe :: Modifier PipeMap -> PipeMap -> (PipeID, Payload) -> IO ()
           closePipe _ map (pID,_) = case pID `M.lookup` map of
-                                        Just e -> ceClose (pePipe e) $ ()
+                                        Just e -> ceClose $ pePipe e 
                                         Nothing -> pure ()
           closeSource :: Modifier PipeMap -> PipeMap -> () -> IO ()
           closeSource mod map _ = do mapM_ closeP $ M.elems map
                                      mod $ pure M.empty
-                where closeP e = ceClose (pePipe e) $ ()
+                where closeP e = ceClose $ pePipe e
 

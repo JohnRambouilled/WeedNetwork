@@ -99,7 +99,7 @@ buildRoutingTable me log reqE breakE = do routingTree <- newBehaviorMod (Routing
         closes t = filter isLeaf $ flatten t
         closeTree :: Modifier RoutingTree -> RoutingTree -> Tree RoutingData -> IO ()
         closeTree mod newTr closeTr  = do mod $ pure newTr
-                                          sequence (($()) . ceClose . snd . fromLeaf <$> closes closeTr)
+                                          sequence_ $ ceClose . snd . fromLeaf <$> closes closeTr
                                           pure ()
 
     

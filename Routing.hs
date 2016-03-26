@@ -24,7 +24,6 @@ type RoutingMapBhv = BehaviorC RoutingMap
 
 data NewRoad = NewRoad {nrRoad :: Road,
                         nrDHPubKey :: DHPubKey,
-                        nrSourceID :: SourceID,
                         nrContent :: RawData}
 
 
@@ -88,7 +87,7 @@ buildRouting uID dhSK newRoadE reqEuc packetE neighBE = do
           closePipes :: Event (Request, EventC PipePacket) -> MomentIO () 
           closePipes cE = void . execute $ closeP . snd <$> cE
             where closeP eC = reactimate $ filterPipeClose (ceClose eC) <$> ceEvent eC
-                  filterPipeClose h (PipeClose _ _ _ _ _) = h ()
+                  filterPipeClose h (PipeClose _ _ _ _ _) = h 
                   filterPipeClose _ _ = pure ()
           makeNewPipe :: Handler PipePacket -> (NewRequest, EventC PipePacket) -> Maybe NewPipe
           makeNewPipe sendH (req, e ) = newRequestToNewPipe sendH dhSK req $ makePipeMessage <$> e
@@ -131,11 +130,11 @@ sendOnPipe rout e = do (b,_) <- newBehavior M.empty
 
 closeSources :: Routing -> Event SourceID -> MomentIO ()
 closeSources rout = reactimate . apply (close <$> bmLastValue (routingSourceMap rout))
-    where close m sID = maybe (pure ()) (($ ()) . ceClose . seReceiver)   $ sID `M.lookup` m
+    where close m sID = maybe (pure ()) ( ceClose . seReceiver)   $ sID `M.lookup` m
 
 
 
 answerToNewRoad :: UserID -> Answer -> NewRoad
-answerToNewRoad uid ans = NewRoad r (cResSourceDHKey $ ansCert ans) (ansSourceID ans) $ ansCnt ans
+answerToNewRoad uid ans = NewRoad r (cResSourceDHKey $ ansCert ans) $ ansCnt ans
     where r = uid : ansRoad ans
 

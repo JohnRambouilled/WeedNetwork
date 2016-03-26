@@ -17,34 +17,35 @@ type UserID = KeyHash
 type Road = [SourceID]
 type PipeID = KeyHash
 
-
+-- | Meta-type created to join incoming and outgoing request (both are treated equally by the Pipe and Routing layer)
+--   the only difference being in the extraction of the pipe Key. Outgoing request comes with a signing function (sender)
 data NewRequest = IncomingRequest {nrReq :: Request} |
                   OutgoingRequest {nrReq :: Request,
                                    nrSender :: PipeMessage -> PipePacket}
 
-data Request = Request {reqPosition :: Number,
+data Request = Request {reqPosition :: Number, -- ^ Position on the road, changed during routing (NOT SIGNED)
                         reqLength :: Number, -- ^ Total length of the road
                         reqRoad :: Road,  -- ^ Road : list of UserID
                         reqEPK :: DHPubKey,  -- ^ encrypted (Keyhash, PrivKey) for the destination of the road
-                        reqTime :: Time,
-                        reqPipeKey :: PubKey,
-                        reqPipeID  :: PipeID,
-                        reqPipeSig :: Signature,
-                        reqContent :: RawData}
+                        reqTime :: Time,    -- ^ Send time of the request
+                        reqPipeKey :: PubKey, -- ^ Public Key of the opening pipe
+                        reqPipeID  :: PipeID,  -- ^ PipeID of the pipe (KeyHash of the Public Key)
+                        reqPipeSig :: Signature,  -- ^ Signature of the packet's Hash
+                        reqContent :: RawData}   -- ^ extra content if needed (cause why not)
     deriving Generic
 
 type PipeMessage = Either (PipeID, Payload) (PipeID, Payload) --Left on a PipeClose
 
-data PipePacket = PipePacket {pipeKeyID :: PipeID,
-                              pipeSig :: Signature,
-                              pipePosition :: Number,
-                              pipeDirection :: Bool,
-                              pipePayload :: Payload} |
-                  PipeClose  {pipeKeyID :: PipeID,
-                              pipeSig :: Signature,
-                              pipePosition :: Number,
-                              pipeDirection :: Bool,
-                              pipePayload :: Payload}
+data PipePacket = PipePacket {pipeKeyID :: PipeID,  -- ^PipeID of the pipe used
+                              pipeSig :: Signature,  -- ^ Signature of the packet
+                              pipePosition :: Number, -- ^ Position on the pipe, changed during routing (NOT SIGNED)
+                              pipeDirection :: Bool,  -- ^ Direction of the message (True being the direction followed by the request)
+                              pipePayload :: Payload} |  -- ^ Content of the message (this one should be useful)
+                  PipeClose  {pipeKeyID :: PipeID,  -- ^PipeID of the pipe used
+                              pipeSig :: Signature, -- ^ Signature of the packet
+                              pipePosition :: Number, -- ^ Position on the pipe, changed during routing (NOT SIGNED)
+                              pipeDirection :: Bool, -- ^ Direction of the break (True being the direction followed by the request)
+                              pipePayload :: Payload} -- ^ Content of the break
     deriving Generic
 
 
@@ -70,6 +71,7 @@ instance Show PipePacket where
 
 
 instance SignedClass PipePacket where scHash (PipePacket kH _ n b m) = encode (kH, n, b, m)
+                                      scHash (PipeClose kH _ n b m) = encode (kH, n, b, m)
                                       scKeyHash = pipeKeyID
                                       scSignature = pipeSig
                                       scPushSignature p s = p{pipeSig = s}

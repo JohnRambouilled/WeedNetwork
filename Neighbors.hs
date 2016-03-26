@@ -59,7 +59,7 @@ buildNeighborhood packetE  = let (introE, dataE) = split packetE in
                                 reactimate $ onDataEvent decoH reqH resH brkH <$> allEvents
                                 pure $ Neighborhood nMap reqE resE brkE decoH
         where closePipe m k = case k `M.lookup` m of
-                                Just ce -> ceClose ce $ ()
+                                Just ce -> ceClose ce 
                                 Nothing -> pure ()
 
 

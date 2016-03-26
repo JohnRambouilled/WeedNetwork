@@ -19,7 +19,7 @@ type CloseEvent = (Event (), IO ())
 newCloseEvent = over _2 ($ ()) <$> newEvent :: MomentIO CloseEvent
 
 data EventC e = EventC {ceEvent :: Event e,
-                        ceClose :: Handler (),
+                        ceClose :: IO (),
                         ceCloseEvent :: Event ()}
 instance Functor EventC where fmap f e = e{ceEvent = f <$> ceEvent e}
 
@@ -50,7 +50,7 @@ buildCloseHandle mapB = do (closeE, closeH) <- newEvent
                            pure closeH
         where close map k = case k `M.lookup` map of
                                 Nothing -> pure ()
-                                Just ec -> ceClose ec $ ()
+                                Just ec -> ceClose ec 
 
 
 type ParamMap a k e = M.Map k (a e)  -- ^ syntax-helper pour les types paramétriques
@@ -116,7 +116,7 @@ fireKeyBhv bhv e = reactimate . filterJust $ (f <$> bhv) <@> e
 -- | Close if predicate is True
 closeOnEC :: (e -> Bool) -> EventC e -> MomentIO () 
 closeOnEC f ec = reactimate $ cl <$> ceEvent ec
-    where cl e = if f e then ceClose ec $ () else pure ()
+    where cl e = if f e then ceClose ec else pure ()
 
 {-| Fires the value on the specified key event |-}
 fireKey :: (IDable e k, EventManager a e) => M.Map k a -> e -> Maybe (IO ())
@@ -167,7 +167,7 @@ buildEventCMapWith e = do map <- newBehaviorMod M.empty
 newEventC :: MomentIO (Handler e, EventC e)
 newEventC = do (eE, eF) <- newEvent
                (cE, cF) <- newEvent
-               pure (eF, EventC eE cF cE)
+               pure (eF, EventC eE (cF $ ()) cE)
 
 newEventEntry :: MomentIO (EventEntry e)
 newEventEntry = do (eH,eC) <- newEventC

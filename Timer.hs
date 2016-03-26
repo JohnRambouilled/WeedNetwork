@@ -27,7 +27,7 @@ buildTimeOut :: Ord k => Time -> Event (k, EventC e) -> Event k -> MomentIO ()
 buildTimeOut t addE refE = do buildE <- liftIOEvent $ genTime <$> addE
                               toMap <- buildEventCMapWith buildE
                               reactimate $ applyMod refresh toMap refE
-    where genTime (k,ce) = do toE <- newTimeOutEntry t $ ceClose ce $ ()
+    where genTime (k,ce) = do toE <- newTimeOutEntry t $ ceClose ce 
                               pure ((k,ce), toE)
           refresh mod toMap k = case k `M.lookup` toMap of
                                   Nothing -> pure ()
