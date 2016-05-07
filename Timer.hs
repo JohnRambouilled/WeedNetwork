@@ -20,14 +20,14 @@ data TimeOutEntry = TimeOutEntry {toeID :: TimeOutID,
                                     toeAction :: IO ()}
 
 
-buildTimeOutIDable :: IDable i k => Time -> Event (i, EventC e) -> Event k -> MomentIO ()
+buildTimeOutIDable :: IDable i k => Time -> Event (i, Channel e) -> Event k -> MomentIO ()
 buildTimeOutIDable t addE = buildTimeOut t $ over _1 extractID <$> addE 
 
-buildTimeOut :: Ord k => Time -> Event (k, EventC e) -> Event k -> MomentIO ()
+buildTimeOut :: Ord k => Time -> Event (k, Channel e) -> Event k -> MomentIO ()
 buildTimeOut t addE refE = do buildE <- liftIOEvent $ genTime <$> addE
-                              toMap <- buildEventCMapWith buildE
+                              toMap <- buildCloseMapWith buildE
                               reactimate $ applyMod refresh toMap refE
-    where genTime (k,ce) = do toE <- newTimeOutEntry t $ ceClose ce 
+    where genTime (k,ce) = do toE <- newTimeOutEntry t $ chanCloseH ce 
                               pure ((k,ce), toE)
           refresh mod toMap k = case k `M.lookup` toMap of
                                   Nothing -> pure ()

@@ -18,7 +18,7 @@ import GHC.Generics
 data NeighBreak = NeighBreak {nbPartialRoad :: [UserID]} deriving (Generic, Show)
 
 data RoutingData = RoutingNode UserID
-                 | RoutingLeaf (PipeID,EventC PipePacket)
+                 | RoutingLeaf (PipeID,Channel PipePacket)
 instance Show RoutingData where show (RoutingNode uID) = "User : " ++ show uID
                                 show (RoutingLeaf (pID,_)) = "Pipe : " ++ show pID
 
@@ -37,13 +37,13 @@ fromLeaf _ = error "fromLeaf on node."
 data RoutingTree = RoutingTree {leechsTree :: Tree RoutingData,
                                 seedsTree :: Tree RoutingData}
 
---accumRoutingTable :: Event t (Request, EventC PipeMessage) -> Event t NeighBreak -> Moment t (BehaviorMod t (Tree RoutingData))
+--accumRoutingTable :: Event t (Request, Channel PipeMessage) -> Event t NeighBreak -> Moment t (BehaviorMod t (Tree RoutingData))
 
 {- Sépare une route en deux routes : 
     - [Leachs] ++ [PipeID]
     - [Sources] ++ [PipeID]
 -}
-splitRoads :: UserID -> ([UserID], PipeID, EventC PipePacket) -> ([RoutingData], [RoutingData])
+splitRoads :: UserID -> ([UserID], PipeID, Channel PipePacket) -> ([RoutingData], [RoutingData])
 splitRoads me (road,pID, pipeC) = (leechRoad ++ [RoutingLeaf (pID, pipeC)] , seedRoad ++ [RoutingLeaf (pID, pipeC)]) 
   where (leechRoad, seedRoad ) = splitPartialRoads me road
 splitPartialRoads :: UserID -> [UserID] -> ([RoutingData], [RoutingData])
@@ -76,7 +76,7 @@ delRoad (leechRoad,seedRoad) (RoutingTree leechT seedT) = let leechRet = removeS
 
 buildRoutingTable ::  UserID  -- Me
                   -> Handler (String)
-                  -> Event (Request, EventC PipePacket)  -- Raw stream containing the requests relayed
+                  -> Event (Request, Channel PipePacket)  -- Raw stream containing the requests relayed
                   -> Event NeighBreak -- Raw stream of breaks
                   -> MomentIO (BehaviorC RoutingTree, Event NeighBreak) -- the tree and the stream of breaks we have to send
 buildRoutingTable me log reqE breakE = do routingTree <- newBehaviorMod (RoutingTree (makeTree [RoutingNode me]) (makeTree [RoutingNode me]))
@@ -86,9 +86,9 @@ buildRoutingTable me log reqE breakE = do routingTree <- newBehaviorMod (Routing
                                           reactimate $ applyMod (onNeighBreak relayF) routingTree $ (me:) . nbPartialRoad <$> breakE
                                           pure (bmBhvC routingTree, relayE)
 
-  where onRequest :: Modifier RoutingTree -> (Request, EventC PipePacket) -> MomentIO (IO ())                            
+  where onRequest :: Modifier RoutingTree -> (Request, Channel PipePacket) -> MomentIO (IO ())                            
         onRequest mod (req, pipeC) = do let road = splitRoads me (reqRoad req, reqPipeID req, pipeC) 
-                                        reactimate $ fmap (pure $ mod $ fst3.delRoad  road) (ceCloseEvent pipeC)
+                                        reactimate $ fmap (pure $ mod $ fst3.delRoad  road) (chanCloseE pipeC)
                                         pure (mod $ addRoad road)
         onNeighBreak :: Handler NeighBreak -> Modifier RoutingTree -> RoutingTree -> [UserID] -> IO ()
         onNeighBreak nbFire mod tr partialRoad = case delRoad (splitPartialRoads me partialRoad) tr of
@@ -99,7 +99,7 @@ buildRoutingTable me log reqE breakE = do routingTree <- newBehaviorMod (Routing
         closes t = filter isLeaf $ flatten t
         closeTree :: Modifier RoutingTree -> RoutingTree -> Tree RoutingData -> IO ()
         closeTree mod newTr closeTr  = do mod $ pure newTr
-                                          sequence_ $ ceClose . snd . fromLeaf <$> closes closeTr
+                                          sequence_ $ chanCloseH . snd . fromLeaf <$> closes closeTr
                                           pure ()
 
     

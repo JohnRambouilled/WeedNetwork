@@ -44,7 +44,7 @@ showModuleList :: [ShowModule]
 showModuleList = [("Routing", A.array ((1,1),(2,2)) [((1,1), showMap "ROUTING LOCAL" $ routingLocMap . clRouting),
                                                      ((1,2), showMap "ROUTING RELAY" $ routingRelMap . clRouting),
                                                      ((2,1), showMap "NEIGHBORS" $ nbhNeighMap . clNeighbors),
-                                                     ((2,2), showPipes "PIPE MAP" $ bmBhvC . routingSourceMap . clRouting)]),
+                                                     ((2,2), showPipes "PIPE MAP" $  routingSourceMap . clRouting)]),
                   ("Network", A.listArray ((1,1),(2,1)) [showTree "LEECH TREE" $ fmap leechsTree . routingTree . clRouting,
                                                          showTree "SEEDS TREE" $ fmap seedsTree . routingTree . clRouting ]),
                   ("Ressources", A.array ((1,1),(2,1)) [((1,1), showMap "RESSOURCE LOCAL" $ bmBhvC . resLocalAnswerMap . clRessources),

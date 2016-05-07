@@ -114,15 +114,14 @@ buildRessources dhPK uID kP packetE = let (resE, ansE) = split packetE in
                                                                            Nothing -> True
                           
                           
-                          --maybe False id $ pure . compareAnswer ans <$> rID `lookupTO` ansM  <*> rID `M.lookup` locAnsM
 
           buildListenMap :: Event (RessourceID, Bool) -> Event Answer -> MomentIO (BehaviorC (EventMap RessourceID Answer))
           buildListenMap orderE ansE = do bhv <- newBehaviorMod M.empty 
                                           reactimate . (bmModifier bhv <$>) =<< execute (onOrder <$> orderE)
-                                          reactimate . filterJust $ apply (fireKey <$> bmLastValue bhv) ansE
-                                          pure $ fmap eEvent <$> bmBhvC bhv
-            where onOrder :: (RessourceID, Bool) -> MomentIO (EventEntryMap RessourceID Answer -> EventEntryMap RessourceID Answer)
-                  onOrder (rID,b) = if b then (pure . M.insert rID) =<< newEventEntry 
+                                          reactimate . filterJust $ apply (fireKey . fmap snd <$> bmLastValue bhv) ansE
+                                          pure $ fmap (chanEvent . fst) <$> bmBhvC bhv
+            where onOrder :: (RessourceID, Bool) -> MomentIO (ChannelEntryMap RessourceID Answer -> ChannelEntryMap RessourceID Answer)
+                  onOrder (rID,b) = if b then (pure . M.insert rID) =<< newChannel
                                           else pure $ M.delete rID
 
 

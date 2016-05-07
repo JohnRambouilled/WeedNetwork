@@ -19,7 +19,7 @@ import qualified Data.Map as M
 
 
 
-type RoutingMap = EventCMap PipeID PipePacket
+type RoutingMap = ChannelMap PipeID PipePacket
 type RoutingMapBhv = BehaviorC RoutingMap
 
 data NewRoad = NewRoad {nrRoad :: Road,
@@ -28,7 +28,7 @@ data NewRoad = NewRoad {nrRoad :: Road,
 
 
 
-newRequestToNewPipe :: Handler PipePacket -> DHPrivKey -> NewRequest -> EventC PipeMessage -> Maybe NewPipe
+newRequestToNewPipe :: Handler PipePacket -> DHPrivKey -> NewRequest -> Channel PipeMessage -> Maybe NewPipe
 newRequestToNewPipe sendH uk (IncomingRequest (Request n _ r epk t pK pID _ cnt)) e = (\s -> NewPipe r (head r) pK s pID t cnt e) <$> sender
             where sender = (sendH <$>) . pipeMessageToPipePacket n False <$> decryptKeyPair epk uk 
 newRequestToNewPipe sendH _ (OutgoingRequest (Request _ _ r _ t pK pID _ cnt) sender) e = Just $ NewPipe r (last r) pK (sendH . sender) pID t cnt e
@@ -37,7 +37,7 @@ newRequestToNewPipe sendH _ (OutgoingRequest (Request _ _ r _ t pK pID _ cnt) se
 
 data Routing = Routing {routingLocMap :: RoutingMapBhv,
                         routingRelMap :: RoutingMapBhv, 
-                        routingSourceMap :: BehaviorMod SourceMap,
+                        routingSourceMap :: BehaviorC SourceMap,
                         routingTree :: BehaviorC RoutingTree,
 
                         routingOutgoingPackets :: Event PipePacket,
@@ -84,12 +84,12 @@ buildRouting uID dhSK newRoadE reqEuc packetE neighBE = do
           relayRequest :: Request -> Request
           relayRequest r = r{reqPosition = reqPosition r + 1}
           isLocalRequest req = reqPosition req == reqLength req - 1
-          closePipes :: Event (Request, EventC PipePacket) -> MomentIO () 
+          closePipes :: Event (Request, Channel PipePacket) -> MomentIO () 
           closePipes cE = void . execute $ closeP . snd <$> cE
-            where closeP eC = reactimate $ filterPipeClose (ceClose eC) <$> ceEvent eC
+            where closeP eC = reactimate $ filterPipeClose (chanCloseH eC) <$> chanEvent eC
                   filterPipeClose h (PipeClose _ _ _ _ _) = h 
                   filterPipeClose _ _ = pure ()
-          makeNewPipe :: Handler PipePacket -> (NewRequest, EventC PipePacket) -> Maybe NewPipe
+          makeNewPipe :: Handler PipePacket -> (NewRequest, Channel PipePacket) -> Maybe NewPipe
           makeNewPipe sendH (req, e ) = newRequestToNewPipe sendH dhSK req $ makePipeMessage <$> e
           
           
@@ -113,7 +113,7 @@ routOpenPipe newRE = do
 
 sendLocalMessages :: Routing -> Event (SourceID, Payload) -> MomentIO ()
 sendLocalMessages rout = reactimate . apply sendB 
-    where sendB = sendToSource <$> bmLastValue (routingSourceMap rout)
+    where sendB = sendToSource <$> bcLastValue (routingSourceMap rout)
 
 
 sendOnPipe :: Routing -> Event (SourceID, PipeID, Payload) -> MomentIO ()
@@ -121,7 +121,7 @@ sendOnPipe rout e = do (b,_) <- newBehavior M.empty
                        bS <- pipeMapB b
                        reactimate $ apply (send <$> bS) e
     where pipeMapB :: Behavior PipeMap -> MomentIO (Behavior PipeMap)
-          pipeMapB b = switchB b . filterJust $ apply (getPM <$> bmLastValue (routingSourceMap rout)) e
+          pipeMapB b = switchB b . filterJust $ apply (getPM <$> bcLastValue (routingSourceMap rout)) e
           getPM sm (sID, _,_) = bcLastValue . sePipeMap <$> sID `M.lookup` sm
           send pm (_, pID, d) = case pID `M.lookup` pm of
                                     Nothing -> pure ()
@@ -129,8 +129,8 @@ sendOnPipe rout e = do (b,_) <- newBehavior M.empty
 
 
 closeSources :: Routing -> Event SourceID -> MomentIO ()
-closeSources rout = reactimate . apply (close <$> bmLastValue (routingSourceMap rout))
-    where close m sID = maybe (pure ()) ( ceClose . seReceiver)   $ sID `M.lookup` m
+closeSources rout = reactimate . apply (close <$> bcLastValue (routingSourceMap rout))
+    where close m sID = maybe (pure ()) ( chanCloseH . seReceiver)   $ sID `M.lookup` m
 
 
 

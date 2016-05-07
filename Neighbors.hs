@@ -24,14 +24,17 @@ data NeighData  = NeighData  {neighDKeyID :: KeyHash, neighDSig :: Signature, ne
 
 
 data NeighDataContent = NeighReq Request | NeighRes RessourcePacket | NeighBrk NeighBreak deriving Generic
-type NeighMap = EventCMap KeyHash NeighData
+type NeighMap = ChannelMap KeyHash NeighData
 type NeighMapBhv = BehaviorC NeighMap 
 
+-- | Object created when a new neighbor appears. Contains the ID and the Key of the neighbor, and then channel containing it's future messages
+data Neighbor = Neighbor { neighID :: KeyHash, neighPubKey :: PubKey, neighMessages :: Channel NeighDataContent}
+
 data Neighborhood = Neighborhood {nbhNeighMap :: NeighMapBhv,
+                                  newNeighborE :: Event Neighbor,
                                   nbhRequests :: Event Request,
                                   nbhRessources :: Event RessourcePacket,
-                                  nbhNeighBreak :: Event NeighBreak,
-                                  nbhForceDeco :: Handler UserID}
+                                  nbhNeighBreak :: Event NeighBreak}
 
 
 sendNeighData :: UserID -> KeyPair -> NeighDataContent -> NeighPacket
@@ -47,30 +50,37 @@ repeatNeighIntro t uID k p = do (e,h) <- newEvent
 
 buildNeighborhood :: Event NeighPacket -> MomentIO Neighborhood
 buildNeighborhood packetE  = let (introE, dataE) = split packetE in
-                             do (reqE, reqH) <- newEvent
-                                (resE, resH) <- newEvent
-                                (brkE, brkH) <- newEvent
-                                (decoE, decoH) <- newEvent
-                                (nMap, cryptoE) <- buildCryptoMap introE dataE 
-                                let (refreshE, newNeighE) = split cryptoE
-                                buildTimeOutIDable neighTimeOut newNeighE $ scKeyHash <$> refreshE
-                                allEvents <- mergeEvents $ bcChanges nMap
-                                reactimate $ closePipe <$> bcLastValue nMap <@> decoE
-                                reactimate $ onDataEvent decoH reqH resH brkH <$> allEvents
-                                pure $ Neighborhood nMap reqE resE brkE decoH
-        where closePipe m k = case k `M.lookup` m of
-                                Just ce -> ceClose ce 
-                                Nothing -> pure ()
+                             do (nMap, cryptoE) <- buildCryptoMap introE dataE 
+                                let (refreshE, newE) = split cryptoE
+                                newNeighE <- execute $ makeNewNeighbor <$> newE
+                                buildTimeOutIDable neighTimeOut newE $ scKeyHash <$> refreshE
+                                (reqE, resE, brkE) <- splitNeighPacket . fmap neighDContent <$> mergeEvents (bcChanges nMap)
+                                pure $ Neighborhood nMap newNeighE reqE resE brkE 
+        where makeNewNeighbor :: (NeighIntro, Channel NeighData) -> MomentIO Neighbor
+              makeNewNeighbor (intro, chan) = do reactimate $ onBrk <$> chanEvent chan
+                                                 return $ Neighbor (neighIKeyID intro) (neighIPubKey intro) $ neighDContent <$> chan
+                    where onBrk :: NeighData -> IO ()
+                          onBrk (NeighData uID _ (NeighBrk (NeighBreak r))) = case r of
+                                        [] -> chanLogH chan $ "ERROR : Invalid NeighBreak (road empty)"
+                                        a:[] -> if a == uID then chanCloseH chan >> (chanLogH chan) "Closing channel after receiving NeighBreak from neighbor"
+                                                          else chanLogH chan $ "ERROR : Invalid NeighBreak (sender ID and head of the road doesn't match"
+                                        a:_ -> if a == uID then chanLogH chan $ "Relayed NeighBreak received"
+                                                         else chanLogH chan $ "ERROR : Invalid NeighBreak (sender ID and head of the road doesn't match"
+                          onBrk _ = pure ()
 
 
-onDataEvent :: Handler KeyHash -> Handler Request -> Handler RessourcePacket -> Handler NeighBreak -> NeighData -> IO ()
-onDataEvent _ reqH _ _ (NeighData _ _ (NeighReq r)) = reqH  r
-onDataEvent _ _ resH _ (NeighData _ _ (NeighRes r)) = resH  r 
-onDataEvent h _ _ nh (NeighData uID _ (NeighBrk nb@(NeighBreak r))) = case r of
-                                                                        [] -> pure ()
-                                                                        a:[] -> if a == uID then nh nb >> h uID else pure ()
-                                                                        a:_ -> if a == uID then nh nb else pure ()
-                                                                                                                     
+
+
+
+splitNeighPacket :: Event NeighDataContent -> (Event Request, Event RessourcePacket, Event NeighBreak)
+splitNeighPacket e = let (e1, brkE) = split $ onDataEvent <$> e
+                         (reqE, resE) = split e1
+                     in (reqE, resE, brkE)
+    where onDataEvent :: NeighDataContent -> Either (Either Request RessourcePacket) NeighBreak
+          onDataEvent (NeighReq r) = Left $ Left r
+          onDataEvent (NeighRes r) = Left $ Right r 
+          onDataEvent (NeighBrk nb) = Right nb
+                                                                                                                        
 
 
 

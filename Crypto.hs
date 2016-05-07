@@ -34,31 +34,32 @@ instance SignedClass a => IDable a KeyHash where extractID = scKeyHash  -- ^ Ins
 class SignedClass a => IntroClass a where icPubKey :: a -> PubKey
 
 
-type CryptoMap e = BehaviorC (M.Map KeyHash (EventC e))  -- ^ map des events de packets signés, triés par keyHash
-type CryptoEvent i e = Event (Either i (i, EventC e))    -- ^ Event de nouvelles connexions
+type CryptoMap e = BehaviorC (M.Map KeyHash (Channel e))  -- ^ map des events de packets signés, triés par keyHash
+type CryptoEvent i e = Event (Either i (i, Channel e))    -- ^ Event de nouvelles connexions Left pour les clef déja connues, et Right pour les nouvelles clef.
 
 {- | Construction de la cryptoMap a partir d'un Event d'introduce, et d'un Event de packets. 
+ -   Les entrées sont supprimées lorsque le Channel est fermé.
  -   Les signatures des packets sont vérifiées. Renvoi la Map des events, l'Event de nouvelles connexions   -}
 buildCryptoMap :: (IntroClass i, SignedClass e) => Event i -> Event e -> MomentIO (CryptoMap e, CryptoEvent i e)
-buildCryptoMap introE packetE = do --(cryptoE, cryptoH) <- newEvent
-                                   (buildE, buildH) <- newEvent
-                                   cMap <- buildEventCMapWith buildE
+buildCryptoMap introE packetE = do (buildE, buildH) <- newEvent
+                                   cMap <- buildCloseMapWith buildE
                                    cryptoE <- execute $ apply (onIntro <$> bmLastValue cMap) $ filterE checkIntro introE
-                                   reactimate $ buildMap buildH <$> snd (split cryptoE)
-                                   fireKeyBhv (bmLastValue cMap) packetE
-                                   pure ((eEventC <$>) <$> bmBhvC cMap, fmap (over _2 eEventC) <$> cryptoE)
-    where makeCloseEvent i = do (h,ce) <- newEventC
-                                let ce' = ce{ceEvent = filterSig i $ ceEvent ce}
-                                pure  $ EventEntry h ce'
+                                   reactimate $ buildH . buildMap <$> snd (split cryptoE)
+                                   fireKeyBhv (fmap snd <$> bmLastValue cMap) packetE
+                                   pure ((fst <$>) <$> bmBhvC cMap, fmap (over _2 fst) <$> cryptoE)
+    where makeChannel :: (IntroClass i, SignedClass e) => i -> MomentIO (ChannelEntry e)
+          makeChannel i = do (ch, h) <- newChannel
+                             let ch' = ch{chanEvent = filterSig i $ chanEvent ch}
+                             pure (ch', h)
           filterSig i = filterE (checkSig (icPubKey i))
-          onIntro :: (IntroClass i, SignedClass e) => M.Map KeyHash (EventEntry e) -> i -> MomentIO (Either i (i, EventEntry e))
+          onIntro :: (IntroClass i, SignedClass e) => M.Map KeyHash (ChannelEntry e) -> i -> MomentIO (Either i (i, ChannelEntry e))
           onIntro m i = case scKeyHash i `M.lookup` m of 
                                   Just _ -> pure $ Left i
-                                  Nothing -> do ee <- makeCloseEvent i
+                                  Nothing -> do ee <- makeChannel i
                                                 pure $ Right (i, ee)
-          buildMap :: (IntroClass i, SignedClass e) => Handler ((KeyHash, EventC e), EventEntry e) -> (i, EventEntry e) -> IO ()
-          buildMap h (i,e) = h ((scKeyHash i, eEventC e),e)
-          checkIntro i = checkSig (icPubKey i) i -- && computeHashFromKey (icPubKey i) == scKeyHash i 
+          buildMap :: (IntroClass i, SignedClass e) => (i, ChannelEntry e) -> ((KeyHash, Channel e), ChannelEntry e)
+          buildMap (i,e) = ((scKeyHash i, fst e),e)
+          checkIntro i = checkSig (icPubKey i) i && computeHashFromKey (icPubKey i) == scKeyHash i 
 
 
 checkSig :: SignedClass a => PubKey -> a -> Bool
