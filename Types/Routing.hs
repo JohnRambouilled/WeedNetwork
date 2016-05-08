@@ -42,32 +42,12 @@ newtype RoutingModule = RoutingModule {routingControlMap :: M.Map PipeID Routing
 --onRelayRequest :: TVar RoutingModule -> Request -> IO ()
 --
 
---------SEED
---
-data SeedError = SeedError
-data SeedEntry = SeedEntry {seedPipes :: [PipeID],
-                            seedTimer :: TimerEntry,
-                            seedCallback :: Callback SeedError PipeMessage}
-newtype SeedModule = SeedModule {seedControlMap :: M.Map SourceID SeedEntry}
-
---public
--- ajoute les entrées au routingmodule à chaque requete, et maintient une map des sources
---newSeedModule :: TVar RoutingModule -> TChan Request -> IO (TVar SeedModule)
-
-
---LEECH
---
-
---TODO
---
---
-
-
 
 -- Ressources :
 --
-
-data RessourceEntry = RessourceEntry {ressourceSources :: [SourceID]}
+data RessourcePolicy = RessourcePolicy
+data RessourceEntry = RessourceEntry {ressourceSources :: [SourceID],
+                                      ressourcePolicy :: RessourcePolicy}
 data RessourceGraph = RessourceGraph 
 
 

@@ -1,11 +1,11 @@
 {-# LANGUAGE ImpredicativeTypes, RankNTypes, FlexibleInstances, UndecidableInstances, MultiParamTypeClasses, FunctionalDependencies #-}
 module Class where
 
-import Reactive.Banana
-import Reactive.Banana.Frameworks
 import qualified Data.Map as M
 import Control.Monad
 import Control.Lens
+import Control.Concurrent.STM
+import Control.Concurrent
 import qualified Data.List as L
 
 type Log = String
@@ -13,21 +13,53 @@ type Log = String
                 -- ***** Structures de données *****
 -- Les Events sont gérés par des data instance d'EventManager (contenant une AddHandler et un Fire),
 -- les Behavior utilisés sont les ModEvents, contenant l'event des changements, et un modifier de la behavior.
-
+{-
 data Channel e = Channel {chanEvent :: Event e,
                           chanCloseE :: Event (),
                           chanCloseH :: IO (),
                           chanLogE :: Event Log,
                           chanLogH :: Handler Log}
-instance Functor Channel where fmap f e = e{chanEvent = f <$> chanEvent e}
+-}
+newtype Channel e = Channel{runChannel :: TChan (Either () e)}
+instance Functor Channel where fmap f (Channel e) = Channel $ fmap f <$> e
 
-type ChannelEntry e = (Channel e, Handler e) 
+--type ChannelEntry e = (Channel e, Handler e) 
+
+newChannel :: STM (Channel e)
+newChannel = Channel <$> newTChan
+
+fireChannel :: Channel e -> e -> IO ()
+fireChannel c = atomically . writeTChan (runChannel c) . Right
+
+closeChannel :: Channel e -> IO ()
+closeChannel c = atomically . writeTChan (runChannel c) $ Left ()
+
+register :: Channel e -> (e -> IO a) -> IO (Channel a)
+register c f = do c' <- newTChanIO
+                  forkIO $ loop c'
+                  pure c'
+    where loop c' = do e <- atomically $ readTChan (runChannel c)
+                       case e of Left () -> closeChannel c'
+                                 Right a -> fireChannel c' $ f a
+
+register_ :: Channel e -> (e -> IO ()) -> IO ()
+register_ c f = do forkIO $ loop
+                    pure ()
+     where loop = do r <- atomically $ readTChan (runChannel c)
+                     case r of Left () -> pure ()
+                               Right e -> f e >> loop
 
 
-class Closable a where closeH :: a -> IO ()
-                       closeE :: a -> Event ()
-instance Closable (Channel e) where closeH = chanCloseH
-                                    closeE = chanCloseE
+registerClose :: Channel e -> IO () -> IO ()
+registerClose c a = void $ forkIO loop
+        where loop = do e <- atomically $ readTChan (runChannel c)
+                        case e of Left () -> a
+                                  Right _ -> loop
+
+
+
+
+
 
 data BehaviorC a = BehaviorC {bcLastValue :: Behavior a, 
                                 bcChanges :: Event a}
