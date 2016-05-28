@@ -1,5 +1,10 @@
-{-# LANGUAGE TemplateHaskell #-}
-module Types.Neighbour where
+module Client.Neighbours where
+
+import Types
+import Packets
+import Client.Crypto
+import Client.Timer
+
 
 import Control.Monad
 import Control.Monad.Trans
@@ -7,36 +12,7 @@ import Control.Concurrent.STM
 import Control.Lens
 import qualified Data.Map as M
 
-import Types.Callbacks
-import Types.Crypto
-import Packets.PipePackets
-import Packets.Neighbours
-import Packets.Ressource
 
-type NeighID = UserID
-
-
-data NeighError = NeighError
-
-type TimerRefresh = STMIO ()
-type TimerKill = STMIO ()
-data TimerEntry = TimerEntry {timerRefresh :: TimerRefresh,
-                              timerKill :: TimerKill}
-
-newTimerEntry :: STMIO () -> STMIO TimerEntry
-newTimerEntry kill = pure $ TimerEntry (pure ()) (pure ()) 
-
-data NeighEntry = NeighEntry { neighEntryID :: NeighID, -- ????? TODO
-                               neighTimerEntry :: TimerEntry,
-                               neighPubKey :: PubKey}
-data NeighbourModule = NeighbourModule {_neighControlMap :: M.Map NeighID NeighEntry,
-                                        _neighRequestCb :: Callback NeighError Request,
-                                        _neighRessourceCb :: Callback NeighError RessourcePacket,
-                                        _neighBreakCb :: Callback NeighError (UserID,NeighBreak)
-                                        }
-makeLenses ''NeighbourModule
-
--- Private
 -- Regarde si le voisin est connu, si oui vérifie la signature du paquet et appele le callback correspondant
 onNeighPacket :: TVar NeighbourModule ->  NeighData -> STMIO ()
 onNeighPacket neighbourMod neighdata = do nMod <- lift $ readTVar neighbourMod
@@ -62,22 +38,8 @@ onIntroduce neighbourMod intro
     where neighID = neighIKeyID intro
           kill = over neighControlMap (M.delete neighID) 
 
+checkNeighIntro :: NeighIntro -> Bool
 checkNeighIntro intro = checkSig pubkey intro && computeHashFromKey pubkey == neighIKeyID intro
     where pubkey = neighIPubKey intro
 
 
-
--- Public
---
--- Packet = Introduce | NeighPacket | PipePacket
--- NeighPacket = Request | RessourcePkt | NeighBreak
--- PipePacket = PipeID PipeMessage Signature
-
--- Retourne une map synchronisée par un thread sur les flux entrant
---newNeighbourModule :: IO (TVar NeighbourModule)
-
--- Retire proprement une entrée (kill le timer, envoi un neighBreak, et clean l'entry)
---closeNeighEntry :: TVar NeighbourModule -> NeighID -> IO ()
---
---
---

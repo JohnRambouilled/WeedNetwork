@@ -1,7 +1,6 @@
 module Types.Communication where
 
 import Types.Callbacks
-import Types.Routing
 import qualified Data.Map as M
 
 data ComError = ComError

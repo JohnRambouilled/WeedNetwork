@@ -2,7 +2,7 @@
 module Packets.Neighbours where
 
 import Types.Crypto
-import Packets.PipePackets
+import Packets.Pipes
 import Packets.Ressource
 import Data.Binary
 import GHC.Generics

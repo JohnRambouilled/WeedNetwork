@@ -1,12 +1,14 @@
 {-# LANGUAGE DeriveGeneric #-}
-module PipePackets where
-import Crypto 
-import Timer
+module Packets.Pipes where
+import Types.Crypto 
 
 import Reactive.Banana.Frameworks
 import GHC.Generics
 import Data.Binary
 import Data.Time.Clock
+import Data.Time.Clock.POSIX
+
+type Time = POSIXTime
 
 roadLengthMax = 10 :: Number
 maxDelay = 20 :: Time
@@ -34,7 +36,7 @@ data Request = Request {reqPosition :: Number, -- ^ Position on the road, change
                         reqContent :: RawData}   -- ^ extra content if needed (cause why not)
     deriving Generic
 
-type PipeMessage = Either (PipeID, Payload) (PipeID, Payload) --Left on a PipeClose
+type PipeMessage = (PipeID, Payload) --Left on a PipeClose
 
 data PipePacket = PipePacket {pipeKeyID :: PipeID,  -- ^PipeID of the pipe used
                               pipeSig :: Signature,  -- ^ Signature of the packet
@@ -83,26 +85,6 @@ instance Binary NominalDiffTime where
 
 
 
-makePipeMessage :: PipePacket -> PipeMessage
-makePipeMessage (PipePacket pID _ _ _ p) = Right (pID,p)
-makePipeMessage (PipeClose  pID _ _ _ p) = Left  (pID,p)
-
-pipeMessageToPipePacket :: Number -> Bool -> KeyPair -> PipeMessage -> PipePacket
-pipeMessageToPipePacket n b pK (Left  (pID,d)) = sign pK $ PipeClose  pID emptySignature n b d 
-pipeMessageToPipePacket n b pK (Right (pID,d)) = sign pK $ PipePacket pID emptySignature n b d 
-
 pipePacketTimeOut :: PipeID -> PipePacket
 pipePacketTimeOut pID = PipeClose pID emptySignature 0 False $ encode "Pipe timed-out"
-
-checkRequest :: UserID -> Request -> IO (Either String Request)
-checkRequest i r = checkReq i <$> getTime <*> pure r
-    where checkReq me t req@(Request n l r epk t' pK pH s c)
-            | l > roadLengthMax                 = Left "Rejected road : too long"
-            | n > l-1                           = Left "Incorrect RequestPosition"
-            | l /= length r                      = Left "Incorrect RoadLength"
-            | t - t' > maxDelay                 = Left "Obsolete Request" 
-            | r !! n /= me                       = Left "Not adressed to me"
-            | computeHashFromKey pK /= pH        = Left "Invalid tuple KeyHash/PubKey"
-            | checkSig pK req                   = Right req
-            | otherwise                         = Left "Invalid signature"
 
