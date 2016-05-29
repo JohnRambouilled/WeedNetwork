@@ -11,14 +11,18 @@ import qualified Data.Map as M
 neighTimeOut = 15 :: Time
 neighRepeatTime = 1 :: Time
 
-type NeighPacket = Either NeighIntro NeighData
+
+data RawPacket = RawPipePacket PipePacket |
+                 RawNeighIntro NeighIntro |
+                 RawNeighData NeighData
+        deriving Generic
+
 
 data NeighBreak = NeighBreak {neighBOrigin :: UserID, neighBPipes :: [PipeID]} deriving (Show, Eq, Generic)
 
 
 data NeighIntro = NeighIntro {neighIKeyID :: KeyHash, neighIPubKey :: PubKey,  neighISig :: Signature, neighIPayload :: Payload} 
 data NeighData  = NeighData  {neighDKeyID :: KeyHash, neighDSig :: Signature, neighDContent :: NeighDataContent} 
-
 
 
 data NeighDataContent = NeighReq Request | NeighRes RessourcePacket | NeighBrk NeighBreak deriving Generic
@@ -49,4 +53,6 @@ instance Show NeighDataContent where show (NeighReq r) = show r
                                      show (NeighBrk brk) = show brk
 instance Binary NeighDataContent
 instance Binary NeighBreak
+
+
 

@@ -15,12 +15,19 @@ import qualified Data.Map as M
 
 
 newtype SourceID = SourceID Int
-data PipeError = PipeTimedOut | PipeBroken | PipeClosedError Payload
+data PipeError = PipeTimedOut | PipeBroken | PipeClosedError PipePacket
 
-data PipeEntry = PipeEntry {_pipeCallback :: Callback PipeError PipeMessage,
+data PipeKind = PipeNode {pipePrevious :: NeighID,
+                          pipeNext :: NeighID} |
+                PipeEnd {pipeNext :: NeighID}
+
+
+
+data PipeEntry = PipeEntry {_pipeCallback :: Callback PipeError PipePacket,
                             _pipePubKey :: PubKey,
                             _pipeTimer :: TimerEntry,
-                            _pipeNodes :: (NeighID, NeighID)}
+                            _pipeEntryPosition :: Number,
+                            _pipeKind :: PipeKind}
 makeLenses ''PipeEntry
 
 -- Contiens tout les pipes (relayés, leech et seed)
