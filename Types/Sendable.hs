@@ -16,11 +16,13 @@ instance Sendable NeighDataContent where send_ ndc = do me <- whoAmI
                                                         keyPair <- lift $ asks stmKeys 
                                                         send_ $ sign keyPair $ NeighData me emptySignature ndc
 instance Sendable Request where send_ = send_ . NeighReq
-
-
+instance Sendable PipeData where send_ = send_ . PipePacketData
+instance Sendable PipeControl where send_ = send_ . PipePacketControl
 
 send :: Sendable a => a -> STMIO ()
 send p = join . lift $ asks f
     where f :: STMReader -> STMIO ()
           f reader = stmSender reader =<< send_ p
+
+data PipeSenderOption = DefaultSender
 

@@ -2,7 +2,6 @@
 module Packets.Pipes where
 import Types.Crypto 
 
-import Reactive.Banana.Frameworks
 import GHC.Generics
 import Data.Binary
 import Data.Time.Clock
@@ -34,30 +33,27 @@ data Request = Request {reqPosition :: Number, -- ^ Position on the road, change
     deriving Generic
 
 
-data PipePacket = PipePacket {pipeKeyID :: PipeID,  -- ^PipeID of the pipe used
-                              pipeSig :: Signature,  -- ^ Signature of the packet
-                              pipePosition :: Number, -- ^ Position on the pipe, changed during routing (NOT SIGNED)
-                              pipeDirection :: Bool,  -- ^ Direction of the message (True being the direction followed by the request)
-                              pipePayload :: Payload} |  -- ^ Content of the message (this one should be useful)
-                  PipeClose  {pipeKeyID :: PipeID,  -- ^PipeID of the pipe used
-                              pipeSig :: Signature, -- ^ Signature of the packet
-                              pipePosition :: Number, -- ^ Position on the pipe, changed during routing (NOT SIGNED)
-                              pipeDirection :: Bool, -- ^ Direction of the break (True being the direction followed by the request)
-                              pipePayload :: Payload}| -- ^ Content of the break
-                  PipeControl{pipeKeyID :: PipeID,  -- ^PipeID of the pipe used
-                              pipeSig :: Signature, -- ^ Signature of the packet
-                              pipePosition :: Number, -- ^ Position on the pipe, changed during routing (NOT SIGNED)
-                              pipeDirection :: Bool, -- ^ Direction of the break (True being the direction followed by the request)
-                              pipeControl :: PipeControlMessage } -- ^ Content of the control message
+data PipeData = PipeData {pipeDKeyID :: PipeID,  -- ^PipeID of the pipe used
+                          pipeDSig :: Signature,  -- ^ Signature of the packet
+                          pipeDPosition :: Number, -- ^ Position on the pipe, changed during routing (NOT SIGNED)
+                          pipeDDirection :: Bool,  -- ^ Direction of the message (True being the direction followed by the request)
+                          pipeDPayload :: Payload}  -- ^ Content of the message (this one should be useful)
+              deriving Generic
+data PipeControl = PipeControl{pipeCKeyID :: PipeID,  -- ^PipeID of the pipe used
+                               pipeCSig :: Signature, -- ^ Signature of the packet
+                               pipeCPosition :: Number, -- ^ Position on the pipe, changed during routing (NOT SIGNED)
+                               pipeCDirection :: Bool, -- ^ Direction of the break (True being the direction followed by the request)
+                               pipeCControl :: PipeControlMessage } -- ^ Content of the control message
 
-    deriving Generic
+              deriving Generic
 
 data PipeControlMessage = PipeControlRefresh
-    deriving Generic
+                        | PipeClose RawData
+              deriving Generic
 
 
-
-
+data PipePacket = PipePacketData PipeData | PipePacketControl PipeControl
+            deriving Generic
 instance Show Request where show (Request p l r _ t _ pID _ _) = "Request for pipe : " ++ show pID ++ " on road : " ++ show r ++" ("++ show p ++", "++ show l ++")"
 
 instance SignedClass Request where scHash (Request n l r epk t pK pH s c) = encode (l,r,epk,t,pK,pH,c)
@@ -67,18 +63,29 @@ instance SignedClass Request where scHash (Request n l r epk t pK pH s c) = enco
 instance IntroClass Request where icPubKey = reqPipeKey
 instance Binary Request
 instance Binary PipeControlMessage
+instance Binary PipeData
+instance Binary PipeControl
 
 
-instance Show PipePacket where
-    show (PipePacket kID _ n b _) = "PipePacket on pipe : " ++ show kID ++ " pos " ++ show n ++ (if b then "+" else "-")
-    show (PipeClose  kID _ n b _) = "PipeClose  on pipe : " ++ show kID ++ " pos " ++ show n ++ (if b then "+" else "-")
+instance SignedClass PipeData where scHash (PipeData kH _ n b m) = encode (kH, n, b, m)
+                                    scKeyHash = pipeDKeyID
+                                    scSignature = pipeDSig
+                                    scPushSignature p s = p{pipeDSig = s}
 
+instance SignedClass PipeControl where scHash (PipeControl kH _ n b m) = encode (kH, n, b, m)
+                                       scKeyHash = pipeCKeyID
+                                       scSignature = pipeCSig
+                                       scPushSignature p s = p{pipeCSig = s}
 
-instance SignedClass PipePacket where scHash (PipePacket kH _ n b m) = encode (kH, n, b, m)
-                                      scHash (PipeClose kH _ n b m) = encode (kH, n, b, m)
-                                      scKeyHash = pipeKeyID
-                                      scSignature = pipeSig
-                                      scPushSignature p s = p{pipeSig = s}
+instance SignedClass PipePacket where  scHash (PipePacketData pl) = scHash pl
+                                       scHash (PipePacketControl pl) = scHash pl
+                                       scKeyHash (PipePacketData pl) = scKeyHash pl
+                                       scKeyHash (PipePacketControl pl) = scKeyHash pl
+                                       scSignature (PipePacketData pl) = scSignature pl
+                                       scSignature (PipePacketControl pl) = scSignature pl
+                                       scPushSignature (PipePacketData pl)  = PipePacketData . scPushSignature pl
+                                       scPushSignature (PipePacketControl pl)  = PipePacketControl . scPushSignature pl
+                                       
 instance Binary PipePacket
 
 instance Binary NominalDiffTime where
@@ -87,6 +94,5 @@ instance Binary NominalDiffTime where
 
 
 
-pipePacketTimeOut :: PipeID -> PipePacket
-pipePacketTimeOut pID = PipeClose pID emptySignature 0 False $ encode "Pipe timed-out"
-
+--pipePacketTimeOut :: PipeID -> PipePacket
+--pipePacketTimeOut pID = PipeClose pID emptySignature 0 False $ encode "Pipe timed-out"

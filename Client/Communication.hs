@@ -6,13 +6,12 @@ import Types
 import Control.Concurrent.STM
 import qualified Data.Map as M
 
-
 newComModule :: STMIO (TVar ComModule)
 newComModule = liftSTM $ newTVar M.empty
 
--- Les ComID sont tirés random
+-- Les Comid Sont Tirés Random
 
--- Appelle le callback correspondant au bon comID (est enregistré dans Pipes par Destinary)
+-- Appelle Le callback correspondant au bon comID (est enregistré dans Pipes par Destinary)
 onComMessage :: TVar ComModule -> ComMessage -> STMIO ()
 onComMessage comModule comMessage = do comMod <- stmRead comModule 
                                        case comID `M.lookup` comMod of
@@ -31,5 +30,7 @@ registerComCallback comModule comID cb = do comMod <- stmRead comModule
                                                 Nothing -> do stmWrite comModule $ M.insert comID (ComEntry cb) comMod
                                                               pure True
                                        
+
+
 
 

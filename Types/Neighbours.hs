@@ -18,9 +18,9 @@ data NeighEntry = NeighEntry { neighEntryID :: NeighID, -- ????? TODO
                                neighTimerEntry :: TimerEntry,
                                neighPubKey :: PubKey}
 data NeighbourModule = NeighbourModule {_neighControlMap :: M.Map NeighID NeighEntry,
-                                        _neighRequestCb :: Callback NeighError Request,
+                                        _neighRequestCb :: Callback NeighError (NeighID,Request),
                                         _neighRessourceCb :: Callback NeighError RessourcePacket,
-                                        _neighBreakCb :: Callback NeighError (UserID,NeighBreak)
+                                        _neighBreakCb :: Callback NeighError (NeighID,NeighBreak)
                                         }
 makeLenses ''NeighbourModule
 

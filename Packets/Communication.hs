@@ -6,7 +6,8 @@ import Types.Crypto
 
 
 data ComPacket = ComPinit ComInit | ComPmessage ComMessage
-
+                 deriving Generic
+                          
 data ComID = ComID Int
     deriving (Eq,Show,Generic,Ord)
 data ComInit = ComInit {ciComID :: ComID, ciPayload :: RawData} -- ProtocolID ? 
@@ -22,3 +23,4 @@ isComExit _ = False
 instance Binary ComMessage
 instance Binary ComInit
 instance Binary ComID
+instance Binary ComPacket
