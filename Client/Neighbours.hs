@@ -20,7 +20,7 @@ onNeighPacket neighbourMod neighdata = do nMod <- stmRead neighbourMod
     where neighID = neighDKeyID neighdata
           managePacket nMod entry = when (checkSig (neighPubKey entry) neighdata) $ 
                                         case neighDContent neighdata of
-                                            NeighReq req -> call (_neighRequestCb nMod) req
+                                            NeighReq req -> call (_neighRequestCb nMod) (neighID,req)
                                             NeighRes res -> call (_neighRessourceCb nMod) res
                                             NeighBrk brk -> do when (neighID == neighBOrigin brk) $ stmWrite neighbourMod (over neighControlMap (M.delete neighID) nMod) 
                                                                call (_neighBreakCb nMod) (neighID,brk)

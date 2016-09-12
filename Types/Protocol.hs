@@ -8,6 +8,7 @@ import Types.Crypto
 
 import GHC.Generics
 import qualified Data.Map as M
+import Data.Binary (Binary)
 
 
 newtype ProtocolID = ProtocolID Int
@@ -18,6 +19,6 @@ type ProtocolEntry = RawData -> STMIO (Callback ComError ComMessage)
 
 type ProtocolModule = M.Map ProtocolID ProtocolEntry
 
-
+instance Binary ProtocolID
 
 

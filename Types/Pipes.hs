@@ -15,7 +15,7 @@ import qualified Data.Map as M
 
 
 newtype SourceID = SourceID Int
-data PipeError = PipeTimedOut | PipeBroken | PipeClosedError PipePacket
+data PipeError = PipeTimedOut | PipeBroken | PipeClosedError PipeControl
 
 data PipeKind = PipeNode {pipePrevious :: NeighID,
                           pipeNext :: NeighID} |
@@ -23,7 +23,7 @@ data PipeKind = PipeNode {pipePrevious :: NeighID,
 
 
 
-data PipeEntry = PipeEntry {_pipeCallback :: Callback PipeError PipePacket,
+data PipeEntry = PipeEntry {_pipeCallback :: Callback PipeError PipeData,
                             _pipePubKey :: PubKey,
                             _pipeTimer :: TimerEntry,
                             _pipeEntryPosition :: Number,

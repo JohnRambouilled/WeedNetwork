@@ -9,6 +9,9 @@ data ComError = ComError
 data ComEntry = ComEntry {comCallback :: Callback ComError ComMessage}
 type ComModule = M.Map ComID ComEntry
 
+
+
+
 --public
 --
 --newComModule :: IO (TVar ComModule, Callback DestinaryError PipeMessage)
