@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses, DeriveGeneric, FlexibleInstances, FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses, DeriveGeneric, FlexibleInstances #-}
 module Types.Crypto where
 import Data.Binary
 import GHC.Generics

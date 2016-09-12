@@ -2,7 +2,6 @@
 module Packets.Pipes where
 import Types.Crypto 
 
-import Reactive.Banana.Frameworks
 import GHC.Generics
 import Data.Binary
 import Data.Time.Clock
