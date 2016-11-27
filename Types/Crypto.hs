@@ -41,29 +41,37 @@ type Signature = S.Signature
 emptySignature :: S.Signature
 emptySignature = throwCryptoError . S.signature $ BStrct.replicate 64 0 
 
-newtype PubKey = PubKey {runPubKey :: S.PublicKey} deriving (Show)
-newtype PrivKey = PrivKey {runPrivKey :: S.SecretKey}
+newtype PipePubKey = PipePubKey {pipePubKey :: S.PublicKey} deriving (Show, Generic)
+newtype PipePrivKey = PipePrivKey {pipePrivKey :: S.SecretKey}
+type PipeKeyPair = (PipePubKey, PipePrivKey)
+
+
+data PubKey = PubKey {sigPubKey :: S.PublicKey,
+                      dhPubKey :: DH.PublicKey} deriving (Show, Generic)
+data PrivKey = PrivKey {sigPrivKey :: S.SecretKey,
+                        dhPrivKey :: DH.SecretKey}
 type KeyPair = (PubKey, PrivKey)
 
 
-type DHPubKey = DH.PublicKey
-type DHPrivKey = DH.SecretKey
-type DHKeyPair = (DHPubKey, DHPrivKey)
-
+instance Binary PipePubKey
+instance Binary PubKey
 instance Show KeyHash where show (KeyHash d) = prettyPrint d
 instance Binary KeyHash
 
 prettyPrint :: RawData -> String
-prettyPrint = concat . map (flip showHex "") . B.unpack
+prettyPrint = concatMap (`showHex` "") . B.unpack
 
 instance Binary S.Signature where put s = putByteString $ BA.convert s
                                   get = getCryptoFailable sigByteSize S.signature
 
-instance Binary PubKey where put (PubKey pk) = putByteString $ BA.convert pk
-                             get = PubKey <$> getCryptoFailable keyByteSize S.publicKey 
+instance Binary S.PublicKey where put pk = putByteString $ BA.convert pk
+                                  get = getCryptoFailable keyByteSize S.publicKey 
 
-instance Binary PrivKey where put (PrivKey pk) = putByteString $ BA.convert pk
-                              get = PrivKey <$> getCryptoFailable keyByteSize S.secretKey 
+--instance Binary PubKey where put (PubKey pk) = putByteString $ BA.convert pk
+  --                           get = PubKey <$> getCryptoFailable keyByteSize S.publicKey 
+
+--instance Binary PrivKey where put (PrivKey pk) = putByteString $ BA.convert pk
+--                              get = PrivKey <$> getCryptoFailable keyByteSize S.secretKey 
 
 instance Binary DH.PublicKey where put pk = putByteString $ BA.convert pk
                                    get = getCryptoFailable dhPubKeyByteSize DH.publicKey
