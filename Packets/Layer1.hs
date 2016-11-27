@@ -16,7 +16,7 @@ neighRepeatTime = 1 :: Time
 
 data L1 = L1Intro NeighIntro |
           L1Data NeighData |
-          L1Pipe (PipeData RawData) 
+          L1Pipe PipePacket
     deriving Generic
 
 
@@ -26,34 +26,50 @@ data NeighData = NeighData  {neighDKeyID :: KeyHash, neighDSig :: Signature, nei
     deriving Generic
 
 type PipeFree = Free PipeData (PipeData L2)
-data PipeData a = PipeData {pipeDKeyID :: PipeID,  -- ^PipeID of the pipe used
+
+data PipePacket = PipePacket{ pipePacketDepth :: Int,
+                              pipePacketData :: PipeData RawData }
+
+data PipeData a = PipeData {pipeHeader :: PipeHeader,
+                                pipeContent :: a}
+        deriving Functor
+
+data PipeHeader = PipeData {pipeDKeyID :: PipeID,  -- ^PipeID of the pipe used
                             pipeDSig :: Signature,  -- ^ Signature of the packet
                             pipeDPosition :: Number, -- ^ Position on the pipe, changed during routing (NOT SIGNED)
                             pipeDDirection :: Bool,  -- ^ Direction of the message (True being the direction followed by the request)
-                            pipeDFlags :: [PipeDataFlag],
-                            pipeDPayload :: a}  -- ^ Content of the message (this one should be useful)
+                            pipeDFlags :: [PipeDataFlag] }
               deriving Generic
 
 data PipeDataFlag = PipeControlRefresh
                   | PipeClose RawData
               deriving Generic
 
-instance Binary L1
+instance Binary L1 
 instance Binary NeighData
 instance Binary NeighIntro
 
+pipePacketToPipeFree :: PipePacket -> PipeFree
+pipePacketToPipeFree (PipePacket n (PipeData h d)) = unwrap (PipeData h) (decode d :: Free PipeData L2)
+                    where unwrap :: f -> Free f a -> Free f (f a)
+                          unwrap f (Pure a) = Pure (f a)
+                          unwrap f (Free f' a) = Free f (unwrap f' a)
+
+instance Binary PipePacket where put (PipePacket n (PipeData h c)) = put n >> put h >> putLazyByteString c
+                                 get = PipePacket <$> get <*> (PipeData <$> get <*> getRemainingLazyByteString)
+
+
 instance Binary a => Binary (Free PipeData a) where put = put' (pure ()) (0 :: Int)
-                                                        where put' :: Binary a => Put -> Int -> Free PipeData a -> Put
-                                                              put' s n (Pure a) = put n >> s >> put a
-                                                              put' s n (Free (PipeData id sig num b f p)) = put' (s >> put id >> put sig >> put num >> put b >> put f) (n+1) p
-                                                    get = do n <- get :: Get Int
+                                                            where put' :: Binary a => Put -> Int -> Free PipeData a -> Put
+                                                                  put' s n (Pure a) = put n >> s >> put a
+                                                                  put' s n (Free (PipeData h p)) = put' (s >> put h) (n+1) p
+                                                      get = do n <- get :: Get Int
                                                              get' n
-                                                        where get' :: Binary a => Int -> Get (Free PipeData a)
-                                                              get' 0 = Pure <$> get
-                                                              get' n = Free <$> (PipeData <$> get <*> get <*> get <*> get <*> get <*> get' (n-1) )
+                                                            where get' :: Binary a => Int -> Get (Free PipeData a)
+                                                                  get' 0 = Pure <$> get
+                                                                  get' n = Free <$> (PipeData <$> get <*> get' (n-1) )
 
-instance (Binary a) => Binary (PipeData a)
-
+instance Binary PipeHeader
 instance Binary PipeDataFlag
 
 instance SignedClass NeighIntro where scHash (NeighIntro kH pK _) = encode (kH, pK)
