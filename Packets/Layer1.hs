@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric, FlexibleInstances #-}
 module Packets.Layer1 where
 
 import Types.Crypto
@@ -16,14 +16,16 @@ neighRepeatTime = 1 :: Time
 
 data L1 = L1Intro NeighIntro |
           L1Data NeighData |
-          L1Pipe PipePacket
+          L1Pipe (PipeData RawData) 
     deriving Generic
 
 
 data NeighIntro = NeighIntro {neighIKeyID :: KeyHash, neighIPubKey :: PubKey,  neighISig :: Signature} 
+    deriving Generic
 data NeighData = NeighData  {neighDKeyID :: KeyHash, neighDSig :: Signature, neighDContent :: L2} 
+    deriving Generic
 
-type PipePacket = Free PipeData (PipeData L2)
+type PipeFree = Free PipeData (PipeData L2)
 data PipeData a = PipeData {pipeDKeyID :: PipeID,  -- ^PipeID of the pipe used
                             pipeDSig :: Signature,  -- ^ Signature of the packet
                             pipeDPosition :: Number, -- ^ Position on the pipe, changed during routing (NOT SIGNED)
@@ -37,10 +39,18 @@ data PipeDataFlag = PipeControlRefresh
               deriving Generic
 
 instance Binary L1
+instance Binary NeighData
+instance Binary NeighIntro
 
-instance Binary a => Binary (Free PipeData a) where put f = iter putPD (put <$> f)
-                                                        where putPD :: PipeData Put -> Put
-                                                              putPD = put . (runPut <$>)
+instance Binary a => Binary (Free PipeData a) where put = put' (pure ()) (0 :: Int)
+                                                        where put' :: Binary a => Put -> Int -> Free PipeData a -> Put
+                                                              put' s n (Pure a) = put n >> s >> put a
+                                                              put' s n (Free (PipeData id sig num b f p)) = put' (s >> put id >> put sig >> put num >> put b >> put f) (n+1) p
+                                                    get = do n <- get :: Get Int
+                                                             get' n
+                                                        where get' :: Binary a => Int -> Get (Free PipeData a)
+                                                              get' 0 = Pure <$> get
+                                                              get' n = Free <$> (PipeData <$> get <*> get <*> get <*> get <*> get <*> get' (n-1) )
 
 instance (Binary a) => Binary (PipeData a)
 
