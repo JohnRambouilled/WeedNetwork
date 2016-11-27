@@ -15,7 +15,7 @@ import Data.Maybe
 monteCarlo :: (Node a) =>  (MarkedGraph a MCMark  -> a -> (UserID,MCMark, a)) -> (Int,Int) -> MarkedGraph a MCMark -> [UserID] -> (UserID,MCMark,a) -> Maybe [UserID] 
 monteCarlo curNext (min,max) graph road (curID,curMark,curNode) 
         | min > max = Nothing
-        | not $ null (_mcEnd curMark) = pure $ (_mcEnd curMark ++ road)
+        | not $ null (_mcEnd curMark) = pure (_mcEnd curMark ++ road)
         | _mcIsVisited curMark = error "montecarlo visite un noeud marqué"
         | otherwise = let nextStuff = curNext graph curNode 
                       in  monteCarlo curNext (min+1,max) (mcMarkVisited curID graph)(curID:road) nextStuff 
@@ -29,7 +29,7 @@ markB = set _2 True
 
 
 killNode :: Node a => Graph a -> UserID -> Graph a
-killNode graph uID  = case nodeM of Nothing -> error "blabla"
+killNode graph uID  = case nodeM of Nothing -> error ("Node not found : " ++ show uID)
                                     Just node -> foldr (removeNeigh uID) (Graph graph1) (view nodeNeigh node) 
     where (nodeM,graph1) = M.updateLookupWithKey adjustF uID $ runGraph graph
           adjustF _ _ = Nothing

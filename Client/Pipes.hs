@@ -15,7 +15,7 @@ import qualified Data.Map as M
 {- Insère un callback suite à une requête. Attention, la position doit être vérifiée. De plus, la position 1 signifie que nous en sommes l'origine -}
 registerPipe :: TVar PipesModule -> Request -> Callback PipeError PipeData -> STMIO ()
 registerPipe pipesModule (Request pos len road epk time pubKey pipeID sig payload) callback = registerCallback pipesModule pipeID pubKey callback pos nodes
-    where nodes = if pos == 1 then PipeEnd (road !! pos)
+    where nodes = if pos == 1 then PipeEnd (road !! 1)
                     else if pos == len - 1 then PipeEnd $ road !! (len - 2)
                     else PipeNode (road !! (pos - 1)) (road !! (pos +1))
 
