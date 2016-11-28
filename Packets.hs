@@ -1,13 +1,8 @@
-module Packets (module Packets.Neighbours,
-                module Packets.Pipes,
-                module Packets.Communication,
-                module Packets.Ressource)
+module Packets (module Packets.Layer1,
+                module Packets.Layer2)
 where
 
 
-import Packets.Neighbours
-import Packets.Pipes
-import Packets.Ressource
-import Packets.Communication
-
+import Packets.Layer1
+import Packets.Layer2
 
