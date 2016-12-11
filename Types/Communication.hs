@@ -1,17 +1,8 @@
 module Types.Communication where
-import Types.Callbacks
 import Packets
 import qualified Data.Map as M
 
-data ComError = ComError
-              | ComErrorExit ComMessage
+type ComMap = M.Map ComID ComEntry
 
-data ComEntry = ComEntry {comCallback :: Callback ComError ComMessage}
-type ComModule = M.Map ComID ComEntry
+data ComEntry = ComEntry {comCallback :: ComMessage -> IO ()}
 
-
-
-
---public
---
---newComModule :: IO (TVar ComModule, Callback DestinaryError PipeMessage)

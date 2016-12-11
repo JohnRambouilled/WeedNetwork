@@ -1,12 +1,11 @@
 module Types.Timer where
+import Types.Packets
 
-import Types.Callbacks
+import Control.Concurrent.STM.TMVar
+import Control.Concurrent
 
-type TimerRefresh = STMIO ()
-type TimerKill = STMIO ()
-data TimerEntry = TimerEntry {timerRefresh :: TimerRefresh,
-                              timerKill :: TimerKill}
-
-
+type TimerRefresh = IO ()
+type TimerKill = IO ()
+data TimerEntry = TimerEntry {timerEntryID :: TMVar ThreadId }
 
 

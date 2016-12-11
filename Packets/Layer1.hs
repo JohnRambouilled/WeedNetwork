@@ -4,8 +4,8 @@ module Packets.Layer1 where
 import Types.Crypto
 import Types.Packets
 import Packets.Layer2
+import Packets.Communication
 
-import Control.Monad.Free
 import Data.Binary
 import qualified Data.ByteString.Lazy as B
 import Data.Binary.Put
@@ -29,52 +29,35 @@ data NeighIntro = NeighIntro {neighIKeyID :: KeyHash, neighIPubKey :: PubKey,  n
 data NeighData = NeighData  {neighDKeyID :: KeyHash, neighDSig :: Signature, neighDContent :: L2} 
     deriving Generic
 
-type PipeFree = Free PipeData (PipeData L2)
 
-data PipePacket = PipePacket{ pipePacketDepth :: Int,
-                              pipePacketData :: PipeData RawData }
+data PipePacket = PipePacket{ pipePacketHeader :: PipeHeader,
+                              pipePacketData :: RawData }
+                    deriving Show
 
-data PipeData a = PipeData {pipeHeader :: PipeHeader,
-                                pipeContent :: a}
-instance Functor PipeData where fmap f (PipeData h x) = PipeData h (f x)
+data PipePacketContent = PPCPipePacket PipePacket |
+                         PPCL2 L2 |
+                         PPCComPacket ComPacket
+        deriving (Show, Generic)
+
 
 data PipeHeader = PipeHeader {pipeDKeyID :: PipeID,  -- ^PipeID of the pipe used
                               pipeDSig :: Signature,  -- ^ Signature of the packet
                               pipeDPosition :: Number, -- ^ Position on the pipe, changed during routing (NOT SIGNED)
                               pipeDDirection :: Bool,  -- ^ Direction of the message (True being the direction followed by the request)
                               pipeDFlags :: [PipeDataFlag] }
-              deriving Generic
+              deriving (Generic, Show)
 
 data PipeDataFlag = PipeControlRefresh
                   | PipeClose RawData
-              deriving Generic
+              deriving (Show, Generic)
 
 instance Binary L1 
 instance Binary NeighData
 instance Binary NeighIntro
+instance Binary PipePacketContent 
 
-pipePacketToPipeFree :: PipePacket -> PipeFree
-pipePacketToPipeFree (PipePacket n (PipeData h d)) = unwrap (PipeData h ()) (decode d :: Free PipeData L2)
-                    where --unwrap :: f () -> Free f a -> Free f (f a)    Est-ce possible? Si oui pourquoi  pas dans Hackage? j'ai pas l'impression, ou alors c'est que je suis trop con...
-                          unwrap :: PipeData () -> Free PipeData L2 -> PipeFree
-                          unwrap f (Pure a) = Pure (f $> a)
-                          unwrap f (Free f') = Free $ f $> (unwrap (f' $> ()) $ pipeContent f')
-                                           
---                          unwrap f (Free f') = Free $ (unwrap (() <$ f') a) <$ f
-
-instance Binary PipePacket where put (PipePacket n (PipeData h c)) = put n >> put h >> putLazyByteString c
-                                 get = PipePacket <$> get <*> (PipeData <$> get <*> getRemainingLazyByteString)
-
-
-instance Binary a => Binary (Free PipeData a) where put = put' (pure ()) (0 :: Int)
-                                                            where put' :: Binary a => Put -> Int -> Free PipeData a -> Put
-                                                                  put' s n (Pure a) = put n >> s >> put a
-                                                                  put' s n (Free (PipeData h p)) = put' (s >> put h) (n+1) p
-                                                    get = do n <- get :: Get Int
-                                                             get' n
-                                                            where get' :: Binary a => Int -> Get (Free PipeData a)
-                                                                  get' 0 = Pure <$> get
-                                                                  get' n = Free <$> (PipeData <$> get <*> get' (n-1) )
+instance Binary PipePacket where put (PipePacket h c) = put h >> putLazyByteString c
+                                 get = PipePacket <$> get <*> getRemainingLazyByteString
 
 instance Binary PipeHeader
 instance Binary PipeDataFlag
@@ -95,11 +78,10 @@ instance SignedClass PipeHeader where scHash (PipeHeader kH _ n b f) = encode (k
                                       scSignature = pipeDSig
                                       scPushSignature p s = p{pipeDSig = s}
 
-
-instance Binary a => SignedClass (PipeData a) where scHash (PipeData h p) = B.append (scHash h)  (encode p)
-                                                    scKeyHash = scKeyHash . pipeHeader
-                                                    scSignature = pipeDSig . pipeHeader
-                                                    scPushSignature p s = p{pipeHeader = scPushSignature (pipeHeader p) s}
+instance SignedClass PipePacket  where scHash (PipePacket h p) = B.append (scHash h)  (encode p)
+                                       scKeyHash = scKeyHash . pipePacketHeader
+                                       scSignature = pipeDSig . pipePacketHeader
+                                       scPushSignature p s = p{pipePacketHeader = scPushSignature (pipePacketHeader p) s}
 
 instance Show NeighIntro where
     show = ("NeighIntro from : " ++ ) . show . neighIKeyID

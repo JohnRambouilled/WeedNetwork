@@ -2,35 +2,33 @@
 module Types.Pipes where
 
 import Packets
+import Types.Packets
 import Types.Crypto
 import Types.Timer
-import Types.Callbacks
 import Types.Neighbours
+import Types.Communication
 
 import Control.Monad
 import Control.Monad.Trans
 import Control.Concurrent.STM
-import Control.Lens
 import qualified Data.Map as M
 
+type RelayedPipesMap = M.Map PipeID RelayedPipeEntry
+type IncomingPipesMap = M.Map PipeID IncomingPipeEntry
+type OutgoingPipesMap = M.Map PipeID OutgoingPipeEntry
 
-newtype SourceID = SourceID Int
-data PipeError = PipeTimedOut | PipeBroken | PipeClosedError PipeControl
+data RelayedPipeEntry = RelayedPipeEntry {relPipePubKey :: PipePubKey,
+                                          relPipePosition :: Number,
+                                          relPipeTimer :: TimerEntry}
 
-data PipeKind = PipeNode {pipePrevious :: NeighID,
-                          pipeNext :: NeighID} |
-                PipeEnd {pipeNext :: NeighID}
+data IncomingPipeEntry = IncomingPipeEntry {incPipeKeys :: PipeKeyPair,
+                                            incPipeTimer :: TimerEntry,
+                                            incPipeComMap :: TVar ComMap}
+
+data OutgoingPipeEntry = OutgoingPipeEntry {outPipeKeys :: PipeKeyPair,
+                                            outPipeTimer :: TimerEntry,
+                                            outPipeComMap :: TVar ComMap}
 
 
-
-data PipeEntry = PipeEntry {_pipeCallback :: Callback PipeError PipeData,
-                            _pipePubKey :: PubKey,
-                            _pipeTimer :: TimerEntry,
-                            _pipeEntryPosition :: Number,
-                            _pipeKind :: PipeKind}
-makeLenses ''PipeEntry
-
--- Contiens tout les pipes (relayés, leech et seed)
-type PipesModule = M.Map PipeID PipeEntry
 
 

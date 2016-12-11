@@ -10,8 +10,12 @@ import Control.Monad
 import qualified Data.Map as M
 import GHC.Generics
 
-data L2 = L2Request Request | L2 Research Research | L2Answer Answer
+data L2 = L2Request Request | L2 Research Research | L2Answer Answer 
     deriving (Generic, Show)
+
+               
+
+
 
 data Request = Request {reqPosition :: Number, -- ^ Position on the road, changed during routing (NOT SIGNED)
                         reqLength :: Number, -- ^ Total length of the road
