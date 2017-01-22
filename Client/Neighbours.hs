@@ -15,8 +15,8 @@ import qualified Data.Map as M
 
 -- Regarde si le voisin est connu, si oui vérifie la signature du paquet et appele le callback correspondant
 onNeighData ::  NeighData -> WeedMonad (Maybe Layer2)
-onNeighData neighbourMod neighdata = do nMod <- stmRead neighbourMod
-                                          forM_ ((neighID `M.lookup`) $ _neighControlMap nMod) (managePacket nMod)
+onNeighData neighdata = do nMod <- stmRead clNeighbours
+                           managePacket (neighID `M.lookup` nMod)
     where neighID = neighDKeyID neighdata
           managePacket nMod entry = when (checkSig (neighPubKey entry) neighdata) $ 
                                         case neighDContent neighdata of

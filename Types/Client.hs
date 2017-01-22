@@ -7,6 +7,7 @@ import Types.Packets
 import Types.Crypto
 import Types.Destinaries
 import Types.Ressources
+import Types.Protocol
 import Packets
 
 import Control.Concurrent.STM (TVar)
