@@ -18,7 +18,7 @@ import Control.Monad.Reader
 type WeedMonad = WriterT WeedOrders (ReaderT Client STM)  -- One monad to rule them all... Keep it simple?
 
 type WeedOrders = [WeedOrder]
-data WeedOrder = WeedLog String |
+data WeedOrder = WeedLog Log |
                  WeedCreateTimer TimerEntry Time IOAction |
                  WeedPerformIO IOAction
 type IOAction = IO ()
@@ -36,6 +36,11 @@ data Client = Client { clUserID :: UserID,
                        clProtocols :: TVar ProtocolMap}
 
 
+data Log = Log { logModule :: String,
+                 logFunction :: String,
+                 logStatus :: LogStatus,
+                 logMessage :: String}
 
+data LogStatus = InvalidPacket | Normal
 
 

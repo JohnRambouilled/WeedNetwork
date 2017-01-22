@@ -12,12 +12,13 @@ import Control.Monad.Reader
 import qualified Data.Map as M
 import Data.Binary (decodeOrFail)
 
-destinaryOnRequest :: TVar PipesModule -> TVar DestinaryModule -> TVar ProtocolModule -> Request -> STMIO ()
-destinaryOnRequest pipesModule destModule protoModule req = do
-  destMod <- stmRead destModule
+
+destinaryOnRequest :: Request -> WeedMonad ()
+destinaryOnRequest req = do
+  destMod <- stmRead clDestinaries
   case destID `M.lookup` destMod of
                Nothing -> do destE <- newDestinaryEntry (reqDHPubKey req) (reqPipeID req) (reqPosition req)
-                             stmModify destModule $ M.insert destID destE 
+                             st(mModify destModule $ M.insert destID destE 
                              addPipe destE
                Just destE -> if reqDHPubKey req == destinaryDHPubKey destE then addPipe destE
                                                                            else pure ()
