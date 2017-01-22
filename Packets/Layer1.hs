@@ -18,21 +18,31 @@ neighTimeOut = 15 :: Time
 neighRepeatTime = 1 :: Time
 
 
-data L1 = L1Intro NeighIntro |
-          L1Data NeighData |
-          L1Pipe PipePacket
+data L1Dest = Broadcast | DestKeyHash KeyHash
+
+data L1 = L1 {_l1Source :: KeyHash,
+              _l1Dest :: L1Dest,
+              _l1Content :: L1Content}
     deriving Generic
+makeLenses ''L1
 
-
-data NeighIntro = NeighIntro {neighIKeyID :: KeyHash, neighIPubKey :: PubKey,  neighISig :: Signature} 
+data L1Content = L1Intro NeighIntro | L1Data NeighData | L1Pipe PipePacket
     deriving Generic
-data NeighData = NeighData  {neighDKeyID :: KeyHash, neighDSig :: Signature, neighDContent :: L2} 
+makeLenses ''L1Content
+
+
+data NeighIntro = NeighIntro {_neighIPubKey :: PubKey,  _neighISig :: Signature} 
     deriving Generic
+makeLenses ''NeighIntro
+data NeighData = NeighData  {_neighDSig :: Signature, _neighDContent :: L2} 
+    deriving Generic
+makeLenses ''NeighData
 
 
-data PipePacket = PipePacket{ pipePacketHeader :: PipeHeader,
-                              pipePacketData :: RawData }
+data PipePacket = PipePacket{_pipePacketHeader :: PipeHeader,
+                             _pipePacketData :: RawData }
                     deriving Show
+makeLenses ''PipePacket
 
 data PipePacketContent = PPCPipePacket PipePacket |
                          PPCL2 L2 |
@@ -40,12 +50,11 @@ data PipePacketContent = PPCPipePacket PipePacket |
         deriving (Show, Generic)
 
 
-data PipeHeader = PipeHeader {pipeDKeyID :: PipeID,  -- ^PipeID of the pipe used
-                              pipeDSig :: Signature,  -- ^ Signature of the packet
-                              pipeDPosition :: Number, -- ^ Position on the pipe, changed during routing (NOT SIGNED)
-                              pipeDDirection :: Bool,  -- ^ Direction of the message (True being the direction followed by the request)
-                              pipeDFlags :: [PipeDataFlag] }
+data PipeHeader = PipeHeader {_pipeDKeyID :: PipeID,  -- ^PipeID of the pipe used
+                              _pipeDSig :: Signature,  -- ^ Signature of the packet
+                              _pipeDFlags :: [PipeDataFlag] }
               deriving (Generic, Show)
+makeLenses ''PipeHeader
 
 data PipeDataFlag = PipeControlRefresh
                   | PipeClose RawData
