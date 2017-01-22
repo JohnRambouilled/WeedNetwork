@@ -23,7 +23,7 @@ data Request = Request {reqPosition :: Number, -- ^ Position on the road, change
                         reqSourceKey :: PubKey,  -- ^ DHPubKey of the origin of the request
                         reqTime :: Time,    -- ^ Send time of the request
                         reqPipeKey :: PipePubKey, -- ^ Public Key of the opening pipe
-                        reqPipeKeyHashe :: KeyHash, -- ^ Hash of the pipe's key
+                        reqPipeKeyHash :: KeyHash, -- ^ Hash of the pipe's key
                         reqPipeID  :: PipeID,  -- ^ PipeID of the pipe (KeyHash of the Road)
                         reqPipeSig :: Signature,  -- ^ Signature of the packet's Hash
                         reqContent :: RawData}   -- ^ extra content if needed (cause why not)
@@ -51,8 +51,8 @@ data RessourceCert = RessourceCert {cResSourceKey :: PubKey,
                 deriving Generic
 
 
-instance SignedClass Request where scHash (Request n l r epk t pK pH s c) = encode (l,r,epk,t,pK,pH,c)
-                                   scKeyHash = reqPipeID
+instance SignedClass Request where scHash (Request n l r epk t pK pID pH s c) = encode (l,r,epk,t,pK,pID,pH,c)
+                                   scKeyHash = reqPipeKeyHash
                                    scSignature = reqPipeSig
                                    scPushSignature r s = r{reqPipeSig = s}
 instance IntroClass Request where icPubKey = reqSourceKey
@@ -65,7 +65,7 @@ instance IntroClass Answer where icPubKey = cResSourceKey . ansCert
 
 
 
-instance Show Request where show (Request p l r _ t _ pID _ _) = "Request for pipe : " ++ show pID ++ " on road : " ++ show r ++" ("++ show p ++", "++ show l ++")"
+instance Show Request where show (Request p l r _ t _ _ pID _ _) = "Request for pipe : " ++ show pID ++ " on road : " ++ show r ++" ("++ show p ++", "++ show l ++")"
 instance Show Research where show (Research rID ttl _ _) = "Research for : " ++ show rID ++ " ttl : " ++ show ttl
 instance Show Answer where show (Answer c ttl r sID _ ) = "Answer for : " ++ show (cResID c) ++ " from : " ++ show sID ++ " ttl : " ++ show ttl ++ " ROAD : " ++ show r
 

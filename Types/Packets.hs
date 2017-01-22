@@ -38,3 +38,4 @@ instance Binary NominalDiffTime where
 
 instance Binary RessourceID
 instance Binary ProtocolID
+instance Binary PipeID
