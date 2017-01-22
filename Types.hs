@@ -7,6 +7,7 @@ module Types (
 --              module Types.Graph,
               module Types.Neighbours,
               module Types.Client,
+              module Types.Packets,
               module Types.Pipes)
 where
 
@@ -20,3 +21,4 @@ import Types.Destinaries
 import Types.Neighbours
 import Types.Client
 import Types.Pipes
+import Types.Packets

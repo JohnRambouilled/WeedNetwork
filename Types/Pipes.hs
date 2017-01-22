@@ -23,11 +23,11 @@ data RelayedPipeEntry = RelayedPipeEntry {relPipePubKey :: PipePubKey,
 
 data IncomingPipeEntry = IncomingPipeEntry {incPipeKeys :: PipeKeyPair,
                                             incPipeTimer :: TimerEntry,
-                                            incPipeComMap :: TVar ComMap}
+                                            incPipeComMap :: TVar ComModule}
 
 data OutgoingPipeEntry = OutgoingPipeEntry {outPipeKeys :: PipeKeyPair,
                                             outPipeTimer :: TimerEntry,
-                                            outPipeComMap :: TVar ComMap}
+                                            outPipeComMap :: TVar ComModule}
 
 
 

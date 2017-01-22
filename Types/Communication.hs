@@ -1,8 +1,10 @@
 module Types.Communication where
 import Packets
+import Types.Packets
 import qualified Data.Map as M
 
-type ComMap = M.Map ComID ComEntry
+data ComModule = ComModule {comMap :: M.Map ComID ComEntry,
+                            comSource :: SourceID}
 
 data ComEntry = ComEntry {comCallback :: ComMessage -> IO ()}
 

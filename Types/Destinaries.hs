@@ -17,5 +17,5 @@ type DestinaryID = UserID
   
 data DestinaryEntry = DestinaryEntry {destPipes :: [PipeID],
                                       destKeys :: PubKey,
-                                      destComModule :: TVar ComMap}
+                                      destComModule :: TVar ComModule}
 
