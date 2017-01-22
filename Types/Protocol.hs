@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
 module Types.Protocol where
 
 import Packets
@@ -12,13 +11,10 @@ import Data.Binary (Binary)
 import Control.Concurrent.STM
 
 
-newtype ProtocolID = ProtocolID Int
-    deriving (Eq, Ord, Generic)
 
-type ProtocolEntry = SourceID -> ComInit -> STM ComEntry
+type ProtocolEntry = SourceID -> RawData -> STM ComEntry
 
 type ProtocolMap = M.Map ProtocolID ProtocolEntry
 
-instance Binary ProtocolID
 
 

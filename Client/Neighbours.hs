@@ -14,8 +14,8 @@ import qualified Data.Map as M
 
 
 -- Regarde si le voisin est connu, si oui vérifie la signature du paquet et appele le callback correspondant
-onNeighPacket :: TVar NeighbourModule ->  NeighData -> STMIO ()
-onNeighPacket neighbourMod neighdata = do nMod <- stmRead neighbourMod
+onNeighData ::  NeighData -> WeedMonad (Maybe Layer2)
+onNeighData neighbourMod neighdata = do nMod <- stmRead neighbourMod
                                           forM_ ((neighID `M.lookup`) $ _neighControlMap nMod) (managePacket nMod)
     where neighID = neighDKeyID neighdata
           managePacket nMod entry = when (checkSig (neighPubKey entry) neighdata) $ 
@@ -26,9 +26,9 @@ onNeighPacket neighbourMod neighdata = do nMod <- stmRead neighbourMod
                                                                call (_neighBreakCb nMod) (neighID,brk)
 
 -- Vérifie la validité du paquet et ajoute le voisin
-onIntroduce :: TVar NeighbourModule ->  NeighIntro -> STMIO ()
-onIntroduce neighbourMod intro
-    | not $ checkNeighIntro intro = pure ()
+onNeighIntro ::  NeighIntro -> WeedMonad Bool
+onNeighIntro neighbourMod intro
+    | not $ checkNeighIntro intro = pure False
     | otherwise = do timerEntry <- newTimerEntry $ stmModify neighbourMod kill
                      nMod <- stmRead neighbourMod
                      let (entryM,nMap') = M.insertLookupWithKey (\_ _ old -> old) neighID neighEntry (_neighControlMap nMod)

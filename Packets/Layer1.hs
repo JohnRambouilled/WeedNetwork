@@ -28,7 +28,6 @@ makeLenses ''L1
 
 data L1Content = L1Intro NeighIntro | L1Data NeighData | L1Pipe PipePacket
     deriving Generic
-makeLenses ''L1Content
 
 
 data NeighIntro = NeighIntro {_neighIPubKey :: PubKey,  _neighISig :: Signature} 

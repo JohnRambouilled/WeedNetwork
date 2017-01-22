@@ -18,6 +18,8 @@ type TTL = Int
 newtype RessourceID = RessourceID RawData
     deriving (Eq,Ord,Generic, Show)
 
+newtype ProtocolID = ProtocolID Int
+    deriving (Eq, Ord, Generic, Show)
 
 -- TODO
 ttlMax = 10
@@ -34,3 +36,4 @@ instance Binary NominalDiffTime where
         put t = put (toRational t :: Rational)
 
 instance Binary RessourceID
+instance Binary ProtocolID

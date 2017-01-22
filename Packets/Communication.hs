@@ -3,6 +3,7 @@ module Packets.Communication where
 import Data.Binary
 import GHC.Generics
 import Types.Crypto
+import Types.Packets
 
 
 data ComPacket = ComPinit ComInit | ComPmessage ComMessage
@@ -11,7 +12,7 @@ data ComPacket = ComPinit ComInit | ComPmessage ComMessage
 data ComID = ComID Int
     deriving (Eq,Show,Generic,Ord)
 
-data ComInit = ComInit {ciComID :: ComID, ciPayload :: RawData} -- ProtocolID ? 
+data ComInit = ComInit {ciComID :: ComID, ciProtocolID :: ProtocolID, ciPayload :: RawData}
                  deriving (Generic, Show)
 
 data ComMessage = ComData {cmComID :: ComID, cmPayload :: RawData}
