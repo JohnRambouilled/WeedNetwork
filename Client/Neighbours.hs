@@ -13,17 +13,12 @@ import Control.Lens
 import qualified Data.Map as M
 
 
--- Regarde si le voisin est connu, si oui vérifie la signature du paquet et appele le callback correspondant
-onNeighData ::  NeighData -> WeedMonad (Maybe Layer2)
+-- Regarde si le voisin est connu, si oui vérifie la signature du paquet 
+onNeighData ::  NeighData -> WeedMonad ()
 onNeighData neighdata = do nMod <- stmRead clNeighbours
-                           managePacket (neighID `M.lookup` nMod)
+                           case neighID `M.lookup` nMod of
     where neighID = neighDKeyID neighdata
-          managePacket nMod entry = when (checkSig (neighPubKey entry) neighdata) $ 
-                                        case neighDContent neighdata of
-                                            NeighReq req -> call (_neighRequestCb nMod) (neighID,req)
-                                            NeighRes res -> call (_neighRessourceCb nMod) res
-                                            NeighBrk brk -> do when (neighID == neighBOrigin brk) $ stmWrite neighbourMod (over neighControlMap (M.delete neighID) nMod) 
-                                                               call (_neighBreakCb nMod) (neighID,brk)
+          managePacket entry = if checkSig (neighPubKey entry) neighdata then Just neighData else Nothing 
 
 -- Vérifie la validité du paquet et ajoute le voisin
 onNeighIntro ::  NeighIntro -> WeedMonad Bool

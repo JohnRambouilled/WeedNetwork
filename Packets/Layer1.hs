@@ -52,7 +52,8 @@ data PipePacketContent = PPCPipePacket PipePacket |
         deriving (Show, Generic)
 
 
-data PipeHeader = PipeHeader {_pipeDKeyID :: PipeID,  -- ^PipeID of the pipe used
+data PipeHeader = PipeHeader {_pipeDKeyID :: KeyHash,  -- ^Hash of the pipe's key
+                              _pipeID :: PipeID,    -- ^PipeID (KeyHash of the road)
                               _pipeDSig   :: Signature,  -- ^ Signature of the packet
                               _pipeDFlags :: [PipeDataFlag] }
               deriving (Generic, Show)

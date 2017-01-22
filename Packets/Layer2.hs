@@ -23,7 +23,8 @@ data Request = Request {reqPosition :: Number, -- ^ Position on the road, change
                         reqSourceKey :: PubKey,  -- ^ DHPubKey of the origin of the request
                         reqTime :: Time,    -- ^ Send time of the request
                         reqPipeKey :: PipePubKey, -- ^ Public Key of the opening pipe
-                        reqPipeID  :: PipeID,  -- ^ PipeID of the pipe (KeyHash of the Public Key)
+                        reqPipeKeyHashe :: KeyHash, -- ^ Hash of the pipe's key
+                        reqPipeID  :: PipeID,  -- ^ PipeID of the pipe (KeyHash of the Road)
                         reqPipeSig :: Signature,  -- ^ Signature of the packet's Hash
                         reqContent :: RawData}   -- ^ extra content if needed (cause why not)
     deriving Generic

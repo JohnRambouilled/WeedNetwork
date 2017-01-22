@@ -8,9 +8,14 @@ import Control.Monad.Writer
 import Control.Monad.Reader
 
 
-stmLift :: STM a -> WeedMonad a
-stmLift = lift.lift
+liftSTM :: STM a -> WeedMonad a
+liftSTM = lift.lift
 
 stmRead :: (Client -> TVar a) -> WeedMonad a
-stmRead f = stmLift . readTVar =<< lift (asks f)
+stmRead f = liftSTM . readTVar =<< lift (asks f)
 
+logM :: String -> WeedMonad ()
+logM = tell . WeedLog
+
+weedIO :: IOAction -> WeedMonad ()
+weedIO = tell . WeedPerformIO

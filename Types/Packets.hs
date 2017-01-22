@@ -13,7 +13,6 @@ type Number = Int
 type SourceID = KeyHash
 type UserID = KeyHash
 type Road = [SourceID]
-type PipeID = KeyHash
 type TTL = Int
 newtype RessourceID = RessourceID RawData
     deriving (Eq,Ord,Generic, Show)
@@ -21,6 +20,8 @@ newtype RessourceID = RessourceID RawData
 newtype ProtocolID = ProtocolID Int
     deriving (Eq, Ord, Generic, Show)
 
+newtype PipeID = PipeID RawData
+    deriving (Eq, Ord, Generic, Show)
 -- TODO
 ttlMax = 10
 ansMaxDelay = 10
