@@ -18,7 +18,7 @@ destinaryOnRequest req = do
   destMod <- stmRead clDestinaries
   case destID `M.lookup` destMod of
                Nothing -> do destE <- newDestinaryEntry (reqDHPubKey req) (reqPipeID req) (reqPosition req)
-                             st(mModify destModule $ M.insert destID destE 
+                             stmModify destModule $ M.insert destID destE 
                              addPipe destE
                Just destE -> if reqDHPubKey req == destinaryDHPubKey destE then addPipe destE
                                                                            else pure ()

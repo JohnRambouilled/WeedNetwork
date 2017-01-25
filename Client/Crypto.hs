@@ -28,23 +28,30 @@ computeHashFromKey = KeyHash . computeHash
 
 
 checkSignature :: PubKey -> Signature -> Hash -> Bool
-checkSignature pK s h = S.verify (runPubKey pK) (B.toStrict h) s 
+checkSignature pK s h = S.verify (sigPubKey pK) (B.toStrict h) s 
 
 makeSignature :: PrivKey -> PubKey -> RawData -> Signature
-makeSignature uK pK d = S.sign  (runPrivKey uK) (runPubKey pK) $ B.toStrict d
+makeSignature uK pK d = S.sign  (sigPrivKey uK) (runPubKey pK) $ B.toStrict d
 
 
+genPipeKeys :: PubKey -> PrivKey -> Maybe PipeKeyPair
+genPipeKeys pK sK = case S.secretKey =<< DH.dh (dhPubKey pK) (dhPrivKey sK) of
+                        CryptoFailed e -> Nothing
+                        CryptoPassed s -> Just (PipePubKey $ S.toPublic s, PipePrivKey s)
+    
+
+{-
 transmitKey :: DHPubKey -> DHPrivKey -> Maybe (DHPubKey, KeyPair)
 transmitKey dK nK = (\keys -> (DH.toPublic nK, keys)) <$> (keysFromShared $ DH.dh dK nK)
     where keysFromShared dhS = let sKM = S.secretKey dhS
                       in case sKM of CryptoPassed sK -> Just (PubKey $ S.toPublic sK, PrivKey sK )
                                      _ -> Nothing
-
 decryptKeyPair :: DHPubKey -> DHPrivKey -> Maybe KeyPair
 decryptKeyPair pK prK = keysFromShared $ DH.dh pK prK
     where keysFromShared dhS = let sKM = S.secretKey dhS
                                in case sKM of CryptoPassed sk ->  Just (PubKey $ S.toPublic sk, PrivKey sk)
                                               _ -> Nothing
+-} 
                                                                                                                   
 
 generateKeyPair :: IO (PubKey,PrivKey)
@@ -53,7 +60,7 @@ generateKeyPair = do (skBs,_) <- randomBytesGenerate keyByteSize <$> getSystemDR
                      pure ( PubKey $ S.toPublic sK, PrivKey sK)
 
 
-
+{-
 generateDHKeyPair :: IO (DHPubKey, DHPrivKey)
 generateDHKeyPair  = do (skBs,_) <- randomBytesGenerate keyByteSize <$> getSystemDRG
                         sK <- throwCryptoErrorIO $ DH.secretKey (skBs :: BStrct.ByteString)
@@ -63,7 +70,7 @@ generateDHKeyPair  = do (skBs,_) <- randomBytesGenerate keyByteSize <$> getSyste
 
 privKeyToPubKeyDH :: DHPrivKey -> DHPubKey
 privKeyToPubKeyDH = DH.toPublic
-
+-}
 
 computeHash :: (Show a, Binary a) => a -> Hash
 computeHash a = let digest = hash (B.toStrict $ encode a) :: Digest SHA1
