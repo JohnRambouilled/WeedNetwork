@@ -52,13 +52,11 @@ data RessourceCert = RessourceCert {cResSourceKey :: PubKey,
 
 
 instance SignedClass Request where scHash (Request n l r epk t pK pID pH s c) = encode (l,r,epk,t,pK,pID,pH,c)
-                                   scKeyHash = reqPipeKeyHash
                                    scSignature = reqPipeSig
                                    scPushSignature r s = r{reqPipeSig = s}
 instance IntroClass Request where icPubKey = reqSourceKey
 
 instance SignedClass Answer where scHash (Answer (RessourceCert k t t' rid _) _ _ sID r) = encode (k, t, t', rid, sID, r)
-                                  scKeyHash = ansSourceID
                                   scSignature = cResSig . ansCert
                                   scPushSignature a s = a{ansCert = (ansCert a){cResSig = s} }
 instance IntroClass Answer where icPubKey = cResSourceKey . ansCert 

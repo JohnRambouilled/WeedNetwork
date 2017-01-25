@@ -31,6 +31,7 @@ type Payload = RawData
 emptyPayload = B.empty :: Payload
 type Hash = RawData
 newtype KeyHash = KeyHash RawData deriving (Eq, Ord, Generic)
+newtype PipeKeyHash = PipeKeyHash RawData deriving (Eq, Ord, Generic)
 type Signature = S.Signature
 emptySignature :: S.Signature
 emptySignature = throwCryptoError . S.signature $ BStrct.replicate 64 0 
@@ -50,20 +51,17 @@ type KeyPair = (PubKey, PrivKey)
 
 {- | Classe de type des packets signés -}
 class SignedClass a where scHash :: a -> RawData    -- ^ Hash du packet (utilisé pour signer, et vérifier les signatures)
-                          scKeyHash :: a -> KeyHash     -- ^ KeyHash de la clef publique utilisée pour signer le packet
                           scSignature :: a -> Signature  -- ^ Signature du packet
                           scPushSignature :: a -> Signature -> a   -- ^ fonction de remplacement de la signature (permet de signer)
 
-
 {- | Classe de type des packets introduisant une clef : il s'agit de packets signés, contenant de plus une clef publique -}
 class SignedClass a => IntroClass a where icPubKey :: a -> PubKey
-
-
 
 instance Binary PipePubKey
 instance Binary PubKey
 instance Show KeyHash where show (KeyHash d) = prettyPrint d
 instance Binary KeyHash
+instance Binary PipeKeyHash
 
 prettyPrint :: RawData -> String
 prettyPrint = concatMap (`showHex` "") . B.unpack

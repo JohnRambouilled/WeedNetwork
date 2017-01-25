@@ -26,7 +26,8 @@ type IOAction = IO ()
 
 data Client = Client { clUserID :: UserID,
                        clKeyPair :: KeyPair,
-                       clTime :: Time, -- Should be updated before each call... 
+                       clTime :: TVar Time, -- Should be updated before each call... 
+                       clSender :: RawData -> WeedMonad (),
                        clRelayedPipes :: TVar RelayedPipesMap,
                        clIncomingPipes :: TVar IncomingPipesMap,
                        clOutgoingPipes :: TVar OutgoingPipesMap,

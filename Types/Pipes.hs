@@ -18,14 +18,17 @@ type IncomingPipesMap = M.Map PipeID IncomingPipeEntry
 type OutgoingPipesMap = M.Map PipeID OutgoingPipeEntry
 
 data RelayedPipeEntry = RelayedPipeEntry {relPipePubKey :: PipePubKey,
-                                          relPipePosition :: Number,
+                                          relPipePrevious :: KeyHash,
+                                          relPipeNext :: KeyHash,
                                           relPipeTimer :: TimerEntry}
 
 data IncomingPipeEntry = IncomingPipeEntry {incPipeKeys :: PipeKeyPair,
+                                            incPipePrevious :: KeyHash,
                                             incPipeTimer :: TimerEntry,
                                             incPipeComMap :: TVar ComModule}
 
 data OutgoingPipeEntry = OutgoingPipeEntry {outPipeKeys :: PipeKeyPair,
+                                            outPipeNext :: KeyHash,
                                             outPipeTimer :: TimerEntry,
                                             outPipeComMap :: TVar ComModule}
 

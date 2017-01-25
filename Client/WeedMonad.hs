@@ -22,3 +22,7 @@ weedIO = tell. (:[]) . WeedPerformIO
 
 stmModify :: (Client -> TVar a) -> (a -> a) -> WeedMonad ()
 stmModify a f = liftSTM . flip modifyTVar f =<< lift (asks a)
+
+getClient :: WeedMonad Client
+getClient = lift $ ask
+
