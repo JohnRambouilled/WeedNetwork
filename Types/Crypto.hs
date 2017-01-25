@@ -16,9 +16,11 @@ import Data.Binary.Put
 
     -- ### CONSTANTES ###
 dhPubKeyByteSize = 32 :: Int
+dhPrivKeyByteSize = 32 :: Int
+sigPubKeyByteSize = 32 :: Int
+sigPrivKeyByteSize = 32 :: Int
 keyHashByteSize = 4 :: Int64
 sigByteSize = 64 :: Int
-keyByteSize = 32 :: Int
 
 
     -- ### NEWTYPES ###
@@ -68,7 +70,7 @@ instance Binary S.Signature where put s = putByteString $ BA.convert s
                                   get = getCryptoFailable sigByteSize S.signature
 
 instance Binary S.PublicKey where put pk = putByteString $ BA.convert pk
-                                  get = getCryptoFailable keyByteSize S.publicKey 
+                                  get = getCryptoFailable sigPubKeyByteSize S.publicKey 
 
 
 instance Binary DH.PublicKey where put pk = putByteString $ BA.convert pk

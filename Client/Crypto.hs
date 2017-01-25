@@ -31,11 +31,11 @@ checkSignature :: PubKey -> Signature -> Hash -> Bool
 checkSignature pK s h = S.verify (sigPubKey pK) (B.toStrict h) s 
 
 makeSignature :: PrivKey -> PubKey -> RawData -> Signature
-makeSignature uK pK d = S.sign  (sigPrivKey uK) (runPubKey pK) $ B.toStrict d
+makeSignature uK pK d = S.sign  (sigPrivKey uK) (sigPubKey pK) $ B.toStrict d
 
 
 genPipeKeys :: PubKey -> PrivKey -> Maybe PipeKeyPair
-genPipeKeys pK sK = case S.secretKey =<< DH.dh (dhPubKey pK) (dhPrivKey sK) of
+genPipeKeys pK sK = case S.secretKey $ DH.dh (dhPubKey pK) (dhPrivKey sK) of
                         CryptoFailed e -> Nothing
                         CryptoPassed s -> Just (PipePubKey $ S.toPublic s, PipePrivKey s)
     
@@ -55,9 +55,11 @@ decryptKeyPair pK prK = keysFromShared $ DH.dh pK prK
                                                                                                                   
 
 generateKeyPair :: IO (PubKey,PrivKey)
-generateKeyPair = do (skBs,_) <- randomBytesGenerate keyByteSize <$> getSystemDRG
+generateKeyPair = do (skBs,_) <- randomBytesGenerate sigPrivKeyByteSize <$> getSystemDRG
                      sK <- throwCryptoErrorIO $ S.secretKey (skBs :: BStrct.ByteString)
-                     pure ( PubKey $ S.toPublic sK, PrivKey sK)
+                     (dhSkBs,_) <- randomBytesGenerate dhPrivKeyByteSize <$> getSystemDRG
+                     dhSk <- throwCryptoErrorIO $ DH.secretKey (dhSkBs :: BStrct.ByteString)
+                     pure (PubKey (S.toPublic sK) (DH.toPublic dhSk), PrivKey sK dhSk)
 
 
 {-
