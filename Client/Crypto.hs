@@ -4,78 +4,52 @@ where
 
 
 import Types.Crypto
+
+import Data.Binary
 import qualified Crypto.PubKey.Ed25519 as S
 import qualified Crypto.PubKey.Curve25519 as DH
-import Crypto.Hash
-import Crypto.Error
-import Crypto.Random
-import Data.Binary
+import qualified Crypto.Hash as H
+import qualified Crypto.Error as E
+import qualified Crypto.Random as R
 import qualified Data.ByteArray as BA
 import qualified Data.ByteString as BStrct
 import qualified Data.ByteString.Lazy as B
 
 
-
+-- | Check the signature of a Signed object for the given public key. 
 checkSig :: SignedClass a => PubKey -> a -> Bool
-checkSig k a  = checkSignature k (scSignature a) $ scHash a
+checkSig pK a  = checkSignature (scSignature a) $ scHash a
+    where checkSignature s h = S.verify (sigPubKey pK) (B.toStrict h) s 
 
+-- | signe a signable object with the given key pair
 sign :: SignedClass a => KeyPair-> a -> a
-sign (pK, k) a = scPushSignature a $ makeSignature k pK $ scHash a
+sign (pK, k) a = scPushSignature a . makeSignature $ scHash a
+    where makeSignature d = S.sign  (sigPrivKey k) (sigPubKey pK) $ B.toStrict d
 
-
+-- | Create a KeyHash from a key
 computeHashFromKey :: PubKey -> KeyHash
 computeHashFromKey = KeyHash . computeHash
 
-
-checkSignature :: PubKey -> Signature -> Hash -> Bool
-checkSignature pK s h = S.verify (sigPubKey pK) (B.toStrict h) s 
-
-makeSignature :: PrivKey -> PubKey -> RawData -> Signature
-makeSignature uK pK d = S.sign  (sigPrivKey uK) (sigPubKey pK) $ B.toStrict d
-
-
+-- | Generate a shared pipeKeyPair using your private key and your destinary's public key.
+-- | The private key of this pipe is a secret shared by only you both,
+-- | and can be used to communicate privately.
 genPipeKeys :: PubKey -> PrivKey -> Maybe PipeKeyPair
 genPipeKeys pK sK = case S.secretKey $ DH.dh (dhPubKey pK) (dhPrivKey sK) of
-                        CryptoFailed e -> Nothing
-                        CryptoPassed s -> Just (PipePubKey $ S.toPublic s, PipePrivKey s)
-    
+                        E.CryptoFailed e -> Nothing
+                        E.CryptoPassed s -> Just (PipePubKey $ S.toPublic s, PipePrivKey s)
 
-{-
-transmitKey :: DHPubKey -> DHPrivKey -> Maybe (DHPubKey, KeyPair)
-transmitKey dK nK = (\keys -> (DH.toPublic nK, keys)) <$> (keysFromShared $ DH.dh dK nK)
-    where keysFromShared dhS = let sKM = S.secretKey dhS
-                      in case sKM of CryptoPassed sK -> Just (PubKey $ S.toPublic sK, PrivKey sK )
-                                     _ -> Nothing
-decryptKeyPair :: DHPubKey -> DHPrivKey -> Maybe KeyPair
-decryptKeyPair pK prK = keysFromShared $ DH.dh pK prK
-    where keysFromShared dhS = let sKM = S.secretKey dhS
-                               in case sKM of CryptoPassed sk ->  Just (PubKey $ S.toPublic sk, PrivKey sk)
-                                              _ -> Nothing
--} 
-                                                                                                                  
 
+-- | Generate (pseudo) randomly a key pair, containing both Diffie-Hellman public and secret key,
+-- | and signing keys (both from curve Ed25519)
 generateKeyPair :: IO (PubKey,PrivKey)
-generateKeyPair = do (skBs,_) <- randomBytesGenerate sigPrivKeyByteSize <$> getSystemDRG
-                     sK <- throwCryptoErrorIO $ S.secretKey (skBs :: BStrct.ByteString)
-                     (dhSkBs,_) <- randomBytesGenerate dhPrivKeyByteSize <$> getSystemDRG
-                     dhSk <- throwCryptoErrorIO $ DH.secretKey (dhSkBs :: BStrct.ByteString)
+generateKeyPair = do (skBs,_) <- R.randomBytesGenerate sigPrivKeyByteSize <$> R.getSystemDRG
+                     sK <- E.throwCryptoErrorIO $ S.secretKey (skBs :: BStrct.ByteString)
+                     (dhSkBs,_) <- R.randomBytesGenerate dhPrivKeyByteSize <$> R.getSystemDRG
+                     dhSk <- E.throwCryptoErrorIO $ DH.secretKey (dhSkBs :: BStrct.ByteString)
                      pure (PubKey (S.toPublic sK) (DH.toPublic dhSk), PrivKey sK dhSk)
 
-
-{-
-generateDHKeyPair :: IO (DHPubKey, DHPrivKey)
-generateDHKeyPair  = do (skBs,_) <- randomBytesGenerate keyByteSize <$> getSystemDRG
-                        sK <- throwCryptoErrorIO $ DH.secretKey (skBs :: BStrct.ByteString)
-                        pure (DH.toPublic sK, sK)
-                 
-
-
-privKeyToPubKeyDH :: DHPrivKey -> DHPubKey
-privKeyToPubKeyDH = DH.toPublic
--}
-
+-- | Compute the hash of a Binary object.
 computeHash :: (Show a, Binary a) => a -> Hash
-computeHash a = let digest = hash (B.toStrict $ encode a) :: Digest SHA1
-                in B.take keyHashByteSize . B.reverse . B.fromStrict . BA.convert $ digest
-
+computeHash a = let digest = H.hashWith hashAlgorithm (B.toStrict $ encode a) 
+                in B.take (fromIntegral keyHashByteSize) . B.reverse . B.fromStrict . BA.convert $ digest
 

@@ -5,6 +5,7 @@ import Data.Binary
 import GHC.Generics
 import qualified Crypto.PubKey.Ed25519 as S
 import qualified Crypto.PubKey.Curve25519 as DH
+import qualified Crypto.Hash as H
 import qualified Data.ByteArray as BA
 import qualified Data.ByteString as BStrct
 import qualified Data.ByteString.Lazy as B
@@ -19,8 +20,9 @@ dhPubKeyByteSize = 32 :: Int
 dhPrivKeyByteSize = 32 :: Int
 sigPubKeyByteSize = 32 :: Int
 sigPrivKeyByteSize = 32 :: Int
-keyHashByteSize = 4 :: Int64
 sigByteSize = 64 :: Int
+hashAlgorithm = H.SHA256
+keyHashByteSize = H.hashDigestSize hashAlgorithm :: Int
 
 
     -- ### NEWTYPES ###
