@@ -31,7 +31,7 @@ type Payload = RawData
 emptyPayload = B.empty :: Payload
 type Hash = RawData
 newtype KeyHash = KeyHash RawData deriving (Eq, Ord, Generic)
-newtype PipeKeyHash = PipeKeyHash RawData deriving (Eq, Ord, Generic)
+--newtype PipeKeyHash = PipeKeyHash RawData deriving (Eq, Ord, Generic)
 type Signature = S.Signature
 emptySignature :: S.Signature
 emptySignature = throwCryptoError . S.signature $ BStrct.replicate 64 0 
@@ -61,7 +61,7 @@ instance Binary PipePubKey
 instance Binary PubKey
 instance Show KeyHash where show (KeyHash d) = prettyPrint d
 instance Binary KeyHash
-instance Binary PipeKeyHash
+--instance Binary PipeKeyHash
 
 prettyPrint :: RawData -> String
 prettyPrint = concatMap (`showHex` "") . B.unpack

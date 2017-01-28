@@ -3,6 +3,7 @@ module Client.Crypto (module Types.Crypto,
 where
 
 
+import Types
 import Types.Crypto
 
 import Data.Binary
@@ -29,6 +30,12 @@ sign (pK, k) a = scPushSignature a . makeSignature $ scHash a
 -- | Create a KeyHash from a key
 computeHashFromKey :: PubKey -> KeyHash
 computeHashFromKey = KeyHash . computeHash
+
+--computeHashFromPipeKey :: PipePubKey -> PipeKeyHash
+--computeHashFromPipeKey = PipeKeyHash . computeHash
+
+computePipeID :: Road -> PipeID
+computePipeID = PipeID . computeHash
 
 -- | Generate a shared pipeKeyPair using your private key and your destinary's public key.
 -- | The private key of this pipe is a secret shared by only you both,
