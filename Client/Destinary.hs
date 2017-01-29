@@ -31,6 +31,7 @@ destinaryOnRequest req = do destMod <- stmRead clDestinaries
           pipeID = _reqPipeID req
 
 
+
 newDestinaryEntry :: SourceID -> PubKey -> [PipeID] -> WeedMonad (Maybe DestinaryEntry)
 newDestinaryEntry sID sk pIDs = do uk <- snd . clKeyPair <$> getClient
                                    case genPipeKeys sk uk of
