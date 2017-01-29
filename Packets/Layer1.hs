@@ -21,6 +21,8 @@ neighTimeOut = 15 :: Time
 neighRepeatTime = 1 :: Time
 
 
+data NeighDestinary = Broadcast | UserDest KeyHash
+    deriving Generic
 
 
 data L1 = L1Intro NeighIntro | L1Data NeighData | L1Pipe PipePacket
@@ -34,7 +36,7 @@ data NeighIntro = NeighIntro {_neighISource :: KeyHash,
     deriving Generic
 
 data NeighData = NeighData  {_neighDSource   :: KeyHash,
-                             _neighDestinary :: KeyHash,
+                             _neighDestinary :: NeighDestinary,
                              _neighDSig      :: Signature,
                              _neighDContent  :: L2}
     deriving Generic
@@ -64,6 +66,7 @@ makeLenses ''PipeHeader
 makeLenses ''PipePacket
 makeLenses ''NeighData
 makeLenses ''L1
+instance Binary NeighDestinary
 instance Binary L1
 instance Binary NeighData
 instance Binary NeighIntro

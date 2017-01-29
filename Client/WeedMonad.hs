@@ -8,9 +8,6 @@ import Control.Monad.Writer
 import Control.Monad.Reader
 
 
-liftSTM :: STM a -> WeedMonad a
-liftSTM = lift.lift
-
 stmRead :: (Client -> TVar a) -> WeedMonad a
 stmRead f = liftSTM . readTVar =<< lift (asks f)
 
@@ -25,4 +22,10 @@ stmModify a f = liftSTM . flip modifyTVar f =<< lift (asks a)
 
 getClient :: WeedMonad Client
 getClient = lift $ ask
+
+liftSTM :: STM a -> WeedMonad a
+liftSTM = lift.lift
+
+getTime :: WeedMonad Time
+getTime = stmRead clTime
 
