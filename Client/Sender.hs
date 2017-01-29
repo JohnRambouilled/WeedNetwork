@@ -14,8 +14,14 @@ type PipeSender = ComPacket -> WeedMonad ()
 
 genPipeSender:: PipeID -> [PipeDataFlag] -> WeedMonad (Maybe PipeSender)
 genPipeSender pID f = do pipeMap <- stmRead clLocalPipes
-                         let send e = sendPipePacket (view locPipeKeys e) pID (view locPipeNeigh e) f . encode
-                         pure $ send <$> M.lookup pID pipeMap
+                         case M.lookup pID pipeMap of
+                                Nothing -> logM "Client.Sender" "genPipeSender" Fail "Generating pipe sender for unkown pipeID" >> pure Nothing
+                                Just e -> do sID <- _comSource <$> readSTM (_locPipeComModule e)
+                                             sourceMap <- stmRead clDestinaries
+                                             case M.lookup sID  sourceMap of
+                                                Nothing -> logM "Client.Sender" "genPipeSender" Error "Known pipe leading to unknown source" >> pure Nothing
+                                                Just se -> let keys = _destPipeKeys se
+                                                           in pure . Just $ sendPipePacket keys pID (_locPipeNeigh e) f . encode
 
 relayAnswer :: Answer -> WeedMonad ()
 relayAnswer ans = if view ansTTL ans > 0 then relAns else error "Relayed Answer with a negative ttl"

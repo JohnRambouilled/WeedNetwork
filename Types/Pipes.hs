@@ -18,15 +18,14 @@ type RelayedPipesMap = M.Map PipeID RelayedPipeEntry
 type LocalPipeMap = M.Map PipeID LocalPipeEntry
 
 data RelayedPipeEntry = RelayedPipeEntry {_relPipePubKey :: PipePubKey,
-                                          _relPipePrevious :: KeyHash,
-                                          _relPipeNext :: KeyHash,
+                                          _relPipePrevious :: UserID,
+                                          _relPipeNext :: UserID,
                                           _relPipeTimer :: TimerEntry}
 
-data LocalPipeEntry = LocalPipeEntry {_locPipeKeys :: PipeKeyPair,
-                                      _locPipeNeigh :: KeyHash,
+data LocalPipeEntry = LocalPipeEntry {_locPipeNeigh :: UserID,
                                       _locPipeTimer :: TimerEntry,
                                       _locPipeOutgoing :: Bool,
-                                      _locPipeComMap :: TVar ComModule}
+                                      _locPipeComModule :: TVar ComModule}
 
 
 

@@ -44,7 +44,7 @@ type PipeKeyPair = (PipePubKey, PipePrivKey)
     -- ### USERS KEYS ###
     -- including signatures keys and Diffie-Hellman keys
 data PubKey = PubKey {sigPubKey :: S.PublicKey,
-                      dhPubKey :: DH.PublicKey} deriving (Show, Generic)
+                      dhPubKey :: DH.PublicKey} deriving (Show, Generic, Eq)
 data PrivKey = PrivKey {sigPrivKey :: S.SecretKey,
                         dhPrivKey :: DH.SecretKey}
 type KeyPair = (PubKey, PrivKey)
