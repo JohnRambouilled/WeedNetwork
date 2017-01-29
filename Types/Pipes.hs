@@ -8,30 +8,29 @@ import Types.Timer
 import Types.Neighbours
 import Types.Communication
 
+import Control.Lens
 import Control.Monad
 import Control.Monad.Trans
 import Control.Concurrent.STM
 import qualified Data.Map as M
 
 type RelayedPipesMap = M.Map PipeID RelayedPipeEntry
-type IncomingPipesMap = M.Map PipeID IncomingPipeEntry
-type OutgoingPipesMap = M.Map PipeID OutgoingPipeEntry
+type LocalPipeMap = M.Map PipeID LocalPipeEntry
 
-data RelayedPipeEntry = RelayedPipeEntry {relPipePubKey :: PipePubKey,
-                                          relPipePrevious :: KeyHash,
-                                          relPipeNext :: KeyHash,
-                                          relPipeTimer :: TimerEntry}
+data RelayedPipeEntry = RelayedPipeEntry {_relPipePubKey :: PipePubKey,
+                                          _relPipePrevious :: KeyHash,
+                                          _relPipeNext :: KeyHash,
+                                          _relPipeTimer :: TimerEntry}
 
-data IncomingPipeEntry = IncomingPipeEntry {incPipeKeys :: PipeKeyPair,
-                                            incPipePrevious :: KeyHash,
-                                            incPipeTimer :: TimerEntry,
-                                            incPipeComMap :: TVar ComModule}
-
-data OutgoingPipeEntry = OutgoingPipeEntry {outPipeKeys :: PipeKeyPair,
-                                            outPipeNext :: KeyHash,
-                                            outPipeTimer :: TimerEntry,
-                                            outPipeComMap :: TVar ComModule}
+data LocalPipeEntry = LocalPipeEntry {_locPipeKeys :: PipeKeyPair,
+                                      _locPipeNeigh :: KeyHash,
+                                      _locPipeTimer :: TimerEntry,
+                                      _locPipeOutgoing :: Bool,
+                                      _locPipeComMap :: TVar ComModule}
 
 
+
+makeLenses ''RelayedPipeEntry
+makeLenses ''LocalPipeEntry
 
 

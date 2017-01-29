@@ -41,8 +41,8 @@ data NeighData = NeighData  {_neighDSource   :: KeyHash,
                              _neighDContent  :: L2}
     deriving Generic
 
-data PipePacket = PipePacket{ _pipeSource       :: KeyHash,
-                              _pipeDestinary    :: KeyHash,
+data PipePacket = PipePacket{ _pipeSource       :: KeyHash,  -- Not signed, updated at each transmission
+                              _pipeDestinary    :: KeyHash,  -- Not signed, updated at each transmission
                               _pipePacketHeader :: PipeHeader,
                              _pipePacketData    :: RawData }
                     deriving Show

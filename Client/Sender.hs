@@ -6,30 +6,46 @@ import Client.Crypto
 import Client.WeedMonad
 
 import Data.Binary
+import Control.Lens
+import qualified Data.Map as M
 
+
+sendOnPipe :: PipeID -> ComPacket -> [PipeDataFlag] -> WeedMonad Bool
+sendOnPipe pID p f = do pipeMap <- stmRead clLocalPipes
+                        case pID `M.lookup` pipeMap of
+                            Nothing -> pure False
+                            Just e -> sendPipePacket (view locPipeKeys e) pID (view locPipeNeigh e) f (encode p) >> pure True
 
 relayAnswer :: Answer -> WeedMonad ()
-relayAnswer ans = if ansTTL ans > 0 then relAns else error "Relayed Answer with a negative ttl"
+relayAnswer ans = if view ansTTL ans > 0 then relAns else error "Relayed Answer with a negative ttl"
     where relAns = do uID <- clUserID <$> getClient
-                      let r = uID : ansRoad ans 
-                          ans' = ans{ansTTL = ansTTL ans - 1, ansRoad = r}
+                      let ans' = over ansTTL (+(-1)) $ over ansRoad (uID:) ans :: Answer
                       sendNeighData Broadcast $ L2Answer ans'
 
 
 relayResearch :: Research -> WeedMonad ()
-relayResearch res = if resTTL res > 0 then sendNeighData dest $ L2Research res' else error "Relayed research with a negative ttl"
-    where (dest, r) = case resRoad res of
+relayResearch res = if view resTTL res > 0 then sendNeighData dest $ L2Research res' else error "Relayed research with a negative ttl"
+    where (dest, r) = case view resRoad res of
                           [] -> (Broadcast, [])
-                          _:[] -> (Broadcast, [])
+                          [_] -> (Broadcast, [])
                           _:xs -> (UserDest $ head xs, xs)
-          res' = res{resTTL = resTTL res - 1, resRoad = r}
+          res' = over resTTL (+(-1)) $ set resRoad r res
           
 
 relayRequest :: Request -> WeedMonad ()
 relayRequest req = sendNeighData dest $ L2Request req'
-    where pos = reqPosition req + 1
-          dest = UserDest $ reqRoad req !! pos
-          req' = req{reqPosition = pos}
+    where dest = UserDest $ view reqRoad req !! view reqPosition req'
+          req' = over reqPosition (+1) req
+
+
+relayPipePacket :: PipePacket -> RelayedPipeEntry -> WeedMonad ()
+relayPipePacket p e = do uID <- clUserID <$> getClient
+                         let source = view pipeSource p
+                             (prev, next) = (,) <$> view relPipePrevious <*> view relPipeNext $ e
+                             dest = if source == prev then next
+                                    else if source == next then prev
+                                    else error "Relay pipe packet from a neighbourg absent from the pipe entry"
+                         sendRawPacket . set pipeSource uID $ set pipeDestinary dest p
 
 
 sendAnswer :: RessourceID -> Time -> TTL -> RawData -> WeedMonad ()
@@ -72,4 +88,9 @@ sendNeighIntro = do c <- getClient
 
 signAndSend :: (SignedClass p, Binary p) => p -> WeedMonad ()
 signAndSend p = do c <- getClient
-                   clSender c . encode . sign (clKeyPair c) $ p
+                   sendRawPacket $ sign (clKeyPair c) p
+
+sendRawPacket :: Binary p => p -> WeedMonad ()
+sendRawPacket p = do c <- getClient
+                     clSender c $ encode p
+
