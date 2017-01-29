@@ -10,11 +10,12 @@ import Control.Lens
 import qualified Data.Map as M
 
 
-sendOnPipe :: PipeID -> ComPacket -> [PipeDataFlag] -> WeedMonad Bool
-sendOnPipe pID p f = do pipeMap <- stmRead clLocalPipes
-                        case pID `M.lookup` pipeMap of
-                            Nothing -> pure False
-                            Just e -> sendPipePacket (view locPipeKeys e) pID (view locPipeNeigh e) f (encode p) >> pure True
+type PipeSender = ComPacket -> WeedMonad ()
+
+genPipeSender:: PipeID -> [PipeDataFlag] -> WeedMonad (Maybe PipeSender)
+genPipeSender pID f = do pipeMap <- stmRead clLocalPipes
+                         let send e = sendPipePacket (view locPipeKeys e) pID (view locPipeNeigh e) f . encode
+                         pure $ send <$> M.lookup pID pipeMap
 
 relayAnswer :: Answer -> WeedMonad ()
 relayAnswer ans = if view ansTTL ans > 0 then relAns else error "Relayed Answer with a negative ttl"

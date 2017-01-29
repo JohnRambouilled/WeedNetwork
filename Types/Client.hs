@@ -42,6 +42,6 @@ data Log = Log { logModule :: String,
                  logStatus :: LogStatus,
                  logMessage :: String}
 
-data LogStatus = InvalidPacket | Normal | Error
+data LogStatus = InvalidPacket | Normal 
 
 
