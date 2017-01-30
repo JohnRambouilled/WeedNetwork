@@ -7,7 +7,7 @@ import Data.Binary
 import Control.Concurrent.STM
 import qualified Data.Map as M
 
-onComInit :: TVar ProtocolModule ->  TVar ComModule -> PipeSender -> ComInit -> STMIO ()
+onComInit :: ComInit -> WeedMonad ()
 onComInit protoModule comModule sender comInit = do (protoMod, comMod) <- (,) <$> stmRead protoModule <*> stmRead comModule
                                                     case ciComID comInit `M.lookup` comMod of
                                                         Just _ -> do close "ComID déja utilisé, fermeture de la communication" 
@@ -23,10 +23,5 @@ onComInit protoModule comModule sender comInit = do (protoMod, comMod) <- (,) <$
                       close s = sender $ encode (ComPmessage (comClose s))
                       addCom :: Callback ComError ComMessage -> STMIO ()
                       addCom clbk = stmModify comModule $ M.insert (ciComID comInit) (ComEntry clbk)
-
-
-
-
-
 
 
