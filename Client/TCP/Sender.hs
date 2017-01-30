@@ -36,24 +36,13 @@ makeLenses ''TCPSender
 
 type TCPSenderT m x = (Monad m, MonadIO m) => StateT TCPSender m x
 
+sendAllSegments :: [TCPPacket] -> IO ()
+sendAllSegments segments = undefined
 
-groupBySize n l = groupBySize' n l []
-groupBySize' n [] r = r
-groupBySize' n l r = let (prefix,ret) = Data.List.splitAt n l
-                    in groupBySize' n ret $ r ++ [prefix]
 
-{-| Construit un segment de données et positionne le flag PSH sur le dernier si spécifié.
-    Positionne le flag RST du dernier paquet si la valeur max du seqnum est franchie
-    Retourne le seqnum du prochain paquet|-}
-makeSegment psh seqnum pkts = makeSegment' psh seqnum pkts []
-makeSegment' :: Bool -> Int64 -> [RawData] -> [TCPPacket] -> ([TCPPacket],Int64)
-makeSegment' psh seqnum [] ret = (ret,seqnum)
-makeSegment' psh seqnum (x:[]) ret = (ret ++ [TCPPacket hdr x],if nxtnum >= maxSeqNum then 0 else nxtnum)
-  where hdr = mkTCPHeader{_tcpSeqNum = seqnum, _tcpPsh = psh, _tcpRst = seqnum >= maxSeqNum}
-        nxtnum = seqnum + B.length x
-makeSegment' psh seqnum (x:xs) ret = makeSegment' psh (seqnum + B.length x) xs $ ret ++ [TCPPacket hdr x]
-  where hdr = mkTCPHeader {_tcpSeqNum = seqnum}
-
+retransmit :: TCPSenderT m ()
+retransmit = do pkts <- join $ liftIO . readTVarIO <$> use buffer
+                liftIO $ sendAllSegments pkts
 {-| Envoie le(s) prochain(s) segment(s) de la donnée à envoyer,
     Retourne True s'il ne reste plus de données à envoyer (aucun paquet envoyé)|-}
 sendNextSegments :: TCPSenderT m Bool
@@ -79,9 +68,7 @@ sendNextSegments = do
          pure False
 
 
-  where sendAllSegments :: [TCPPacket] -> IO ()
-        sendAllSegments segments = undefined
-
+  where
 
         killTimer ::TCPSenderT m ()
         killTimer = join $ liftIO.stopTimer <$> use sendTimer
@@ -113,10 +100,26 @@ onAck pkt = do (buf,curwinsiz) <- (,) <$> use buffer <*> use dataWindow
                                 let buf' = delete pkt buf -- on supprime le paquet de la liste de ceux qu'on attend
                                 writeTVar bufT buf'
                                 if null buf' then pure (True,winsize) else pure (False,winsize)
-          -- Le paquet est a déjà été confirmé. La windowsize de congestion est dégradée et le paquet rejeté.
+          -- Le paquet a déjà été confirmé. La windowsize de congestion est dégradée et le paquet rejeté.
           | otherwise = do updateWinSizeDuplicate >> pure (False,curwinsiz)
         winsize = _tcpWindowSize $ _tcpHeader pkt
 
         updateWinSizeNewAck = undefined -- TODO Augmente la winsize de congestion quand un paquet a bien été ACK
         updateWinSizeDuplicate = undefined -- TODO decroit la winsize de congestion quand un paquet à été reçu plusieurs fois
 
+groupBySize n l = groupBySize' n l []
+groupBySize' n [] r = r
+groupBySize' n l r = let (prefix,ret) = Data.List.splitAt n l
+                    in groupBySize' n ret $ r ++ [prefix]
+
+{-| Construit un segment de données et positionne le flag PSH sur le dernier si spécifié.
+    Positionne le flag RST du dernier paquet si la valeur max du seqnum est franchie
+    Retourne le seqnum du prochain paquet|-}
+makeSegment psh seqnum pkts = makeSegment' psh seqnum pkts []
+makeSegment' :: Bool -> Int64 -> [RawData] -> [TCPPacket] -> ([TCPPacket],Int64)
+makeSegment' psh seqnum [] ret = (ret,seqnum)
+makeSegment' psh seqnum (x:[]) ret = (ret ++ [TCPPacket hdr x],if nxtnum >= maxSeqNum then 0 else nxtnum)
+  where hdr = mkTCPHeader{_tcpSeqNum = seqnum, _tcpPsh = psh, _tcpRst = seqnum >= maxSeqNum}
+        nxtnum = seqnum + B.length x
+makeSegment' psh seqnum (x:xs) ret = makeSegment' psh (seqnum + B.length x) xs $ ret ++ [TCPPacket hdr x]
+  where hdr = mkTCPHeader {_tcpSeqNum = seqnum}
