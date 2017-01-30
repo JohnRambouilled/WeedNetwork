@@ -11,19 +11,20 @@ import           Types.Crypto
 
 
 
-
+data TCPOptional = TCPOptional
 data TCPHeader = TCPHeader { _tcpSeqNum     :: Int64, -- Position du premier octet du segment sur le datagramme final (indicé à partir de 0)
                              _tcpSyn        :: Bool,
                              _tcpAck        :: Bool,
                              _tcpRst        :: Bool,
                              _tcpPsh        :: Bool,
+                             _tcpOptional   :: TCPOptional, -- Timestamp ?? [TODO]
                              _tcpWindowSize :: Int64} -- Ne pas envoyer plus que windowSize sans avoir reçu de ACK
 
 
 -- On compare les headers uniquement par rapport au seqnum
 instance Eq TCPHeader where t1 == t2 = _tcpSeqNum t1 == _tcpSeqNum t2
 instance Ord TCPHeader where t1 <= t2 = _tcpSeqNum t1 <= _tcpSeqNum t2
-mkTCPHeader = TCPHeader 0 False False False False defaultWindowSize
+mkTCPHeader = TCPHeader 0 False False False False TCPOptional defaultWindowSize
 defaultWindowSize = 1535
 
 data TCPPacket = TCPPacket {_tcpHeader :: TCPHeader, _tcpPayload :: RawData}
