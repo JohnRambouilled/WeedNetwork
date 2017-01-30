@@ -23,14 +23,14 @@ data WeedOrder = WeedLog Log |
                  WeedPerformIO IOAction
 type IOAction = IO ()
 
+type Sender = RawData -> WeedMonad ()
 
 data Client = Client { clUserID :: UserID,
                        clKeyPair :: KeyPair,
                        clTime :: TVar Time, -- Should be updated before each call... 
-                       clSender :: RawData -> WeedMonad (),
+                       clSender :: Sender,
                        clRelayedPipes :: TVar RelayedPipesMap,
-                       clIncomingPipes :: TVar IncomingPipesMap,
-                       clOutgoingPipes :: TVar OutgoingPipesMap,
+                       clLocalPipes :: TVar LocalPipeMap,
                        clNeighbours :: TVar NeighboursMap,
                        clRessources :: TVar RessourcesMap,
                        clDestinaries :: TVar DestinariesMap,
@@ -42,6 +42,6 @@ data Log = Log { logModule :: String,
                  logStatus :: LogStatus,
                  logMessage :: String}
 
-data LogStatus = InvalidPacket | Normal | Error
+data LogStatus = InvalidPacket | Normal | Fail | Error
 
 
