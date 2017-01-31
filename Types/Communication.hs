@@ -11,7 +11,7 @@ import qualified Data.Map as M
 data ComModule = ComModule {_comMap :: M.Map ComID ComEntry,
                             _comSource :: SourceID}
 
-data ComEntry = ComEntry {comCallback :: ComMessage -> IO ()}
+data ComEntry = ComEntry {comCallback :: PipeID -> ComMessage -> IO ()}
 
 
 makeLenses ''ComModule

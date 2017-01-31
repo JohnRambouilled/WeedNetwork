@@ -10,18 +10,17 @@ import Control.Lens
 import qualified Data.Map as M
 
 
-type PipeSender = ComPacket -> WeedMonad ()
+type PipeSender = [PipeDataFlag] -> ComPacket -> WeedMonad ()
 
-genPipeSender:: PipeID -> [PipeDataFlag] -> WeedMonad (Maybe PipeSender)
-genPipeSender pID f = do pipeMap <- stmRead clLocalPipes
-                         case M.lookup pID pipeMap of
+genPipeSender:: PipeID -> WeedMonad (Maybe PipeSender)
+genPipeSender pID = do pipeMap <- stmRead clLocalPipes
+                       case M.lookup pID pipeMap of
                                 Nothing -> logM "Client.Sender" "genPipeSender" Fail "Generating pipe sender for unkown pipeID" >> pure Nothing
-                                Just e -> do sID <- _comSource <$> readSTM (_locPipeComModule e)
-                                             sourceMap <- stmRead clDestinaries
-                                             case M.lookup sID  sourceMap of
+                                Just e -> do sourceMap <- stmRead clDestinaries
+                                             case _locPipeSource e `M.lookup` sourceMap of
                                                 Nothing -> logM "Client.Sender" "genPipeSender" Error "Known pipe leading to unknown source" >> pure Nothing
                                                 Just se -> let keys = _destPipeKeys se
-                                                           in pure . Just $ sendPipePacket keys pID (_locPipeNeigh e) f . encode
+                                                           in pure . Just $ \f -> sendPipePacket keys pID (_locPipeNeigh e) f . encode
 
 relayAnswer :: Answer -> WeedMonad ()
 relayAnswer ans = if view ansTTL ans > 0 then relAns else error "Relayed Answer with a negative ttl"

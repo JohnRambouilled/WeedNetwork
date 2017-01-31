@@ -22,6 +22,10 @@ checkSig :: SignedClass a => PubKey -> a -> Bool
 checkSig pK a  = checkSignature (scSignature a) $ scHash a
     where checkSignature s h = S.verify (sigPubKey pK) (B.toStrict h) s 
 
+checkPipeSig :: SignedClass a => PipePubKey -> a -> Bool
+checkPipeSig pK a  = checkSignature (scSignature a) $ scHash a
+    where checkSignature s h = S.verify (pipePubKey pK) (B.toStrict h) s 
+
 -- | signe a signable object with the given key pair
 sign :: SignedClass a => KeyPair-> a -> a
 sign (pK, k) a = scPushSignature a . makeSignature $ scHash a

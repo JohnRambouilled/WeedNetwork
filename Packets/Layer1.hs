@@ -60,8 +60,8 @@ data PipeHeader = PipeHeader {_pipeDID :: PipeID,    -- ^PipeID (KeyHash of the 
               deriving (Generic, Show)
 
 data PipeDataFlag = PipeControlRefresh
-                  | PipeClose RawData
-              deriving (Show, Generic)
+                  | PipeControlClose 
+              deriving (Eq, Show, Generic)
 makeLenses ''PipeHeader
 makeLenses ''PipePacket
 makeLenses ''NeighData

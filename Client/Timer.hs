@@ -2,9 +2,14 @@ module Client.Timer where
 
 import Types
 
+createTimer :: Time -> IO () -> WeedMonad TimerEntry
+createTimer = undefined
 
-newTimerEntry :: STMIO () -> STMIO TimerEntry
-newTimerEntry kill = pure $ TimerEntry (pure ()) (pure ()) 
+refreshTimer :: TimerEntry -> WeedMonad ()
+refreshTimer = undefined
+
+killTimer :: TimerEntry -> WeedMonad ()
+killTimer = undefined
 
 
 
