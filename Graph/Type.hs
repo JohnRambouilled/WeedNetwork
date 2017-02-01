@@ -75,7 +75,7 @@ addRoad :: (VertexID,vertex) -- Origine de la route
         -> [((VertexID,edge),vertex)] -- voisins successifs (id, estimation du sommet, estimation de l'arc)
         -> G vertex edge -> G vertex edge
 addRoad src road@(((firstID,firstE),firstV):_) g = g' <> mconcat (mkVertex <$> r) --foldr f g' r
-  where r  = (\ (prevM,((meID,incE),meval),nxtEM) -> let prevEM = set _2 incE . fst <$>  prevM
+  where r  = (\ (prevM,((meID,incE),meval),nxtEM) -> let prevEM =  if isJust prevM then (set _2 incE . fst <$>  prevM) else Just (fst src,incE)
                                                     in (prevEM,(meID,meval),fst <$> nxtEM)) <$> buildRoad road
 
         mkVertex :: (Maybe (VertexID,edge),(VertexID,vertex), Maybe (VertexID,edge)) -> G vertex edge
