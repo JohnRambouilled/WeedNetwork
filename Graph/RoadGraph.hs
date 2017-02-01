@@ -8,12 +8,20 @@ import           Data.Monoid
 import           Graph.Type
 import           Types
 {-| Détails d'un pipe passant par un noeud |-}
+data PipeType = Requested | Relayed
+data Direction = PrevD | NextD
+               deriving Eq
 data PipeNode = PipeNode {_previous :: Maybe VertexID,
-                          _next     :: Maybe VertexID}
+                          _next     :: Maybe VertexID,
+                          _pathLen  :: Int, -- Nombre d'arcs d'ici à moi
+                          _pathToMe :: Direction, -- Direction à emprunter pour arriver à moi
+                          _pipeType :: PipeType} -- Type de pipe (que l'on relaie ou que l'on demande)
 
-
-data VertexPipes = VertexPipes {_vPipes :: M.Map PipeID PipeNode}
+data VertexPipes = VertexPipes {_vPipes   :: M.Map PipeID PipeNode}
 data VertexT = VertexT {_pipesT :: VertexPipes}
+
+me :: VertexID
+me = VertexID 1
 
 makeLenses ''VertexPipes
 makeLenses ''VertexT
@@ -42,12 +50,12 @@ edgesFromPipe pipeID vT = case pipeID `M.lookup` view (pipesT . vPipes) vT of
   Just p  -> catMaybes [_previous p, _next p]
 
 {-| Retourne le vertexID du sommet suivant sur le graphe, s'il existe |-}
-nextOnPipe :: PipeID -> VertexT -> Maybe VertexID
-nextOnPipe pipeID vT = join $ _next <$> M.lookup pipeID (view (pipesT . vPipes) vT)
+nextOnPipe :: PipeID -> VertexID -> VertexT -> Maybe VertexID
+nextOnPipe pipeID _ vT = join $ _next <$> M.lookup pipeID (view (pipesT . vPipes) vT)
 
 {-| Retourne le vertexID du sommet précédent sur le graphe, s'il existe |-}
-prevOnPipe :: PipeID -> VertexT -> Maybe VertexID
-prevOnPipe pipeID vT = join $ _previous <$> M.lookup pipeID (view (pipesT . vPipes) vT) -- [TODO] Code dupliqué avec nextOnPipe :(
+prevOnPipe :: PipeID -> VertexID -> VertexT -> Maybe VertexID
+prevOnPipe pipeID _ vT = join $ _previous <$> M.lookup pipeID (view (pipesT . vPipes) vT) -- [TODO] Code dupliqué avec nextOnPipe :(
 
 
 
@@ -99,10 +107,13 @@ getPipeRoad :: PipeID -> VertexID -> RoadGraph -> [(VertexID,VertexT)]
 getPipeRoad pID vID g = prevsOnPipe pID vID g ++ nextsOnPipe pID vID g
 
 {-| Insère le pipe sur la route spécifiée|-}
-insertPipe :: PipeID -> [VertexID] -> RoadGraph -> RoadGraph
-insertPipe pipeID road g = addRoad src ((\ (vID,vT) -> ((vID,mempty),vT)) <$> verticesT) g
-  where road' = buildRoad road
-        makeVPipe (prevM,me,nM) = VertexPipes $ M.fromList [(pipeID,PipeNode prevM nM)]
+insertPipe :: PipeType -> PipeID -> [VertexID] -> RoadGraph -> RoadGraph
+insertPipe pipeType pipeID road g = addRoad src ((\ (vID,vT) -> ((vID,mempty),vT)) <$> verticesT) g
+  where road' = zip computeDirections $ buildRoad road
+        -- Détermine les positions et les directions relativement à moi
+        computeDirections = let (nxt,prev) = break ((== me) . snd) $ zip [0..] road -- numérotation des sommets et séparation des portions avant et après moi
+                            in (set _2 NextD <$> reverse nxt) ++ (set _2  PrevD <$> prev)
+        makeVPipe ((pos,dir),(prevM,me,nM)) = VertexPipes $ M.fromList [(pipeID,PipeNode prevM nM pos dir pipeType)]
         makeVT = flip (set pipesT) mempty . makeVPipe
         --makeVT (prevM,me,nM) = mempty{_pipesT = makeVPipe (prevM,me,nM)}
         (src:verticesT) = zip road $ makeVT <$> road'

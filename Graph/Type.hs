@@ -5,7 +5,7 @@ module Graph.Type where
 
 import           Control.Lens
 import           Data.List
-import qualified Data.Map     as M
+import qualified Data.Map.Strict as M
 import           Data.Maybe
 import           Data.Monoid
 import           Types
@@ -13,7 +13,7 @@ import           Types
 
 
 data VertexID = VertexID Int
-                deriving (Eq,Ord)
+                deriving (Eq,Ord,Show)
 
 {-| Les arcs incidents à chaque sommet sont stockés dans une Map |-}
 data Edges edge =  Edges {_eMap :: M.Map VertexID edge}
@@ -100,7 +100,7 @@ deleteRoad editV road g = editRoad editV (pure Nothing) road g
 {-| Permet d'itérer une fonction sur les sommets du graphe, de les modifier
     et d'accumuler ses résultats |-}
 foldModifyGraph
-  ::  (vertex -> Maybe VertexID) -- Fonction spécifiant le prochain noeud (Nothing si l'itération est finie)
+  ::  (VertexID -> vertex -> Maybe VertexID) -- Fonction spécifiant le prochain noeud (Nothing si l'itération est finie)
      -> (VertexID -> vertex -> t -> (t,vertex)) -- Fonction accumulant le précédent résultat avec le sommet considéré
      -> VertexID -- Sommet initial
      -> Graph vertex edge -- Graphe
@@ -111,13 +111,13 @@ foldModifyGraph it f vID g r
           | isJust vTM && isNothing nextID = (acc,g')
           | isJust vTM = foldModifyGraph it f (fromJust nextID) g' acc
           where vTM = fst <$> (M.lookup vID $ _vMap g)
-                nextID = it $ fromJust vTM
+                nextID = it vID $ fromJust vTM
                 (acc,val') = f vID (fromJust vTM) r
                 g' = over vMap (M.adjust (set _1 val') vID) g
 
 {-| Itère une fonction sur le graphe et accumule ses résultats
     sans la modifier |-}
-foldGraph :: (vertex -> Maybe VertexID)
+foldGraph :: (VertexID -> vertex -> Maybe VertexID)
           -> (VertexID -> vertex -> t -> t)
           -> VertexID
           -> Graph vertex edge
