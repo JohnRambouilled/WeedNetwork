@@ -126,3 +126,18 @@ foldGraph :: (VertexID -> vertex -> Maybe VertexID)
 foldGraph it f vID g tInit = fst $ foldModifyGraph it f' vID g tInit
   where f' v vT acc = (f v vT acc,vT)
 
+
+{-| Retourne le sous graphe des noeuds satisfaisant le prédicat.
+    Le prédicat prend, pour chaque sommet: - vertexID
+                                           - valuation du sommet
+                                           - voisins du sommet
+|-}
+filterGraph :: (VertexID -> vertex -> Edges edge -> Bool) -- Vrai si le noeud doit être conservé
+              -> Graph vertex edge
+              -> Graph vertex edge
+
+filterGraph f g = Graph $ M.fromList $ updateEntry <$> toKeep
+  where nodes = M.toList $ _vMap g
+        keepP k _ = k `elem` (fst <$> toKeep)
+        (toKeep,toDel) = partition (\(vID,(vVal,edges)) -> f vID vVal edges) nodes
+        updateEntry (vID,(vVal,edges)) = (vID,(vVal, over eMap (M.filterWithKey keepP) edges))
