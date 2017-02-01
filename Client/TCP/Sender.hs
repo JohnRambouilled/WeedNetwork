@@ -20,19 +20,21 @@ import           GHC.Int
 import           Packets.TCP
 import           Types.Crypto
 {-| Idée : choisir les routes avec des colonies de fourmis |-}
-data TCPSender = TCPSender {_congestionWindow :: Int64, -- Differentiel max sur les seqnum dû au réseau
-                            _dataWindow       :: Int64, -- Differentiel max sur les seqnum dû au destinataire
-                             _fragmentation   :: Int, -- Taille maximale d'un paquet
+data TCPCongestionController = TCPCongestionController {_congestionWindow :: TVar Int64} -- Differentiel max sur les seqnum dû au réseau
+data TCPSender = TCPSender { _controller    :: TCPCongestionController,
+                            _dataWindow     :: Int64, -- Differentiel max sur les seqnum dû au destinataire
+                             _fragmentation :: Int, -- Taille maximale d'un paquet
 
-                            _seqNum           :: Int64, -- SeqNum du prochain paquet
+                            _seqNum         :: Int64, -- SeqNum du prochain paquet
 
-                            _dataToSend       :: RawData, -- donnée totale à envoyer
-                            _position         :: Int64, --Position du premier octet restant à envoyer
-                            _bufferSize       :: Int, -- Nombre de trames restante à ACK
-                            _buffer           :: TVar [TCPPacket], -- buffer contenant les dernières trames en attente de ACK
+                            _dataToSend     :: RawData, -- donnée totale à envoyer
+                            _position       :: Int64, --Position du premier octet restant à envoyer
+                            _bufferSize     :: Int, -- Nombre de trames restante à ACK
+                            _buffer         :: TVar [TCPPacket], -- buffer contenant les dernières trames en attente de ACK
 
-                            _sendTimer        :: TimerIO}
+                            _sendTimer      :: TimerIO}
 makeLenses ''TCPSender
+makeLenses ''TCPCongestionController
 
 type TCPSenderT m x = (Monad m, MonadIO m) => StateT TCPSender m x
 
@@ -50,7 +52,8 @@ sendNextSegments = do
   (toSend,ptr) <- (,) <$> use dataToSend <*> use position
   if (ptr == B.length toSend) then pure True
     else do
-         (cwin,dwin,frag) <- (,,) <$> use congestionWindow <*> use dataWindow <*> use fragmentation
+         (cwinM,dwin,frag) <- (,,) <$> use (controller . congestionWindow)<*> use dataWindow <*> use fragmentation
+         cwin <- liftIO $ readTVarIO cwinM
          seqnum <- use seqNum
          let wmin = min cwin dwin -- Calcul de la taille de la prochaine session
              ptr' = min (B.length toSend - 1) (ptr + wmin - 1) -- détermination de l'offset sur le paquet
