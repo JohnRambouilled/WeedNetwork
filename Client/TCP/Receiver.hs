@@ -16,13 +16,13 @@ import           Data.Maybe
 import           Packets.TCP
 import           Types.Crypto
 
-{-| On accuse reception de chaque paquet avec un ACK + numero de séquence du paquet reçu
+{-| On accuse reception de chaque paquet qu'on bufferise avec un ACK + numero de séquence du paquet reçu
     On calcule le seqnum du prochain paquet attendu (nxtnum)
     Si le seqnum du prochain paquet reçu est nxtnum (le paquet est celui qu'on attend), on translate nxtnum = nxtnum + lengh(pkt)
-          De plus, on regarde s'il permet de compléter un fragment eu dans le désordre.
+          De plus, on regarde s'il permet de compléter un fragment à l'aide des segments dans le désordre.
     Si le seqnum du prochain paquet reçu est >= nxtnum (paquet out of order):
                          nxtnum < seqnum <= nxtnum + windowSize, alors le paquet est bufferisé (on envoie un ACK)
-                         seqnum >= nxtnum + windowSize, alors le paquet est drop (on n'envoie rien)
+                         seqnum >= nxtnum + windowSize, alors le paquet est drop (on n'envoie pas de ACK)
             dans les deux cas, un duplicateAck est envoyé pour que la source degrade la congestion window
 
 Idée : Il faudrait que les ACK empruntent la même route que les paquets associés pour faciliter le controle
@@ -50,10 +50,7 @@ makeLenses ''TCPReceiver
 rawAddSegment :: TCPPacket -> Buffer -> Buffer
 rawAddSegment pkt (Buffer buf free siz maxsiz) = Buffer buf' (free+1) (siz + B.length  (_tcpPayload pkt)) maxsiz
   where buf' = buf A.// [(free, Just pkt)]
-rawAddSegmentCircular pkt b@(Buffer buf free siz maxsiz)
-  | free > snd (A.bounds buf) = rawAddSegmentCircular pkt b{_firstFreeIndex = 1}
-  | isNothing $ buf A.! free = rawAddSegment pkt b
-  | isJust $ buf A.! free = rawAddSegment pkt b{_currentSize = _currentSize b - (B.length $ _tcpPayload $ fromJust $ buf A.! free)}
+
 
 freeSize :: Buffer -> Int64
 freeSize (Buffer buf free siz maxsiz)
@@ -71,7 +68,9 @@ bufferElems (Buffer buf free _ _) = fromJust <$> [buf A.! i | i <- [b1 .. min b2
 addConsecutiveSegment :: TCPPacket -> Buffer -> ([TCPPacket],Buffer)
 addConsecutiveSegment pkt nconsec = (firstConsecFrag,nconsec')
   where consecP p1 p2 = _tcpSeqNum ( _tcpHeader p1) + B.length (_tcpPayload p1) == _tcpSeqNum (_tcpHeader p2)
-        sortedNConsec = (pkt:) $ dropWhile (<= pkt) $ sort (bufferElems nconsec) -- On élimine les paquets obsolètes (dont le seqnum est anterieur à pkt)
+        sortedNConsec = (pkt:) $ dropWhile ((\p -> _tcpSeqNum (_tcpHeader pkt)
+                                                  <= _tcpSeqNum (_tcpHeader pkt) + B.length (_tcpPayload pkt))) $
+                                             sort (bufferElems nconsec) -- On élimine les paquets obsolètes (dont le seqnum est anterieur à pkt+size(pkt))
         (firstConsecFrag,rest) = over _2 concat $
                                          (,) <$> head <*> tail $ groupBy consecP sortedNConsec
         buf = _buffer nconsec
