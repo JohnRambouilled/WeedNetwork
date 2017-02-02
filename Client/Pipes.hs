@@ -15,6 +15,10 @@ import Control.Concurrent.STM
 import Control.Lens
 import qualified Data.Map as M
 
+
+onRequest :: Request -> WeedMonad ()
+
+
 -- | This function handle a raw unchecked PipePacket.
 -- | We first check that the current Client is destinary of the packet.
 -- |    If so, we look in the relayedPipesMap for the corresponding pipeID. 
