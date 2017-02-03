@@ -17,12 +17,39 @@ import Control.Lens
 import qualified Data.Map as M
 
 maxRequestValidity = 10 :: Time
-
-
---onRequest :: UserID -> Request -> WeedMonad ()
+relayedPipeTimeOut = 30 :: Time
 
 
 
+onRequest :: UserID -> Request -> WeedMonad ()
+onRequest sID req = do (t,uID) <- (,) <$> getTime <*> fmap clUserID getClient
+                       case checkRequest uID t req of
+                            Left s -> logM "Client.Pipes" "onRequest" InvalidPacket $ "Invalid request received : " ++ s
+                            Right (Left (p,n)) -> if p == sID then onRelayedRequest p n req
+                                                               else logM "Client.Pipes" "onRequest" InvalidPacket "Invalid Relayed request received : source of packet doesn't match the road"
+                            Right (Right p) -> if p == sID then onLocalRequest p req
+                                                          else logM "Client.Pipes" "onRequest" InvalidPacket "Invalid Local Request received : source of packet doesn't match the road"
+                                                            
+
+onLocalRequest :: UserID -> Request -> WeedMonad ()
+onLocalRequest prev req = undefined
+
+-- | Verify that the pipeID is not already in use.
+-- | If not, create a new timer 
+onRelayedRequest :: UserID -> UserID -> Request -> WeedMonad ()
+onRelayedRequest prev next req = do relMap <- stmRead clRelayedPipes 
+                                    case pID `M.lookup` relMap of
+                                        Just _ -> logM "Client.Pipes" "onRelayedRequest" InvalidPacket "Request for already used pipeID"
+                                        Nothing -> do timer <- createTimer relayedPipeTimeOut (removeRelayedPipe pID >> pure ()) 
+                                                      stmModify clRelayedPipes $ M.insert pID (entry timer)
+                                                      logM "Client.Pipes" "onRelayedRequest" Normal ("New relayed pipe : " ++ show pID ++ " have been added.")
+                                                      relayRequest req
+        where pID = _reqPipeID req
+              entry = RelayedPipeEntry (_reqPipeKey req) prev next
+
+
+-- | Check a request validity. Return Left with an error if the request is incorrect.
+-- | otherwise, it return either a tuple (previous, next) of the two adjacent relay on the road, or a single userID in the case of a local request.
 checkRequest :: UserID -> Time -> Request -> Either String (Either (UserID, UserID) UserID)
 checkRequest uID t req@(Request i r sk t0 pk (PipeID pid) s c)
     | i < 0 = Left "Negative Position"
@@ -31,7 +58,7 @@ checkRequest uID t req@(Request i r sk t0 pk (PipeID pid) s c)
     | t - t0 > maxRequestValidity = Left "Request expired"
     | pid /= computeHash r = Left "PipeID does not match road hash"
     | i == 0 = Right . Right . head $ tail r
-    | otherwise = if uID == r' !! 1 then Right $ Left (head r', r' !! 2)
+    | otherwise = if uID == r' !! 1 then Right $ Left (r' !! 2, head r')
                                    else Left "UserID at Position in Road doesn't match"
             where r' = drop (i-1) r
                                                
@@ -51,7 +78,7 @@ onPipePacket packet = do uID <- clUserID <$> getClient
                                  else case pID `M.lookup` relMap of   
                                         Just e -> if checkPipeSig (_relPipePubKey e) packet 
                                                     then do when isRefresh $ refreshTimer (_relPipeTimer e)
-                                                            when isClose $ deleteRelayedPipe e
+                                                            when isClose $ removeRelayedPipe pID >> pure ()
                                                             relayPipePacket  packet e
                                                     else logM "Client.Pipes" "onPipePacket" InvalidPacket "Signature invalid on relayed pipe packet."
                                         Nothing -> do eM <- getLocalEntries
@@ -68,14 +95,23 @@ onPipePacket packet = do uID <- clUserID <$> getClient
                                pure ( pID `M.lookup` locMap >>= \e ->  (,) <$> _locPipeSource e `M.lookup` destMap <*> pure e) 
           isRefresh = PipeControlRefresh `elem` _pipeFlags packet
           isClose = PipeControlClose `elem` _pipeFlags packet
-          deleteRelayedPipe e = stmModify clRelayedPipes (M.delete pID) >> killTimer (_relPipeTimer e)
+
+
+removeRelayedPipe :: PipeID -> WeedMonad Bool
+removeRelayedPipe pID = do m <- stmRead clRelayedPipes
+                           case pID `M.lookup` m of
+                                Nothing -> pure False
+                                Just e -> do stmModify clRelayedPipes (M.delete pID) 
+                                             killTimer (_relPipeTimer e)
+                                             pure True
 
 
 -- | This function manages the content of a checked pipePacket. 
+-- | For now, only ComPacket are managed. other packet will make the program crash [TODO] ############################################
 onPipeContent :: DestinaryEntry -> PipePacket -> WeedMonad ()
 onPipeContent destE packet = case decodeOrFail $ _pipePacketData packet of
                                 Left (_,_,s) -> logM "Client.Pipes" "onPipeContent" InvalidPacket ("Unable to decode content of a PipePacket : " ++ s)
-                                Right (_,_, PPCPipePacket packet') -> onPipePacket packet'
-                                Right (_,_, PPCL2 layer2) -> pure () -- TODO
+                                Right (_,_, PPCPipePacket packet') -> undefined
+                                Right (_,_, PPCL2 layer2) -> undefined
                                 Right (_,_, PPCComPacket comP) -> onComPacket (_destComModule destE) pID comP
     where pID = view pipePID packet
