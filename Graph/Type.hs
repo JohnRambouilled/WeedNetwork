@@ -4,12 +4,12 @@
 module Graph.Type where
 
 import           Control.Lens
+import           Control.Monad.Identity
 import           Data.List
-import qualified Data.Map.Strict as M
+import qualified Data.Map.Strict        as M
 import           Data.Maybe
 import           Data.Monoid
 import           Types
-
 
 
 data VertexID = VertexID Int
@@ -74,6 +74,7 @@ buildRoad l = zip3 (Nothing:l') l (tail l' ++ [Nothing]) -- <3<3
 addRoad :: (VertexID,vertex) -- Origine de la route
         -> [((VertexID,edge),vertex)] -- voisins successifs (id, estimation du sommet, estimation de l'arc)
         -> G vertex edge -> G vertex edge
+addRoad _ [] g = g
 addRoad src road@(((firstID,firstE),firstV):_) g = g' <> mconcat (mkVertex <$> r) --foldr f g' r
   where r  = (\ (prevM,((meID,incE),meval),nxtEM) -> let prevEM =  if isJust prevM then (set _2 incE . fst <$>  prevM) else Just (fst src,incE)
                                                     in (prevEM,(meID,meval),fst <$> nxtEM)) <$> buildRoad road
@@ -98,34 +99,38 @@ deleteRoad editV road g = editRoad editV (pure Nothing) road g
 
 
 {-| Permet d'itérer une fonction sur les sommets du graphe, de les modifier
-    et d'accumuler ses résultats |-}
-foldModifyGraph
-  ::  (VertexID -> vertex -> Maybe VertexID) -- Fonction spécifiant le prochain noeud (Nothing si l'itération est finie)
-     -> (VertexID -> vertex -> t -> (t,vertex)) -- Fonction accumulant le précédent résultat avec le sommet considéré
-     -> VertexID -- Sommet initial
-     -> Graph vertex edge -- Graphe
-     -> t -- Valeur initiale de l'accumulateur
-     -> (t,Graph vertex edge) -- l'accumulateur final et le graphe modifié
-foldModifyGraph it f vID g r
-          | isNothing vTM = error "Itération vers un vID n'existant pas"
-          | isJust vTM && isNothing nextID = (acc,g')
-          | isJust vTM = foldModifyGraph it f (fromJust nextID) g' acc
-          where vTM = fst <$> (M.lookup vID $ _vMap g)
-                nextID = it vID $ fromJust vTM
-                (acc,val') = f vID (fromJust vTM) r
-                g' = over vMap (M.adjust (set _1 val') vID) g
+    et d'accumuler ses résultats
+   [TODO] Mettre le prochain vertex dans le type de retour de la fonction accumulée (au lieu d'utiliser un itérateur différent)|-}
 
-{-| Itère une fonction sur le graphe et accumule ses résultats
-    sans la modifier |-}
-foldGraph :: (VertexID -> vertex -> Maybe VertexID)
-          -> (VertexID -> vertex -> t -> t)
-          -> VertexID
-          -> Graph vertex edge
-          -> t
-          -> t
-foldGraph it f vID g tInit = fst $ foldModifyGraph it f' vID g tInit
-  where f' v vT acc = (f v vT acc,vT)
+foldModifyGraphM :: (Monad m)
+                 => (VertexID -> vertex -> t -> m (t,vertex,Maybe VertexID)) -- Prend en argument le VertexID courant, la valeur associée
+                                                                        -- et l'accumulateur et retourne (accumulateur,nouvelle valeur du sommet et peut être le sommet suivant)
+                                                                        -- Si le sommet suivant vaut Nothing, on s'arrête
+                 -> VertexID
+                 -> t
+                 -> Graph vertex edge
+                 -> m (t,Graph vertex edge)
+foldModifyGraphM f vID acc g
+  | isNothing vTM = error "foldModifyGraph Itération vers un vID n'existant pas"
+  | otherwise = do
+      (acc',vT',nextIDM) <- f vID (fromJust vTM) acc
+      let g' = over vMap (M.adjust (set _1 vT') vID) g
+      case nextIDM of
+        Nothing     -> pure (acc',g')
+        Just nextID -> foldModifyGraphM f nextID acc' g'
+  where vTM = fst <$> M.lookup vID (_vMap g)
 
+
+{-| Itère une fonction sur un graphe et accumule ses résultats, mais sans le modifier. |-}
+foldGraphM :: (Monad m)
+           => (VertexID -> vertex -> t -> m (t,Maybe VertexID))
+           -> VertexID
+           -> t
+           -> Graph vertex edge
+           -> m t
+foldGraphM f vID acc g = fst <$> foldModifyGraphM f' vID acc g
+  where f' vID vT acc = do (acc',nextIDM) <- f vID vT acc
+                           pure (acc,vT,nextIDM)
 
 {-| Retourne le sous graphe des noeuds satisfaisant le prédicat.
     Le prédicat prend, pour chaque sommet: - vertexID
@@ -141,3 +146,26 @@ filterGraph f g = Graph $ M.fromList $ updateEntry <$> toKeep
         keepP k _ = k `elem` (fst <$> toKeep)
         (toKeep,toDel) = partition (\(vID,(vVal,edges)) -> f vID vVal edges) nodes
         updateEntry (vID,(vVal,edges)) = (vID,(vVal, over eMap (M.filterWithKey keepP) edges))
+
+{-| itère une fonction sur un graphe et accumule les résultats (pour un comportement monadique, voir @foldModifyGraphM -}
+foldModifyGraph
+  ::  (VertexID -> vertex -> t -> (t,vertex,Maybe VertexID)) -- Fonction accumulant le précédent résultat avec le sommet considéré
+     -> VertexID -- Sommet initial
+     -> t -- Valeur initiale de l'accumulateur
+     -> Graph vertex edge -- Graphe
+     -> (t,Graph vertex edge) -- l'accumulateur final et le graphe modifié
+foldModifyGraph f vID acc g = runIdentity $ foldModifyGraphM (\a b c -> pure $ f a b c) vID acc g
+{-| Itère une fonction sur le graphe et accumule ses résultats
+    sans la modifier (non monadique)|-}
+foldGraph ::
+          (VertexID -> vertex -> t -> (t,Maybe VertexID))
+          -> VertexID
+          -> Graph vertex edge
+          -> t
+          -> t
+foldGraph f vID g acc = runIdentity $ foldGraphM (\a b c -> pure $ f a b c) vID acc g
+
+
+
+
+

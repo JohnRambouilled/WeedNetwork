@@ -50,64 +50,109 @@ edgesFromPipe pipeID vT = case pipeID `M.lookup` view (pipesT . vPipes) vT of
   Just p  -> catMaybes [_previous p, _next p]
 
 {-| Retourne le vertexID du sommet suivant sur le graphe, s'il existe |-}
-nextOnPipe :: PipeID -> VertexID -> VertexT -> Maybe VertexID
-nextOnPipe pipeID _ vT = join $ _next <$> M.lookup pipeID (view (pipesT . vPipes) vT)
+nextOnPipe :: PipeID ->  VertexT -> Maybe VertexID
+nextOnPipe pipeID vT = join $ _next <$> M.lookup pipeID (view (pipesT . vPipes) vT)
 
 {-| Retourne le vertexID du sommet précédent sur le graphe, s'il existe |-}
-prevOnPipe :: PipeID -> VertexID -> VertexT -> Maybe VertexID
-prevOnPipe pipeID _ vT = join $ _previous <$> M.lookup pipeID (view (pipesT . vPipes) vT) -- [TODO] Code dupliqué avec nextOnPipe :(
+prevOnPipe :: PipeID -> VertexT -> Maybe VertexID
+prevOnPipe pipeID vT = join $ _previous <$> M.lookup pipeID (view (pipesT . vPipes) vT) -- [TODO] Code dupliqué avec nextOnPipe :(
 
+{-| Retourne le vertexID du sommet le plus proche sur le pipe |-}
+nearestOnPipe :: PipeID -> VertexT -> Maybe VertexID
+nearestOnPipe pipeID vT
+  | isNothing pipeNodeM = error $ "nearestOnPipe leads to the an unregistered vertex: pipeID=" ++ show pipeID
+  | isJust pipeNodeM = join $ f <$> pipeNodeM
+ where pipeNodeM = M.lookup pipeID (view (pipesT . vPipes) vT)
+       f :: PipeNode -> Maybe VertexID
+       f pNode
+         | _pathLen pNode == 0 = Nothing
+         | _pathToMe pNode == NextD = _next pNode
+         | _pathToMe pNode == PrevD = _previous pNode
 
-
-{-| Applique une fonction sur les suivants du sommet concerné sur le pipe et accumule ses résultats tout en modifiant
-    les estimations de chaque sommet |-}
-foldModifyNexts :: PipeID
-                -> (VertexID -> VertexT -> t -> (t,VertexT))
-                -> VertexID
-                -> RoadGraph
-                -> t
-                -> (t,RoadGraph)
-foldModifyNexts pipeID f vID g tInit = foldModifyGraph (nextOnPipe pipeID) f vID g tInit
-
-{-| Applique une fonction sur les précédents du sommet concerné sur le pipe et accumule ses résultats tout en modifiant
-    les estimations de chaque sommet |-}
-foldModifyPrevs
-  :: PipeID
+{-| Folds on g using the specified operator dir |-}
+foldModifyDirM
+  :: Monad m =>
+     (PipeID -> VertexT ->  Maybe VertexID)
+     -> PipeID
+     -> (VertexID -> VertexT -> t -> m (t, VertexT))
+     -> VertexID
+     -> t
+     -> RoadGraph
+     -> m (t, RoadGraph)
+foldModifyDirM dir pipeID f vID tInit g = foldModifyGraphM f' vID tInit g
+  where f' vID vT acc = do (acc',vT') <-f vID vT acc
+                           pure(acc',vT',dir pipeID vT)
+foldDirM
+  :: Monad m =>
+     (PipeID -> VertexT -> Maybe VertexID)
+     -> PipeID
+     -> (VertexID -> VertexT -> t -> m t)
+     -> VertexID
+     -> t
+     -> RoadGraph
+     -> m t
+foldDirM dir pipeID f vID tInit g = fst <$> foldModifyDirM dir pipeID f' vID tInit g
+  where f' vID vT acc = do acc' <- f vID vT acc
+                           pure (acc',vT)
+foldModifyDir
+  :: (PipeID -> VertexT -> Maybe VertexID)
+     -> PipeID
      -> (VertexID -> VertexT -> t -> (t, VertexT))
      -> VertexID
-     -> RoadGraph
      -> t
+     -> RoadGraph
      -> (t, RoadGraph)
-foldModifyPrevs pipeID f vID g tInit = foldModifyGraph (prevOnPipe pipeID) f vID g tInit
+foldModifyDir dir pipeID f vID tInit g = runIdentity $ foldModifyDirM dir pipeID (\x y z -> pure $ f x y z) vID tInit g
 
-{-| Applique une fonction sur les suivants du sommet concerné sur le pipe et accumule ses résultats. |-}
-foldNexts
-  :: PipeID
+
+foldDir
+  :: (PipeID -> VertexT -> Maybe VertexID)
+     -> PipeID
      -> (VertexID -> VertexT -> t -> t)
      -> VertexID
-     -> Graph VertexT edge
      -> t
+     -> RoadGraph
      -> t
-foldNexts pipeID = foldGraph (nextOnPipe pipeID)
+foldDir dir pipeID f vID tInit g = runIdentity $ foldDirM dir pipeID (\x y z -> pure $ f x y z) vID tInit g
 
-{-| Applique une fonction sur les précédents du sommet concerné sur le pipe et accumule ses résultats. |-}
-foldPrevs pipeID = foldGraph (prevOnPipe pipeID)
 
+{-| Folds on pipes in left, right or nearest direction |-}
+foldModifyNextsM :: (Monad m) => PipeID -> (VertexID -> VertexT -> t -> m (t, VertexT)) -> VertexID -> t -> RoadGraph -> m (t,RoadGraph)
+foldModifyNextsM = foldModifyDirM nextOnPipe
+foldModifyPrevsM :: (Monad m) => PipeID -> (VertexID -> VertexT -> t -> m (t, VertexT)) -> VertexID -> t -> RoadGraph -> m (t,RoadGraph)
+foldModifyPrevsM = foldModifyDirM prevOnPipe
+foldModifyNearestM :: (Monad m) => PipeID -> (VertexID -> VertexT -> t -> m (t, VertexT)) -> VertexID -> t -> RoadGraph -> m (t,RoadGraph)
+foldModifyNearestM = foldModifyDirM nearestOnPipe
+foldNextsM :: (Monad m) => PipeID -> (VertexID -> VertexT -> t -> m t) -> VertexID -> t -> RoadGraph -> m t
+foldNextsM = foldDirM nextOnPipe
+foldPrevsM :: (Monad m) => PipeID -> (VertexID -> VertexT -> t -> m t) -> VertexID -> t -> RoadGraph -> m t
+foldPrevsM = foldDirM prevOnPipe
+foldNearestM :: (Monad m) => PipeID -> (VertexID -> VertexT -> t -> m t) -> VertexID -> t -> RoadGraph -> m t
+foldNearestM = foldDirM nearestOnPipe
+
+foldModifyNexts = foldModifyDir nextOnPipe
+foldModifyPrevs = foldModifyDir prevOnPipe
+foldModifyNearest = foldModifyDir nearestOnPipe
+foldNexts = foldDir nextOnPipe
+foldPrevs = foldDir prevOnPipe
+foldNearest = foldDir nearestOnPipe
 
 {-| Retourne la liste des sommets du pipe pipeID à partir du sommet vID |-}
-nextsOnPipe :: PipeID -> VertexID -> Graph VertexT edge -> [(VertexID,VertexT)]
-nextsOnPipe pipeID vID g = foldNexts pipeID (\v vT acc -> acc ++ [(v,vT)]) vID g []
+nextsOnPipe :: PipeID -> VertexID -> RoadGraph -> [(VertexID,VertexT)]
+nextsOnPipe pipeID vID g = foldNexts pipeID (\v vT acc -> acc ++ [(v,vT)]) vID [] g
 {-| Retourne la liste des précédents du pipe pipeID à partir du sommet vID |-}
-prevsOnPipe :: PipeID -> VertexID -> Graph VertexT edge -> [(VertexID,VertexT)]
-prevsOnPipe pipeID vID g = foldPrevs pipeID (\v vT acc -> (v,vT):acc) vID g []
+prevsOnPipe :: PipeID -> VertexID -> RoadGraph -> [(VertexID,VertexT)]
+prevsOnPipe pipeID vID g = foldPrevs pipeID (\v vT acc -> (v,vT):acc) vID [] g
 
-
+nearestsOnPipe :: PipeID -> VertexID -> RoadGraph -> [(VertexID,VertexT)]
+nearestsOnPipe pipeID vID g = foldNearest pipeID (\v vT acc -> acc ++ [(v,vT)]) vID [] g
 {-| Extrait la route associée au PipeID passant par le sommet spécifié -}
 getPipeRoad :: PipeID -> VertexID -> RoadGraph -> [(VertexID,VertexT)]
 getPipeRoad pID vID g = prevsOnPipe pID vID g ++ nextsOnPipe pID vID g
 
 {-| Insère le pipe sur la route spécifiée|-}
 insertPipe :: PipeType -> PipeID -> [VertexID] -> RoadGraph -> RoadGraph
+insertPipe _ _ [] g = g
 insertPipe pipeType pipeID road g = addRoad src ((\ (vID,vT) -> ((vID,mempty),vT)) <$> verticesT) g
   where road' = zip computeDirections $ buildRoad road
         -- Détermine les positions et les directions relativement à moi
@@ -120,6 +165,8 @@ insertPipe pipeType pipeID road g = addRoad src ((\ (vID,vT) -> ((vID,mempty),vT
 
 {-| Supprime le pipe de la route spécifiée (ne modifie pas les arcs) |-}
 deletePipe :: PipeID -> VertexID -> RoadGraph -> RoadGraph
-deletePipe pipeID vID g = snd $ foldModifyPrevs pipeID delPipe vID g1 ()
+deletePipe pipeID vID g = snd $ foldModifyPrevs pipeID delPipe vID () g1
   where delPipe _ vT _ = ((), deletePipeFromVertex pipeID vT)
-        (_,g1) = foldModifyNexts pipeID delPipe vID g ()
+        (_,g1) = foldModifyNexts pipeID delPipe vID () g
+
+
