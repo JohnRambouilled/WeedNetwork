@@ -37,64 +37,55 @@ data NeighIntro = NeighIntro {_neighISource :: KeyHash,
 
 data NeighData = NeighData  {_neighDSource   :: KeyHash,
                              _neighDestinary :: NeighDestinary,
-                             _neighDSig      :: Signature,
-                             _neighDContent  :: L2}
+                             _neighDContent  :: L2,
+                             _neighDSig      :: Signature}
     deriving Generic
 
 data PipePacket = PipePacket{ _pipeSource       :: KeyHash,  -- Not signed, updated at each transmission
                               _pipeDestinary    :: KeyHash,  -- Not signed, updated at each transmission
-                              _pipePacketHeader :: PipeHeader,
-                             _pipePacketData    :: RawData }
+                              _pipePID :: PipeID,
+                              _pipeFlags :: [PipePacketFlag],
+                              _pipeSig :: Signature,
+                              _pipePacketData    :: RawData}
                     deriving Show
-
 
 data PipePacketContent = PPCPipePacket PipePacket |
                          PPCL2 L2 |
                          PPCComPacket ComPacket
         deriving (Show, Generic)
 
-
-data PipeHeader = PipeHeader {_pipeDID :: PipeID,    -- ^PipeID (KeyHash of the road)
-                              _pipeDSig   :: Signature,  -- ^ Signature of the packet
-                              _pipeDFlags :: [PipeDataFlag] }
-              deriving (Generic, Show)
-
-data PipeDataFlag = PipeControlRefresh
-                  | PipeControlClose 
+data PipePacketFlag = PipeControlRefresh
+                    | PipeControlClose 
               deriving (Eq, Show, Generic)
-makeLenses ''PipeHeader
+
+makeLenses ''NeighIntro
 makeLenses ''PipePacket
 makeLenses ''NeighData
 makeLenses ''L1
+
 instance Binary NeighDestinary
 instance Binary L1
 instance Binary NeighData
 instance Binary NeighIntro
 instance Binary PipePacketContent
 
-instance Binary PipePacket where put (PipePacket src dst h c) = put src >> put dst >> put h >> putLazyByteString c
-                                 get = PipePacket <$> get <*> get <*> get <*> getRemainingLazyByteString
+instance Binary PipePacket where put (PipePacket src dst pID f s c) = put src >> put dst >> put pID >> put f >> put s >> putLazyByteString c
+                                 get = PipePacket <$> get <*> get <*> get <*> get <*>  get <*>  getRemainingLazyByteString
 
-instance Binary PipeHeader
-instance Binary PipeDataFlag
+instance Binary PipePacketFlag
 
 instance SignedClass NeighIntro where scHash (NeighIntro kH pK _) = encode (kH, pK)
-                                      scSignature = _neighISig
-                                      scPushSignature i s = i{_neighISig = s}
+                                      scSignature = view neighISig
+                                      scPushSignature i s = set neighISig s i
 instance IntroClass NeighIntro where icPubKey = _neighIPubKey
 
-instance SignedClass NeighData  where scHash (NeighData src dst _ pay) = encode (src,dst, pay)
-                                      scSignature = _neighDSig
-                                      scPushSignature d s = d{_neighDSig = s}
+instance SignedClass NeighData  where scHash (NeighData src dst pay _) = encode (src, dst, pay)
+                                      scSignature = view neighDSig
+                                      scPushSignature d s = set neighDSig s d
 
-instance SignedClass PipeHeader where scHash (PipeHeader kH _ flags) = encode (kH, flags)
-                                      scSignature = _pipeDSig
-                                      scPushSignature p s = set pipeDSig s p
---                                      scPushSignature p s = p{_pipeDSig = s}
-
-instance SignedClass PipePacket  where scHash (PipePacket src dst h p) = B.concat [encode $ (src,dst), (scHash h), (encode p)]
-                                       scSignature = _pipeDSig . _pipePacketHeader
-                                       scPushSignature p s = over pipePacketHeader (flip scPushSignature s) p
+instance SignedClass PipePacket  where scHash (PipePacket src dst pid f p _) = encode (src, dst, pid, f, p)
+                                       scSignature = view pipeSig 
+                                       scPushSignature p s = set pipeSig s p
 
 instance Show NeighIntro where
     show = ("NeighIntro from : " ++ ) . show . _neighISource

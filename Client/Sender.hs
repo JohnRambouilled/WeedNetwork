@@ -10,7 +10,7 @@ import Control.Lens
 import qualified Data.Map as M
 
 
-type PipeSender = [PipeDataFlag] -> ComPacket -> WeedMonad ()
+type PipeSender = [PipePacketFlag] -> ComPacket -> WeedMonad ()
 
 genPipeSender:: PipeID -> WeedMonad (Maybe PipeSender)
 genPipeSender pID = do pipeMap <- stmRead clLocalPipes
@@ -41,7 +41,7 @@ relayResearch res = if view resTTL res > 0 then sendNeighData dest $ L2Research 
 relayRequest :: Request -> WeedMonad ()
 relayRequest req = sendNeighData dest $ L2Request req'
     where dest = UserDest $ view reqRoad req !! view reqPosition req'
-          req' = over reqPosition (+1) req
+          req' = over reqPosition (+(-1)) req
 
 
 relayPipePacket :: PipePacket -> RelayedPipeEntry -> WeedMonad ()
@@ -74,19 +74,18 @@ sendRequest :: Road -> PipePubKey -> RawData -> WeedMonad PipeID
 sendRequest r pk d = do t <- getTime
                         uk <- fst . clKeyPair <$> getClient
                         let pipeID = computePipeID r
-                            req = Request 1 (length r) r uk t pk pipeID emptySignature d
+                            req = Request (length r - 1) r uk t pk pipeID emptySignature d
                         sendNeighData (UserDest . head $ tail r) $ L2Request req
                         pure pipeID
 
 
-sendPipePacket :: PipeKeyPair -> PipeID -> KeyHash -> [PipeDataFlag] -> RawData -> WeedMonad ()
+sendPipePacket :: PipeKeyPair -> PipeID -> KeyHash -> [PipePacketFlag] -> RawData -> WeedMonad ()
 sendPipePacket pks id next flags datas = do c <- getClient
-                                            signAndSend $ PipePacket (clUserID c) next header datas
-    where header = PipeHeader id emptySignature flags
+                                            signAndSend $ PipePacket (clUserID c) next id flags emptySignature datas
 
 sendNeighData :: NeighDestinary -> L2 -> WeedMonad ()
 sendNeighData kH l2 = do c <- getClient
-                         signAndSend $ NeighData (clUserID c) kH emptySignature l2
+                         signAndSend $ NeighData (clUserID c) kH l2 emptySignature 
 
 sendNeighIntro :: WeedMonad ()
 sendNeighIntro = do c <- getClient 
