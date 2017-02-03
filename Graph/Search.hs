@@ -52,7 +52,9 @@ randomWalkToMe g maxLen = do
                     let nearest = minimumBy (\pipe1 pipe2 -> _pathLen (snd pipe1) `compare` _pathLen (snd pipe2)) $ M.toList localPipes
                     if _pathLen (snd nearest) > maxLen
                       then moveToRandomNeighbour -- Si le plus proche des pipes est trop loin, je continue la marche aléatoire
-                      else walkOnPipe nearest -- Sinon, j'emprunte le pipe
+                      else do --walkOnPipe nearest -- Sinon, j'emprunte le pipe
+                              foldNearestM (fst nearest) (\vID vT _ -> currentID .= vID >> currentVal .= vT)  posID () g
+                              pure True
                     pure False
             else moveToRandomNeighbour -- S'il n'y a pas de pipes passant par ici, je poursuis la marche aléatoire.
 
