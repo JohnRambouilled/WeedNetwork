@@ -8,6 +8,7 @@ import Types.Crypto
 import Types.Destinaries
 import Types.Ressources
 import Types.Protocol
+import Types.Graph.RoadGraph
 import Packets
 
 import Control.Concurrent.STM (TVar)
@@ -29,6 +30,7 @@ data Client = Client { clUserID :: UserID,
                        clKeyPair :: KeyPair,
                        clTime :: TVar Time, -- Should be updated before each call... 
                        clSender :: Sender,
+                       clGraph :: TVar RoadGraph,
                        clRelayedPipes :: TVar RelayedPipesMap,
                        clLocalPipes :: TVar LocalPipeMap,
                        clNeighbours :: TVar NeighboursMap,

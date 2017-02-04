@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes       #-}
 {-# LANGUAGE TemplateHaskell  #-}
-module Graph.Search where
+module Types.Graph.Search where
 
 import           Control.Lens
 import           Control.Monad
@@ -9,8 +9,8 @@ import           Control.Monad.State
 import           Data.List
 import qualified Data.Map.Strict     as M
 import           Data.Maybe
-import           Graph.RoadGraph
-import           Graph.Type
+import           Types.Graph.RoadGraph
+import           Types.Graph.Type
 import           System.Random
 data Searcher = Searcher {_currentID     :: VertexID,
                           _currentVal    :: VertexT,

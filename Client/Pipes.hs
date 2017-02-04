@@ -7,6 +7,7 @@ import Client.Timer
 import Client.WeedMonad
 import Client.Sender
 import Client.Communication
+import Graph.RoadGraph
 
 import Data.Binary
 import Data.Maybe
@@ -32,10 +33,10 @@ onRequest sID req = do (t,uID) <- (,) <$> getTime <*> fmap clUserID getClient
                                                             
 
 onLocalRequest :: UserID -> Request -> WeedMonad ()
-onLocalRequest prev req = undefined
+onLocalRequest prev req = 
 
 -- | Verify that the pipeID is not already in use.
--- | If not, create a new timer 
+-- | If not, create a new timer calling removeRelayedPipe, forge a relayedPipeEntry
 onRelayedRequest :: UserID -> UserID -> Request -> WeedMonad ()
 onRelayedRequest prev next req = do relMap <- stmRead clRelayedPipes 
                                     case pID `M.lookup` relMap of
@@ -46,6 +47,11 @@ onRelayedRequest prev next req = do relMap <- stmRead clRelayedPipes
                                                       relayRequest req
         where pID = _reqPipeID req
               entry = RelayedPipeEntry (_reqPipeKey req) prev next
+
+
+addRelayedPipe :: TimerEntry -> Road -> UserID -> UserID -> WeedMonad ()
+addRelayedPipe tE r next prev = do stmModify clRelayedPipes $ M.insert pID tE
+                                   insertPipe pID (map toVertex r)  
 
 
 -- | Check a request validity. Return Left with an error if the request is incorrect.

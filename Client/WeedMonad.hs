@@ -16,17 +16,17 @@ weedIO :: IOAction -> WeedMonad ()
 weedIO = tell. (:[]) . WeedPerformIO
 
 stmRead :: (Client -> TVar a) -> WeedMonad a
-stmRead f = readSTM =<< lift (asks f)
+stmRead f = readSTM =<< asks f
 
 stmWrite :: (Client -> TVar a) -> a -> WeedMonad ()
-stmWrite a v = do tvar <- lift (asks a)
+stmWrite a v = do tvar <- asks a
                   liftSTM $ writeTVar tvar v
 
 stmModify :: (Client -> TVar a) -> (a -> a) -> WeedMonad ()
-stmModify a f = liftSTM . flip modifyTVar f =<< lift (asks a)
+stmModify a f = liftSTM . flip modifyTVar f =<< asks a
 
 getClient :: WeedMonad Client
-getClient = lift $ ask
+getClient = ask
 
 liftSTM :: STM a -> WeedMonad a
 liftSTM = lift.lift

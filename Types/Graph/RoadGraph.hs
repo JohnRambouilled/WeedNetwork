@@ -1,12 +1,14 @@
 {-# LANGUAGE TemplateHaskell #-}
-module Graph.RoadGraph where
+module Types.Graph.RoadGraph where
 import           Control.Lens
 import           Control.Monad
 import qualified Data.Map.Strict as M
 import           Data.Maybe
 import           Data.Monoid
-import           Graph.Type
-import           Types
+import           Types.Graph.Type
+import           Types.Packets
+import Data.Binary
+
 {-| Détails d'un pipe passant par un noeud |-}
 data PipeType = Requested | Relayed
 data Direction = PrevD | NextD
@@ -21,7 +23,7 @@ data VertexPipes = VertexPipes {_vPipes   :: M.Map PipeID PipeNode}
 data VertexT = VertexT {_pipesT :: VertexPipes}
 
 me :: VertexID
-me = VertexID 1
+me = VertexID (encode (1 ::Int)) -- TODO!!!
 
 makeLenses ''VertexPipes
 makeLenses ''VertexT

@@ -1,7 +1,7 @@
 {-# LANGUAGE RankNTypes      #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections   #-}
-module Graph.Type where
+module Types.Graph.Type where
 
 import           Control.Lens
 import           Control.Monad.Identity
@@ -9,10 +9,11 @@ import           Data.List
 import qualified Data.Map.Strict        as M
 import           Data.Maybe
 import           Data.Monoid
-import           Types
+import           Types.Packets
+import           Types.Crypto
 
 
-data VertexID = VertexID Int
+data VertexID = VertexID RawData
                 deriving (Eq,Ord,Show)
 
 {-| Les arcs incidents à chaque sommet sont stockés dans une Map |-}

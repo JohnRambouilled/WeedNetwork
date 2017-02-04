@@ -1,13 +1,13 @@
-module Graph.Export (exportGraph) where
+module Types.Graph.Export (exportGraph) where
 
 import           Control.Monad
 import           Control.Monad.Writer
 import           Data.Binary
 import qualified Data.Map             as M
 import           Data.Monoid
-import           Graph.RoadGraph
-import           Graph.Type
-import           Types
+import           Types.Graph.RoadGraph
+import           Types.Graph.Type
+import           Types.Packet
 
 {-| Une manière simple de sortir un fichier graviz pour représenter le graphe.|-}
 exportGraph fileName g = writeFile fileName $ showGraph g
