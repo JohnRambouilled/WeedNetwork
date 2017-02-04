@@ -22,15 +22,6 @@ newtype ProtocolID = ProtocolID Int
 
 newtype PipeID = PipeID RawData
     deriving (Eq, Ord, Generic, Show)
--- TODO
-ttlMax = 10
-ansMaxDelay = 10
-
-relayTimeOut = 10 :: Time
-
-
-roadLengthMax = 10 :: Number
-maxDelay = 20 :: Time
 
 instance Binary NominalDiffTime where
         get = fromRational <$> get

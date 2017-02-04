@@ -1,45 +1,27 @@
+{-# LANGUAGE TemplateHaskell   #-}
 module Types.Ressources where
 
 import qualified Data.Map as M
-
-import Packets
-import Types.Packets
-
-type RessourcesMap = M.Map RessourceID RessourceEntry
-
-data RessourceEntry = RessourceOffered {ressourceAnswerContent :: RawData,
-                                        ressourceTilt :: Bool} |
-                      RessourceRelayed {ressourceSources :: M.Map SourceID TimerEntry,
-                                        ressourceTilt :: Bool}
-                    
-
-
-
-{-
-module Types.Ressources where
 
 import Packets
 import Types.Packets
 import Types.Crypto
 import Types.Timer
 
-import Control.Concurrent.STM.TChan
-import qualified Data.Map as M
-
+import Control.Lens
 
 type RessourcesMap = M.Map RessourceID RessourceEntry
 
+data RessourceTilt = RessourceTilt {_resTiltAns :: Bool, _resTiltRes :: Bool}
 
-data RessourceEntry = RessourceLocal { ressourceAnswerContent :: RawData} |
-                      RessourceRelayed { ressourceSources :: M.Map SourceID RessourceSource,  --known sources offering this ressource
-                                         ressourceTilt :: Bool} |  -- True if a research has been relayed recently (to prevent over-propagating researches)
-                      RessourceDesired { ressourceSources :: M.Map SourceID RessourceSource,
-                                         ressourceTChan :: TChan Answer, -- Broadcast TChan, use dupTChan to access content
-                                         ressourceRelayAnswer :: Bool}
+data RessourceEntry = RessourceOffered {_ressourceAnswerContent :: RawData,
+                                        _ressourceTimer :: TimerEntry, 
+                                        _ressourceTilt :: RessourceTilt} |
+                      RessourceResearched {_ressourceSources :: M.Map SourceID TimerEntry,
+                                           _ressourceTimer :: TimerEntry, 
+                                           _ressourceTilt :: RessourceTilt}
 
 
+makeLenses ''RessourceTilt
+makeLenses ''RessourceEntry
 
-data RessourceSource = RessourceSource { resSourceCert :: RessourceCert,
-                                         resSourceTimer :: TimerEntry }
-                                         
--}

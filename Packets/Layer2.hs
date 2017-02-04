@@ -28,10 +28,10 @@ data Request = Request {_reqPosition :: Number, -- ^ Position on the road, decre
     deriving Generic
 
 
-data Research = Research {_resID :: RessourceID,
-                          _resTTL :: TTL,
-                          _resRoad :: Road,
-                          _resCnt :: RawData}
+data Research = Research {_resID :: RessourceID,  -- ^ Ressource researched
+                          _resTTL :: TTL,         -- ^ number of time the research will be relayed yet.
+                          _resRoad :: Road,       -- ^ Road along wich the research should be propagated.
+                          _resCnt :: RawData}    -- ^ Research content
                 deriving Generic
 
 data Answer = Answer {_ansCert :: RessourceCert,
