@@ -7,6 +7,7 @@ import Client.Timer
 import Client.WeedMonad
 import Client.Sender
 import Client.Communication
+import Client.Destinary
 import Types.Graph.RoadGraph
 import Types.Graph.Type
 
@@ -19,7 +20,7 @@ import Control.Lens
 import qualified Data.Map as M
 
 maxRequestValidity = 10 :: Time
-relayedPipeTimeOut = 30 :: Time
+pipeTimeOut = 30 :: Time
 
 
 
@@ -34,15 +35,47 @@ onRequest sID req = do (t,uID) <- (,) <$> getTime <*> fmap clUserID getClient
                                                             
 
 onLocalRequest :: UserID -> Request -> WeedMonad ()
-onLocalRequest prev req = pure ()
+onLocalRequest prev req = do locMap <- stmRead clLocalPipes
+                             case pID `M.lookup` locMap of
+                                    Just _ -> logM "Client.Pipes" "onLocalRequest" InvalidPacket "Request for an already used pipeID"
+                                    Nothing -> do b <- destinaryOnRequest req
+                                                  if b then do timer <- createTimer pipeTimeOut (void $ removeLocalPipe pID)
+                                                               addLocalPipe False timer prev req
+                                                               logM "Client.Pipes" "onLocalRequest" Normal ("New local pipe : " ++ show pID ++ " have been added.")
+                                                  else pure ()
+        where pID = _reqPipeID req
+
+
+
+removeLocalPipe :: PipeID -> WeedMonad Bool
+removeLocalPipe pID = do locMap <- stmRead clLocalPipes 
+                         case pID `M.lookup` locMap of
+                                Nothing -> logM "Client.Pipes" "removeLocalPipe" Error "Pipe does not exist." >> pure False
+                                Just e -> do destinaryRemovePipe (_locPipeSource e) pID
+                                             stmModify clLocalPipes $ M.delete pID
+                                             uID <- clUserID <$> getClient
+                                             stmModify clGraph $ deletePipe pID (keyHash2VertexID uID)
+                                             killTimer (_locPipeTimer e)
+                                             pure True
+                                             
+
+
+addLocalPipe :: Bool -> TimerEntry -> UserID -> Request -> WeedMonad ()
+addLocalPipe out tE prev req = do stmModify clLocalPipes $ M.insert pID entry
+                                  stmModify clGraph $ insertPipe Local pID (map keyHash2VertexID $ reverse r)
+        where pID = _reqPipeID req
+              r = _reqRoad req
+              entry = LocalPipeEntry prev tE out (computeHashFromKey $ _reqSourceKey req)
+
+                                                  
 
 -- | Verify that the pipeID is not already in use.
 -- | If not, create a new timer calling removeRelayedPipe, forge a relayedPipeEntry
 onRelayedRequest :: UserID -> UserID -> Request -> WeedMonad ()
 onRelayedRequest prev next req = do relMap <- stmRead clRelayedPipes 
                                     case pID `M.lookup` relMap of
-                                        Just _ -> logM "Client.Pipes" "onRelayedRequest" InvalidPacket "Request for already used pipeID"
-                                        Nothing -> do timer <- createTimer relayedPipeTimeOut (removeRelayedPipe pID >> pure ()) 
+                                        Just _ -> logM "Client.Pipes" "onRelayedRequest" InvalidPacket "Request for an already used pipeID"
+                                        Nothing -> do timer <- createTimer pipeTimeOut (removeRelayedPipe pID >> pure ()) 
                                                       addRelayedPipe timer prev next req
                                                       logM "Client.Pipes" "onRelayedRequest" Normal ("New relayed pipe : " ++ show pID ++ " have been added.")
                                                       relayRequest req
@@ -51,11 +84,14 @@ onRelayedRequest prev next req = do relMap <- stmRead clRelayedPipes
 
 addRelayedPipe :: TimerEntry -> UserID -> UserID -> Request -> WeedMonad ()
 addRelayedPipe tE prev next req = do stmModify clRelayedPipes $ M.insert pID entry
-                                     stmModify clGraph $ insertPipe Relayed pID (map toVertex $ reverse r)
+                                     stmModify clGraph $ insertPipe Relayed pID (map keyHash2VertexID $ reverse r)
         where pID = _reqPipeID req
               r = _reqRoad req
               entry = RelayedPipeEntry (_reqPipeKey req) prev next tE
-              toVertex (KeyHash u) = VertexID u
+
+
+keyHash2VertexID :: KeyHash -> VertexID
+keyHash2VertexID (KeyHash u) = VertexID u
 
 
 -- | Check a request validity. Return Left with an error if the request is incorrect.
@@ -112,6 +148,8 @@ removeRelayedPipe pID = do m <- stmRead clRelayedPipes
                            case pID `M.lookup` m of
                                 Nothing -> pure False
                                 Just e -> do stmModify clRelayedPipes (M.delete pID) 
+                                             uID <- clUserID <$> getClient
+                                             stmModify clGraph $ deletePipe pID (keyHash2VertexID uID)
                                              killTimer (_relPipeTimer e)
                                              pure True
 

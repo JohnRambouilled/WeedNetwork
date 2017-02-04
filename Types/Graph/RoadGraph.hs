@@ -10,7 +10,7 @@ import           Types.Packets
 import Data.Binary
 
 {-| Détails d'un pipe passant par un noeud |-}
-data PipeType = Requested | Relayed
+data PipeType = Local | Relayed
 data Direction = PrevD | NextD
                deriving Eq
 data PipeNode = PipeNode {_previous :: Maybe VertexID,

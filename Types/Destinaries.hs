@@ -20,6 +20,7 @@ type DestinaryID = UserID
 data DestinaryEntry = DestinaryEntry {_destPipes :: [PipeID],
                                       _destPipeKeys :: PipeKeyPair,
                                       _destKey :: PubKey,
+                                      _destTimer :: TimerEntry,
                                       _destComModule :: TVar ComModule}
 
 
