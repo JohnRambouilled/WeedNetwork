@@ -4,6 +4,12 @@ import Packets.Ressource
 import Client.Crypto
 
 
+
+
+
+
+
+
 checkAnswer :: UserID -> Time -> Answer -> Either String Answer
 checkAnswer me = checkAns me
     where checkAns me t ans@(Answer (RessourceCert _ pK ts val _ _) ttl r sID cnt)

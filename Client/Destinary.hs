@@ -32,21 +32,19 @@ destinaryRemovePipe sID pID = do destMod <- stmRead clDestinaries
 -- | Add the requested pipe in the Destinary map, and create a new DestinaryEntry if necessary.
 -- | Returns Nothing if Diffie-Hellman fails (for a new source), or if the key present in the request does not match the one stored for the source.
 -- | If the destinary had no other pipes, kills the timeOut timer.
-destinaryOnRequest :: Request -> WeedMonad Bool
-destinaryOnRequest req = do destMod <- stmRead clDestinaries
-                            case destID `M.lookup` destMod of
-                                Nothing -> do destEM <- newDestinaryEntry destID (_reqSourceKey req) [pipeID]
-                                              case destEM of
-                                                Nothing -> pure False
-                                                Just destE -> do stmModify clDestinaries $ M.insert destID destE
-                                                                 pure True
-                                Just destE -> if _reqSourceKey req == _destKey destE then do stmWrite clDestinaries $ M.insert destID (over destPipes (pipeID:) destE) destMod
-                                                                                             when (null $ _destPipes destE) $ killTimer (_destTimer destE) 
-                                                                                             pure True
-                                                                                     else do logM "Client.Destinary" "destinaryOnRequest" InvalidPacket "Request from known source with mismatching key!"
-                                                                                             pure False
-    where destID = head $ _reqRoad req
-          pipeID = _reqPipeID req
+destinaryInsertPipes :: PubKey -> UserID -> [PipeID] -> WeedMonad Bool
+destinaryInsertPipes pk sID pIDs = do destMod <- stmRead clDestinaries
+                                      case sID `M.lookup` destMod of
+                                            Nothing -> do destEM <- newDestinaryEntry sID pk pIDs
+                                                          case destEM of
+                                                              Nothing -> pure False
+                                                              Just destE -> do stmModify clDestinaries $ M.insert sID destE
+                                                                               pure True
+                                            Just destE -> if pk == _destKey destE then do stmWrite clDestinaries $ M.insert sID (over destPipes (pIDs++) destE) destMod
+                                                                                          when (null $ _destPipes destE) $ killTimer (_destTimer destE) 
+                                                                                          pure True
+                                                                                  else do logM "Client.Destinary" "destinaryOnRequest" InvalidPacket "Request from known source with mismatching key!"
+                                                                                          pure False
 
 
 
@@ -55,6 +53,9 @@ newDestinaryEntry :: SourceID -> PubKey -> [PipeID] -> WeedMonad (Maybe Destinar
 newDestinaryEntry sID sk pIDs = do uk <- snd . clKeyPair <$> getClient
                                    case genPipeKeys sk uk of
                                         Nothing -> logM "Client.Destinary" "newDestinaryEntry" Error "Unable to generate DH-secret from keys" >> pure Nothing
-                                        Just pipeKP -> Just <$> ( DestinaryEntry pIDs pipeKP sk <$> createTimerEntry <*> newComModule sID )
+                                        Just pipeKP -> Just <$> ( DestinaryEntry pIDs pipeKP sk <$> timer <*> newComModule sID )
+    where timer = if null pIDs then createTimer destinaryTimeOut removeDestinary
+                  else createTimerEntry
+          removeDestinary = stmModify clDestinaries $ M.delete sID
 
 

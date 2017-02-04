@@ -38,7 +38,7 @@ onLocalRequest :: UserID -> Request -> WeedMonad ()
 onLocalRequest prev req = do locMap <- stmRead clLocalPipes
                              case pID `M.lookup` locMap of
                                     Just _ -> logM "Client.Pipes" "onLocalRequest" InvalidPacket "Request for an already used pipeID"
-                                    Nothing -> do b <- destinaryOnRequest req
+                                    Nothing -> do b <- destinaryInsertPipes (_reqSourceKey req) (last $ _reqRoad req) [pID]
                                                   if b then do timer <- createTimer pipeTimeOut (void $ removeLocalPipe pID)
                                                                addLocalPipe False timer prev req
                                                                logM "Client.Pipes" "onLocalRequest" Normal ("New local pipe : " ++ show pID ++ " have been added.")

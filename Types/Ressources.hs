@@ -7,7 +7,11 @@ import Types.Packets
 
 type RessourcesMap = M.Map RessourceID RessourceEntry
 
-data RessourceEntry = RessourceEntry --TODO
+data RessourceEntry = RessourceOffered {ressourceAnswerContent :: RawData,
+                                        ressourceTilt :: Bool} |
+                      RessourceRelayed {ressourceSources :: M.Map SourceID TimerEntry,
+                                        ressourceTilt :: Bool}
+                    
 
 
 
