@@ -2,12 +2,12 @@
 module Types.Graph.RoadGraph where
 import           Control.Lens
 import           Control.Monad
-import qualified Data.Map.Strict as M
+import           Data.Binary
+import qualified Data.Map.Strict  as M
 import           Data.Maybe
 import           Data.Monoid
 import           Types.Graph.Type
 import           Types.Packets
-import Data.Binary
 
 {-| Détails d'un pipe passant par un noeud |-}
 data PipeType = Local | Relayed
@@ -21,9 +21,6 @@ data PipeNode = PipeNode {_previous :: Maybe VertexID,
 
 data VertexPipes = VertexPipes {_vPipes   :: M.Map PipeID PipeNode}
 data VertexT = VertexT {_pipesT :: VertexPipes}
-
-me :: VertexID
-me = VertexID (encode (1 ::Int)) -- TODO!!!
 
 makeLenses ''VertexPipes
 makeLenses ''VertexT
@@ -153,9 +150,9 @@ getPipeRoad :: PipeID -> VertexID -> RoadGraph -> [(VertexID,VertexT)]
 getPipeRoad pID vID g = prevsOnPipe pID vID g ++ nextsOnPipe pID vID g
 
 {-| Insère le pipe sur la route spécifiée|-}
-insertPipe :: PipeType -> PipeID -> [VertexID] -> RoadGraph -> RoadGraph
-insertPipe _ _ [] g = g
-insertPipe pipeType pipeID road g = addRoad src ((\ (vID,vT) -> ((vID,mempty),vT)) <$> verticesT) g
+insertPipe :: VertexID -> PipeType -> PipeID -> [VertexID] -> RoadGraph -> RoadGraph
+insertPipe _ _ _ [] g = g
+insertPipe me pipeType pipeID road g = addRoad src ((\ (vID,vT) -> ((vID,mempty),vT)) <$> verticesT) g
   where road' = zip computeDirections $ buildRoad road
         -- Détermine les positions et les directions relativement à moi
         computeDirections = let (nxt,prev) = break ((== me) . snd) $ zip [0..] road -- numérotation des sommets et séparation des portions avant et après moi
