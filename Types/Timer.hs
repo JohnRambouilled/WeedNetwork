@@ -1,9 +1,19 @@
+{-# LANGUAGE TemplateHaskell   #-}
 module Types.Timer where
 import Types.Packets
 
-import Control.Concurrent.STM.TMVar
+import Control.Concurrent.STM
 import Control.Concurrent
 
-data TimerEntry = TimerEntry 
+import Control.Lens
+
+type TimerEntry = TVar TimerEntry'
+
+data TimerEntry' = TimerEntry' {_timerThreadID :: Maybe ThreadId,
+                                _timerDelay :: Time,
+                                _timerAction :: IO ()}
+
+
+makeLenses ''TimerEntry'
 
 

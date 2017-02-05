@@ -20,7 +20,6 @@ type WeedMonad = WriterT WeedOrders (ReaderT Client STM)  -- One monad to rule t
 
 type WeedOrders = [WeedOrder]
 data WeedOrder = WeedLog Log |
-                 WeedCreateTimer TimerEntry Time IOAction |
                  WeedPerformIO IOAction
 type IOAction = IO ()
 
@@ -46,4 +45,10 @@ data Log = Log { logModule :: String,
 
 data LogStatus = InvalidPacket | Normal | Fail | Error
 
+instance Show LogStatus where show InvalidPacket = " # Invalid Packet # -> "
+                              show Normal =        " # Normal         # -> "
+                              show Fail =          " # Fail           # -> "
+                              show Error =         " # Error          # -> "
+
+instance Show Log where show (Log mod fun stat mes) = show stat ++ "[" ++ mod ++ ":" ++ fun ++ "]  >> " ++ mes
 

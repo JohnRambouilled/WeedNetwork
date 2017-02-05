@@ -25,12 +25,12 @@ onAnswer ans = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRead 
                   case checkAnswer uID t ans of
                         Left s -> logM "Client.Ressource" "onAnswer" InvalidPacket s
                         Right rel -> case M.lookup rID resMap of
-                                        Just (RessourceResearched m t b) -> unless' b $ do newResearchedAnswer ans 
+                                        Just (RessourceResearched m t _) -> unless' t $ do newResearchedAnswer ans 
                                                                                            tiltAnswer rID
                                                                                            relayAnswer ans
                                         _ -> pure ()
     where rID = view (ansCert . cResID) ans
-          unless' t = unless (_resTiltAns t)
+          unless' = unless . view tiltOn
                     
 
 newResearchedAnswer :: Answer -> WeedMonad ()
@@ -47,21 +47,23 @@ onResearch res = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRea
                     case checkResearch uID res of
                         Left s -> logM "Client.Ressource" "onResearch" InvalidPacket s
                         Right rel -> case M.lookup rID resMap of
-                                        Nothing -> do stmModify clRessources =<< (M.insert rID <$> newRessourceResearched rID [] (RessourceTilt False True) )
+                                        Nothing -> do stmModify clRessources =<< (M.insert rID <$> newRessourceResearched rID []  )
+                                                      tiltResearch rID
                                                       logM "Client.Ressource" "onRessearch" Normal $ "New ressource researched : " ++ show rID 
                                                       when rel $ relayResearch res
-                                        Just (RessourceOffered c t b) -> unless' b $ do logM "Client.Ressource" "onRessearch" Normal $ "Sending answer for Ressource : " ++ show rID 
+                                        Just (RessourceOffered c _ t) -> unless' t $ do logM "Client.Ressource" "onRessearch" Normal $ "Sending answer for Ressource : " ++ show rID 
                                                                                         sendAnswer rID answerValidity answerMaxTTL c
                                                                                         tiltResearch rID
-                                        Just (RessourceResearched map t b) -> unless' b $ tiltResearch rID >> if M.null map then relayResearch res
+                                        Just (RessourceResearched map _ t) -> unless' t $ tiltResearch rID >> if M.null map then relayResearch res
                                                                                                               else sendRemoteAnswer rID $ M.keys map
-    where unless' t = unless (_resTiltRes t)
+    where unless' = unless . view tiltOn 
           rID = _resID res
 
 
 -- | Lookup in the graph to find roads leading to the given sources, and send an answer for the specified ressource
 sendRemoteAnswer :: RessourceID -> [SourceID] -> WeedMonad () 
 sendRemoteAnswer rID sIDs = undefined  -- [TODO]
+
 
 
 tiltAnswer :: RessourceID -> WeedMonad ()
@@ -72,19 +74,21 @@ tiltResearch = tilt True
 
 tilt :: Bool -> RessourceID -> WeedMonad ()
 tilt isRes rID = do m <- stmRead clRessources
-                    case M.lookup rID m of Nothing -> logM "Client.Ressource" "tiltRessource" Error "Tried to tilt an absent ressource."
-                                           Just e -> do startTimer (_ressourceTimer e) ressourceEntryTiltTime $ setF False
-                                                        setF True
-    where accessor = ressourceTilt . (if isRes then resTiltRes else resTiltAns)
-          setF b = stmModify clRessources $ M.adjust (set accessor b) rID
-                
+                    case view (accessor isRes) <$> M.lookup rID m of 
+                        Nothing -> logM "Client.Ressource" "tiltRessource" Error "Tried to tilt an absent ressource."
+                        Just e -> if _tiltOn e then logM "Client.Ressource" "tiltRessource" Error "Tilt was already on"
+                                  else startTimer (_tiltTimer e) >> setOn
+    where accessor i = if i then researchTilt else answerTilt
+          setOn = stmModify clRessources $ M.adjust (set (accessor isRes . tiltOn) True) rID
 
-newRessourceResearched :: RessourceID -> [SourceID] -> RessourceTilt -> WeedMonad RessourceEntry
-newRessourceResearched rID sL (RessourceTilt a r) = do res <- RessourceResearched <$> (M.fromList <$> mapM newSource sL) <*> createTimerEntry <*> pure (RessourceTilt False False)
-                                                       when a $ tiltAnswer rID 
-                                                       when r $ tiltResearch rID
-                                                       pure res
-    where newSource sID = (,) sID <$> createTimerEntry
+
+
+newRessourceResearched :: RessourceID -> [SourceID] -> WeedMonad RessourceEntry
+newRessourceResearched rID sL = RessourceResearched <$> (M.fromList <$> mapM newSource sL) <*> newTilt answerTilt <*> newTilt researchTilt
+    where newSource sID = (,) sID <$> newTimerEntry_
+          newTilt l = RessourceTilt False <$> timer l
+          timer l = newTimerEntry ressourceEntryTiltTime $ setOff l 
+          setOff l = stmModify clRessources $ M.adjust (set (l . tiltOn) False) rID
 
 
 checkResearch :: UserID -> Research -> Either String Bool

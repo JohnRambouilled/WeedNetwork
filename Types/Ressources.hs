@@ -12,15 +12,16 @@ import Control.Lens
 
 type RessourcesMap = M.Map RessourceID RessourceEntry
 
-data RessourceTilt = RessourceTilt {_resTiltAns :: Bool, _resTiltRes :: Bool}
+data RessourceTilt = RessourceTilt {_tiltOn :: Bool,
+                                    _tiltTimer :: TimerEntry}
+                                    
 
 data RessourceEntry = RessourceOffered {_ressourceAnswerContent :: RawData,
-                                        _ressourceTimer :: TimerEntry, 
-                                        _ressourceTilt :: RessourceTilt} |
+                                        _answerTilt :: RessourceTilt,
+                                        _researchTilt :: RessourceTilt} |
                       RessourceResearched {_ressourceSources :: M.Map SourceID TimerEntry,
-                                           _ressourceTimer :: TimerEntry, 
-                                           _ressourceTilt :: RessourceTilt}
-
+                                        _answerTilt :: RessourceTilt,
+                                        _researchTilt :: RessourceTilt} 
 
 makeLenses ''RessourceTilt
 makeLenses ''RessourceEntry
