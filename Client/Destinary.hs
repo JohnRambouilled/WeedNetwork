@@ -17,15 +17,13 @@ destinaryTimeOut = 60 :: Time
 
 
 
--- |  Remove a pipe in the destinary pipeMap. If it is the only pipe leading to that source, it start the timeOut timer wich will delete the destinary entry after destinaryTimeOut.
+-- |  Remove a pipe in the destinary pipeMap. If it is the only pipe leading to that source, it start the timeOut timer.
 destinaryRemovePipe :: UserID -> PipeID -> WeedMonad ()
 destinaryRemovePipe sID pID = do destMod <- stmRead clDestinaries
                                  case sID `M.lookup` destMod of
                                     Nothing -> logM "Client.Destinary" "destinaryRemovePipe" Error "Attempted to remove a pipe from a non-existing source" >> pure ()
                                     Just e -> do stmWrite clDestinaries $ M.insert sID (over destPipes (filter (==pID)) e) destMod
-                                                 when (_destPipes e == [pID]) $ startDestinaryTimer (_destTimer e)
-    where startDestinaryTimer t  = startTimer t destinaryTimeOut removeDestinary
-          removeDestinary = stmModify clDestinaries $ M.delete sID
+                                                 when (_destPipes e == [pID]) $ startTimer (_destTimer e)
 
 
 
@@ -49,13 +47,16 @@ destinaryInsertPipes pk sID pIDs = do destMod <- stmRead clDestinaries
 
 
 -- | Forges a new destinaryEntry from the sourceID and public key of the source, and a list of pipes.
+-- | also configure the timer entry to wait for destinaryTimeOut, and then remove the entry from the map.
+-- | if no pipes are provided, start the timer. 
 newDestinaryEntry :: SourceID -> PubKey -> [PipeID] -> WeedMonad (Maybe DestinaryEntry)
 newDestinaryEntry sID sk pIDs = do uk <- snd . clKeyPair <$> getClient
                                    case genPipeKeys sk uk of
                                         Nothing -> logM "Client.Destinary" "newDestinaryEntry" Error "Unable to generate DH-secret from keys" >> pure Nothing
                                         Just pipeKP -> Just <$> ( DestinaryEntry pIDs pipeKP sk <$> timer <*> newComModule sID )
-    where timer = if null pIDs then createTimer destinaryTimeOut removeDestinary
-                  else createTimerEntry
+    where timer = do e <- newTimerEntry destinaryTimeOut removeDestinary
+                     when (null pIDs) $ startTimer e
+                     pure e
           removeDestinary = stmModify clDestinaries $ M.delete sID
 
 
