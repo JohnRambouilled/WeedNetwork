@@ -29,7 +29,7 @@ instance Monoid VertexPipes where
   v1 `mappend` v2 = over vPipes (<> _vPipes v2) v1
 instance Monoid VertexT where
   mempty = VertexT mempty
-  vT1 `mappend` vT2 = over pipesT (<> _pipesT vT2) vT1
+  vT1 `mappend` vT2@(VertexT _) = over pipesT (<> _pipesT vT2) vT1
 
 data EdgeT = EdgeT
 instance Monoid EdgeT where
