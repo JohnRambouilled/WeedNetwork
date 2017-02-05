@@ -1,18 +1,20 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes       #-}
 {-# LANGUAGE TemplateHaskell  #-}
+{-# LANGUAGE UnicodeSyntax    #-}
 module Types.Graph.Search where
 
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.State
 import           Data.List
-import qualified Data.Map.Strict     as M
+import qualified Data.Map.Strict       as M
 import           Data.Maybe
+import           System.Random
 import           Types.Graph.RoadGraph
 import           Types.Graph.Type
-import           System.Random
-data Searcher = Searcher {_currentID     :: VertexID,
+data Searcher = Searcher {_me            ∷ VertexID,
+                          _currentID     :: VertexID,
                           _currentVal    :: VertexT,
                           _currentNeighs :: Edges EdgeT,
                           _seen          :: [(VertexID,VertexT)]}
@@ -20,6 +22,13 @@ data Searcher = Searcher {_currentID     :: VertexID,
 makeLenses ''Searcher
 
 type SearcherT m x = (MonadIO m) => StateT Searcher m x
+
+searchRoad me targetID depth g = runStateT (moveTo g targetID >> randomWalkToMe g depth) dummySearcher
+  where dummySearcher = Searcher me targetID mempty mempty mempty
+searchRoad' ∷ (MonadIO m) ⇒ VertexID → VertexID → VertexT → Edges EdgeT → Int → RoadGraph → m (Maybe [(VertexID,VertexT)])
+searchRoad' me target targetT neighs depth g = do
+  r ← runStateT (randomWalkToMe g depth) $ Searcher me target targetT neighs [(target,targetT)]
+  if fst r then pure $ Just $ _seen $ snd r else pure Nothing
 
 moveTo :: RoadGraph -> VertexID  -> SearcherT m ()
 moveTo g vID
@@ -41,19 +50,18 @@ moveTo g vID
 
     Ajouter un algo de colonies de fourmis ??? [TODO]
 
-    ATTENTION: Les
+
 |-}
 randomWalkToMe :: RoadGraph -> Int -> SearcherT m Bool
 randomWalkToMe g maxLen = do
-          (posID,localPipes) <- (,) <$> use currentID <*> use (currentVal . pipesT . vPipes)
+          (me,posID,localPipes) ← (,,) <$> use me <*> use currentID <*> use (currentVal . pipesT . vPipes)
           if posID == me then pure True -- On a trouvé la destination, on s'arrête
             else if maxLen <= 0 then pure False -- si la route est trop longue, on stop l'exploration
-            else if not $ null localPipes then do -- s'il y a des pipes passant par ce sommet, je regarde le plus proche de moi
+            else if not $  null localPipes then do -- s'il y a des pipes passant par ce sommet, je regarde le plus proche de moi
                     let nearest = minimumBy (\pipe1 pipe2 -> _pathLen (snd pipe1) `compare` _pathLen (snd pipe2)) $ M.toList localPipes
                     if _pathLen (snd nearest) > maxLen
                       then moveToRandomNeighbour -- Si le plus proche des pipes est trop loin, je continue la marche aléatoire
-                      else do --walkOnPipe nearest -- Sinon, j'emprunte le pipe
-                              foldNearestM (fst nearest) (\vID vT _ -> currentID .= vID >> currentVal .= vT)  posID () g
+                      else do walkOnPipe nearest -- Sinon, j'emprunte le pipe
                               pure True
                     pure False
             else moveToRandomNeighbour -- S'il n'y a pas de pipes passant par ici, je poursuis la marche aléatoire.
@@ -70,7 +78,7 @@ randomWalkToMe g maxLen = do
           randomWalkToMe g (maxLen - 1)
         -- Progresse le long d'un pipe jusqu'à moi
         walkOnPipe (pipeID,(PipeNode prevM nextM _ dir _)) = do
-          posID <- use currentID
+          (me,posID) <- (,) <$> use me <*> use currentID
           if posID == me then pure True
             else case dir of
               NextD -> do moveTo g (fromJust nextM)
