@@ -17,8 +17,6 @@ import           Data.Functor
 import qualified Data.Map              as M
 import           GHC.Generics
 
-neighTimeOut = 15 :: Time
-neighRepeatTime = 1 :: Time
 
 
 data NeighDestinary = Broadcast | UserDest KeyHash

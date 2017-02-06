@@ -5,7 +5,8 @@ import Packets
 import Client.Crypto
 import Client.Timer
 import Client.Pipes
-import Client.Ressoures
+import Client.Ressource
+import Client.WeedMonad
 
 
 import Control.Monad
@@ -14,32 +15,41 @@ import Control.Concurrent.STM
 import Control.Lens
 import qualified Data.Map as M
 
-neighTimeOut 
+neighTimeOut = 10 :: Time 
 
--- Regarde si le voisin est connu, si oui vérifie la signature du paquet 
+-- | Regarde si le voisin est connu, si oui vérifie la signature du paquet 
+-- | et appelle le bon callback sur le packet.
 onNeighData ::  NeighData -> WeedMonad ()
 onNeighData neighdata = do nMod <- stmRead clNeighbours
                            case neighID `M.lookup` nMod of
-    where neighID = neighDKeyID neighdata
-          managePacket entry = if checkSig (neighPubKey entry) neighdata then Just neighData else Nothing 
+                                Nothing -> logM "Client.Neighbours" "onNeighData" InvalidPacket "Message received from unknown neighbours"
+                                Just e -> if checkSig (_neighPubKey e) neighdata then onLayer2 neighID $ _neighDContent neighdata
+                                          else logM "Client.Neighbours" "onNeighData" InvalidPacket "Invalid signature"
+    where neighID = view neighDSource neighdata
+
+onLayer2 :: UserID -> L2 -> WeedMonad ()
+onLayer2 sID (L2Request req) = onRequest sID req
+onLayer2 _ (L2Research res) = onResearch res
+onLayer2 _ (L2Answer ans) = onAnswer ans
 
 -- | Check the packet validity, and add the neighbours if it is unknown.
 -- | If the neighbours is already present in the map, refresh the corresponding timer.
-onNeighIntro ::  NeighIntro -> WeedMonad Bool
-onNeighIntro neighbourMod intro
-    | not $ checkNeighIntro intro = pure False
+onNeighIntro ::  NeighIntro -> WeedMonad ()
+onNeighIntro intro
+    | not $ checkNeighIntro intro = logM "CLient.Neighbours" "onNeighIntro" InvalidPacket "Invalid signature"
     | otherwise = do nMap <- stmRead clNeighbours
                      case neighID `M.lookup` nMap of
-                        Nothing -> stmModify clNeighbours . M.insert neighID (_neighIPubKey intro) =<< timer
+                        Nothing -> stmModify clNeighbours .  M.insert neighID . NeighEntry neighID (_neighIPubKey intro) =<< timer
                         Just e -> refreshTimer (_neighTimerEntry e)
-    where neighID = neighIKeyID intro
-          timer = newTimerEntry neighTimeOut $ removeNeighbourg neighID
+    where neighID = view neighISource intro
+          timer = newTimerEntry neighTimeOut $ removeNeighbour neighID
 
 
-removeNeighbour
+removeNeighbour :: UserID -> WeedMonad ()
+removeNeighbour uID = stmModify clNeighbours $ M.delete uID
 
 checkNeighIntro :: NeighIntro -> Bool
-checkNeighIntro intro = checkSig pubkey intro && computeHashFromKey pubkey == neighIKeyID intro
+checkNeighIntro intro = checkSig pubkey intro && computeHashFromKey pubkey == _neighISource intro
     where pubkey = view neighIPubKey intro
 
 

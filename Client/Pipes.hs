@@ -62,7 +62,8 @@ removeLocalPipe pID = do locMap <- stmRead clLocalPipes
 
 addLocalPipe :: Bool -> TimerEntry -> UserID -> Request -> WeedMonad ()
 addLocalPipe out tE prev req = do stmModify clLocalPipes $ M.insert pID entry
-                                  stmModify clGraph $ insertPipe Local pID (map keyHash2VertexID $ reverse r)
+                                  uVertex <- keyHash2VertexID . clUserID <$> getClient 
+                                  stmModify clGraph $ insertPipe uVertex Local pID (map keyHash2VertexID $ reverse r)
         where pID = _reqPipeID req
               r = _reqRoad req
               entry = LocalPipeEntry prev tE out (computeHashFromKey $ _reqSourceKey req)
@@ -84,7 +85,8 @@ onRelayedRequest prev next req = do relMap <- stmRead clRelayedPipes
 
 addRelayedPipe :: TimerEntry -> UserID -> UserID -> Request -> WeedMonad ()
 addRelayedPipe tE prev next req = do stmModify clRelayedPipes $ M.insert pID entry
-                                     stmModify clGraph $ insertPipe Relayed pID (map keyHash2VertexID $ reverse r)
+                                     uVertex <- keyHash2VertexID . clUserID <$> getClient 
+                                     stmModify clGraph $ insertPipe uVertex Relayed pID (map keyHash2VertexID $ reverse r)
         where pID = _reqPipeID req
               r = _reqRoad req
               entry = RelayedPipeEntry (_reqPipeKey req) prev next tE
