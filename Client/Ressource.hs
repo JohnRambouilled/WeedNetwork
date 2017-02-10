@@ -17,8 +17,6 @@ ressourceEntryTiltTime = 3 :: Time
 answerValidity = 15 :: Time
 
 
-newResearchedAnswer :: Answer -> WeedMonad ()
-newResearchedAnswer = undefined
 
 
 onAnswer :: Answer -> WeedMonad ()
@@ -35,6 +33,8 @@ onAnswer ans = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRead 
           unless' = unless . view tiltOn
                     
 
+newResearchedAnswer :: Answer -> WeedMonad ()
+newResearchedAnswer = undefined
 
 
 -- | Check the research, and manages it : 
