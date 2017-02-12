@@ -28,9 +28,9 @@ type Sender = RawData -> WeedMonad ()
 
 data Client = Client { clUserID :: UserID,
                        clKeyPair :: KeyPair,
+                       clSender :: Sender,
                        clTime :: TVar Time, -- Should be updated before each call... 
                        clRndGen :: TVar StdGen,
-                       clSender :: Sender,
                        clGraph :: TVar RoadGraph,
                        clRelayedPipes :: TVar RelayedPipesMap,
                        clLocalPipes :: TVar LocalPipeMap,
