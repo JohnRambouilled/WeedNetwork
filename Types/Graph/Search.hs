@@ -13,6 +13,7 @@ import           Data.Maybe
 import           System.Random
 import           Types.Graph.RoadGraph
 import           Types.Graph.Type
+import           Types.Random
 data Searcher = Searcher {_me            ∷ VertexID,
                           _currentID     :: VertexID,
                           _currentVal    :: VertexT,
@@ -21,11 +22,14 @@ data Searcher = Searcher {_me            ∷ VertexID,
 
 makeLenses ''Searcher
 
-type SearcherT m x = (MonadIO m) => StateT Searcher m x
+type SearcherT m x = (MonadRandom m) => StateT Searcher m x
 
+searchRoad
+  :: MonadRandom m =>
+     VertexID -> VertexID -> Int -> RoadGraph -> m (Bool, Searcher)
 searchRoad me targetID depth g = runStateT (moveTo g targetID >> randomWalkToMe g depth) dummySearcher
   where dummySearcher = Searcher me targetID mempty mempty mempty
-searchRoad' ∷ (MonadIO m) ⇒ VertexID → VertexID → VertexT → Edges EdgeT → Int → RoadGraph → m (Maybe [(VertexID,VertexT)])
+searchRoad' ∷ (MonadRandom m) ⇒ VertexID → VertexID → VertexT → Edges EdgeT → Int → RoadGraph → m (Maybe [(VertexID,VertexT)])
 searchRoad' me target targetT neighs depth g = do
   r ← runStateT (randomWalkToMe g depth) $ Searcher me target targetT neighs [(target,targetT)]
   if fst r then pure $ Just $ _seen $ snd r else pure Nothing
@@ -70,7 +74,7 @@ randomWalkToMe g maxLen = do
         randomNeighbour = do
           seen <- map fst <$> use seen
           neighs <- M.filterWithKey (\vID _ -> not $ vID `elem` seen) . _eMap <$> use currentNeighs -- On considère un voisin que l'on n'a pas déjà visité
-          r <- liftIO $ randomRIO (0,M.size neighs-1)
+          r <- getRandomInt (0,M.size neighs-1)
           pure $ M.elemAt r neighs
         moveToRandomNeighbour = do
           (nxtID,_) <- randomNeighbour
