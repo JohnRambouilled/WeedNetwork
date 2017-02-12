@@ -1,9 +1,10 @@
-module Types.Random where
+module Types.Random (StdGen, module Types.Random) where
 import           Control.Lens
 import           Control.Monad.Reader
 import           Control.Monad.State
 import           Control.Monad.Writer
 import           System.Random
+
 
 class (Monad m) => MonadRandom m where
   putStdGen :: StdGen -> m ()

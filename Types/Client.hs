@@ -5,6 +5,7 @@ import Types.Pipes
 import Types.Timer
 import Types.Packets
 import Types.Crypto
+import Types.Random
 import Types.Destinaries
 import Types.Ressources
 import Types.Protocol
@@ -28,6 +29,7 @@ type Sender = RawData -> WeedMonad ()
 data Client = Client { clUserID :: UserID,
                        clKeyPair :: KeyPair,
                        clTime :: TVar Time, -- Should be updated before each call... 
+                       clRndGen :: TVar StdGen,
                        clSender :: Sender,
                        clGraph :: TVar RoadGraph,
                        clRelayedPipes :: TVar RelayedPipesMap,

@@ -1,5 +1,6 @@
 module Types (
               module Types.Crypto,
+              module Types.Random,
               module Types.Packets,
               module Types.Timer,
               module Types.Graph,
@@ -15,6 +16,7 @@ where
 
 
 import Types.Crypto
+import Types.Random
 import Types.Packets
 import Types.Timer
 import Types.Graph
