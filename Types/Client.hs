@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 module Types.Client where
 
 import Types.Neighbours
@@ -16,10 +17,13 @@ import Control.Concurrent.STM (TVar)
 import Control.Monad.STM
 import Control.Monad.Writer
 import Control.Monad.Reader
+import GHC.Generics
 
-type WeedMonad = WriterT WeedOrders (ReaderT Client STM)  -- One monad to rule them all... Keep it simple?
+newtype WeedMonad a = WeedMonad {runWeedMonad :: WriterT WeedOrders (ReaderT Client STM) a}  -- One monad to rule them all... Keep it simple?
+              deriving Generic
 
-type WeedOrders = [WeedOrder]
+newtype WeedOrders = WeedOrders {runWeedOrders :: [WeedOrder] }
+              deriving Generic
 data WeedOrder = WeedLog Log |
                  WeedPerformIO IOAction
 type IOAction = IO ()
@@ -54,3 +58,9 @@ instance Show LogStatus where show InvalidPacket = " # Invalid Packet # -> "
 
 instance Show Log where show (Log mod fun stat mes) = show stat ++ "[" ++ mod ++ ":" ++ fun ++ "]  >> " ++ mes
 
+                        
+instance Functor WeedMonad
+instance Applicative WeedMonad
+instance Monad WeedMonad
+instance Monoid WeedOrders
+                       

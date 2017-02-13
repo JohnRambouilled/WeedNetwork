@@ -9,6 +9,8 @@ import Client.Sender
 import Client.Pipes
 --import Types.Graph.RoadGraph
 import Types.Graph.Type
+import Types.Graph.Search
+
 
 import Data.Ord
 import Data.List
@@ -21,6 +23,7 @@ researchMaxTTL = 10 :: TTL
 answerMaxTTL = 10 :: TTL
 ressourceEntryTiltTime = 3 :: Time
 answerValidity = 15 :: Time
+answerRoadSearchDepth = 10 :: Int
 
 
 
@@ -73,13 +76,15 @@ onResearch res = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRea
 sendRemoteAnswer :: RessourceID -> [SourceID] -> WeedMonad () 
 sendRemoteAnswer rID sIDs = do me <- keyHash2VertexID . clUserID <$> getClient
                                t <- getTime
-                               roads <- map (map vertexID2KeyHash) . catMaybes <$> forM sIDs (search me)
+                               roads <- map (map vertexID2KeyHash) . catMaybes <$> forM sIDs (search me . keyHash2VertexID)
                                mapM_ (sendAns t) $ choose roads
-   where search me dest = undefined :: WeedMonad (Maybe [VertexID])
+   where search :: VertexID ->  VertexID -> WeedMonad (Maybe [VertexID])
+         search me dest = fmap (map fst) <$> (searchRoad me dest answerRoadSearchDepth =<< stmRead clGraph)
          sendAns t r = sendAnswer rID t answerMaxTTL emptyPayload
          choose x | null x = []
                   | otherwise = minimumBy (comparing length)$ x
 
+ 
 
 vertexID2KeyHash :: VertexID -> UserID
 vertexID2KeyHash (VertexID u) = KeyHash u 
