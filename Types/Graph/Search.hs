@@ -23,12 +23,16 @@ data Searcher = Searcher {_me            ∷ VertexID,
 makeLenses ''Searcher
 
 type SearcherT m x = (MonadRandom m) => StateT Searcher m x
-
 searchRoad
   :: MonadRandom m =>
-     VertexID -> VertexID -> Int -> RoadGraph -> m (Bool, Searcher)
-searchRoad me targetID depth g = runStateT (moveTo g targetID >> randomWalkToMe g depth) dummySearcher
-  where dummySearcher = Searcher me targetID mempty mempty mempty
+     VertexID  -- Me
+     -> VertexID -- TargetID
+     -> Int -- Depth
+     -> Graph VertexT EdgeT
+     -> m (Maybe [(VertexID, VertexT)])
+searchRoad me targetID depth g = case (M.lookup targetID (_vMap g)) of
+  Nothing               -> pure Nothing
+  Just (targetT,neighs) -> searchRoad' me targetID targetT neighs depth g
 searchRoad' ∷ (MonadRandom m) ⇒ VertexID → VertexID → VertexT → Edges EdgeT → Int → RoadGraph → m (Maybe [(VertexID,VertexT)])
 searchRoad' me target targetT neighs depth g = do
   r ← runStateT (randomWalkToMe g depth) $ Searcher me target targetT neighs [(target,targetT)]
