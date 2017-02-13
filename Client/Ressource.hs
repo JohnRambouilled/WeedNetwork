@@ -6,7 +6,13 @@ import Client.Crypto
 import Client.Timer
 import Client.WeedMonad
 import Client.Sender
+import Client.Pipes
+--import Types.Graph.RoadGraph
+import Types.Graph.Type
 
+import Data.Ord
+import Data.List
+import Data.Maybe
 import Control.Lens
 import Control.Monad
 import qualified Data.Map as M
@@ -34,7 +40,10 @@ onAnswer ans = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRead 
                     
 
 newResearchedAnswer :: Answer -> WeedMonad ()
-newResearchedAnswer = undefined
+newResearchedAnswer ans = do me <- keyHash2VertexID . clUserID <$> getClient
+                             stmModify clGraph . addRoad (me, mempty) $ map wrap (_ansRoad ans)
+   where wrap uID = ((keyHash2VertexID uID, mempty), mempty)
+                             
 
 
 -- | Check the research, and manages it : 
@@ -62,9 +71,18 @@ onResearch res = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRea
 
 -- | Lookup in the graph to find roads leading to the given sources, and send an answer for the specified ressource
 sendRemoteAnswer :: RessourceID -> [SourceID] -> WeedMonad () 
-sendRemoteAnswer rID sIDs = undefined  -- [TODO]
+sendRemoteAnswer rID sIDs = do me <- keyHash2VertexID . clUserID <$> getClient
+                               t <- getTime
+                               roads <- map (map vertexID2KeyHash) . catMaybes <$> forM sIDs (search me)
+                               mapM_ (sendAns t) $ choose roads
+   where search me dest = undefined :: WeedMonad (Maybe [VertexID])
+         sendAns t r = sendAnswer rID t answerMaxTTL emptyPayload
+         choose x | null x = []
+                  | otherwise = minimumBy (comparing length)$ x
 
 
+vertexID2KeyHash :: VertexID -> UserID
+vertexID2KeyHash (VertexID u) = KeyHash u 
 
 tiltAnswer :: RessourceID -> WeedMonad ()
 tiltAnswer = tilt False
