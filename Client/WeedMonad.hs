@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 module Client.WeedMonad where
 
 import Types
@@ -8,6 +10,10 @@ import Control.Monad.Writer
 import Control.Monad.Reader
 import Data.Time.Clock.POSIX
 
+
+instance MonadRandom WeedMonad where
+  putStdGen = stmWrite clRndGen
+  asksStdGen = stmRead clRndGen
 
 runWM' :: WeedMonad a -> WeedMonad (IO a)
 runWM' w = (flip runWM)  w <$> ask
