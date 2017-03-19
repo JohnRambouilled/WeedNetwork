@@ -3,28 +3,15 @@ module UI.ShowClient where
 
 import Prelude hiding (showList)
 
-import Reactive.Banana
-import Reactive.Banana.Frameworks
 import qualified Data.Map as M
 import Control.Monad
 import qualified Data.Array as A
 import Control.Concurrent
 import Control.Concurrent.MVar
-import Data.Tree
 
-import Routes.Core
-import Class
-import Routing
-import Ressource
-import Neighbors
-import Pipes
-import PipePackets
-import Client
-import Network
 import UI.App
 
 type Array = A.Array (Int,Int)
-type ShowModule = (String, Array (BananWriter (AddHandler String)) )
 
 launchApp :: ShowClient -> IO (MVar ())
 launchApp showC = myForkIO $ buildApp showC

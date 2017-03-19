@@ -48,6 +48,7 @@ data Client = Client { clUserID :: UserID,
 data Log = Log { logModule :: String,
                  logFunction :: String,
                  logStatus :: LogStatus,
+                 logtime :: Time,
                  logMessage :: String}
 
 data LogStatus = InvalidPacket | Normal | Fail | Error
@@ -57,7 +58,7 @@ instance Show LogStatus where show InvalidPacket = " # Invalid Packet # -> "
                               show Fail =          " # Fail           # -> "
                               show Error =         " # Error          # -> "
 
-instance Show Log where show (Log mod fun stat mes) = show stat ++ "[" ++ mod ++ ":" ++ fun ++ "]  >> " ++ mes
+instance Show Log where show (Log mod fun stat time mes) = show time ++ " - " ++ show stat ++ "[" ++ mod ++ ":" ++ fun ++ "]  >> " ++ mes
 
                         
 instance Functor WeedMonad     where fmap f (WeedMonad a) = WeedMonad (fmap f a)

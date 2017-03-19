@@ -33,7 +33,8 @@ onWeedOrders logH = mapM_ onWeedOrder . runWeedOrders
           onWeedOrder (WeedPerformIO a) = a
 
 logM :: String -> String -> LogStatus -> String -> WeedMonad ()
-logM s f l = tell . WeedLog . Log s f l
+logM s f l m = do t <- getTime
+                  tell . WeedLog $ Log s f l t m
 
 weedIO :: IOAction -> WeedMonad ()
 weedIO = tell. WeedPerformIO

@@ -9,8 +9,6 @@ import Data.Binary
 import Control.Lens
 import qualified Data.Map as M
 
-researchMaxTTL = 10 :: TTL
-
 type PipeSender = [PipePacketFlag] -> ComPacket -> WeedMonad ()
 
 genPipeSender :: PipeID -> WeedMonad (Maybe PipeSender)
@@ -64,8 +62,6 @@ sendAnswer rID val ttl d = do uk <- fst . clKeyPair <$> getClient
                                   ans = sign keys $ Answer cert ttl [uID] uID d
                               sendNeighData Broadcast $ L2Answer ans
                               
-sendSimpleResearch :: RessourceID -> WeedMonad ()
-sendSimpleResearch rID = sendResearch rID researchMaxTTL [] emptyPayload
   
 sendResearch :: RessourceID -> TTL -> Road -> RawData -> WeedMonad ()
 sendResearch rID ttl r d = sendNeighData dest $ L2Research res

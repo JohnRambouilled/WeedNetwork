@@ -26,6 +26,7 @@ ressourceEntryTiltTime = 3 :: Time
 answerValidity = 15 :: Time
 answerRoadSearchDepth = 10 :: Int
 ressourceSourceTimeOut = 60 :: Time
+researchMaxTTL = 10 :: TTL
 
 
 offerRessource :: RessourceID -> RawData -> WeedMonad ()
@@ -40,6 +41,22 @@ offerRessource rID d = do resMap <-  stmRead clRessources
         insertNewRessource = stmModify clRessources . M.insert rID =<< newRessourceOffered rID d
         killTilt = killTimer . _tiltTimer
 
+researchSimpleRessource :: RessourceID -> WeedMonad ()
+researchSimpleRessource rID = researchRessource rID researchMaxTTL [] emptyPayload
+  
+researchRessource :: RessourceID -> TTL -> Road -> RawData -> WeedMonad ()
+researchRessource rID ttl r d = do resMap <- stmRead clRessources
+                                   case rID `M.lookup` resMap of
+                                      Just (RessourceOffered _ _ _) -> do logM "Client.Ressource" "researchRessource" Error $ "call for a ressource already offered :  " ++ show rID
+                                      Just (RessourceResearched _ _ t) -> unless' t $ do tiltResearch rID
+                                                                                         sendResearch rID ttl r d
+                                      Nothing -> do e <- newRessourceResearched rID []
+                                                    stmModify clRessources $ M.insert rID e
+                                                    tiltResearch rID
+                                                    sendResearch rID ttl r d
+   where unless' = unless . view tiltOn                                   
+                                                    
+                                                    
 
 onAnswer :: Answer -> WeedMonad ()
 onAnswer ans = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRead clRessources
@@ -57,7 +74,7 @@ onAnswer ans = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRead 
 
 newResearchedAnswer :: M.Map SourceID TimerEntry -> Answer -> WeedMonad ()
 newResearchedAnswer m ans = do me <- keyHash2VertexID . clUserID <$> getClient
-                               logM "Client.Ressource" "newRessourceResearched" Normal "Answer for a researched answer received"
+                               logM "Client.Ressource" "newRessourceResearched" Normal $ "Answer for a researched ressource : " ++ show rID ++ " received from : " ++ show sourceID
                                t <- getTime
                                stmModify clGraph . addRoad (me, mempty) $ map (wrap t) (_ansRoad ans)
                                case sourceID `M.lookup` m of

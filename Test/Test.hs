@@ -20,7 +20,7 @@ testRessource = RessourceID $ encode "Some Dank Ressource"
 dualTestMain = do cl <- genTestGraph [[1],[0]]
                   runWM (head cl) $ offerRessource testRessource $ encode "Dankest Dankness ever Danked"
                   threadDelay (10^6)
-                  runWM (cl !! 1) $ sendSimpleResearch testRessource
+                  runWM (cl !! 1) $ researchSimpleRessource testRessource
                   
                   
 genTestGraph :: [[Int]] -> IO TestGraph

@@ -11,9 +11,9 @@ import Data.List
 
 import Control.Lens
 
-type ClientWidget = A.Array (Int,Int) Widget
+type ClientWidget = A.Array (Int,Int) (Widget String)
 
-buildClientWidget :: ClientWidget -> Widget
+buildClientWidget :: ClientWidget -> Widget String
 buildClientWidget cw = vBox [hBox [padAll 2 $ cw A.! (i,j) |j <- [1..nbCol]]  | i <- [1..nbLi]]
   where (_,(nbLi,nbCol)) = A.bounds cw
 
@@ -51,15 +51,15 @@ type ClientApp = App ClientUI UIEvent
 -}
 
 
-newClientApp :: App ClientUI UIEvent
+newClientApp :: App ClientUI UIEvent String
 newClientApp = App (\cui -> [drawCurrentWidget cui]) --(drawCurrentWidget cui : map fst ( A.elems (_cuiWidgets cui))))
                    (\_ _ -> Nothing)
                    eventHandler
-                   pure
-                   def
-                   UIKey
-    where eventHandler cui (UIKey (EvKey e _) ) = onUIKey cui e 
-          eventHandler cui (UIModifier modifier) = continue $ modifier cui
+                   pure 
+                   (\_ -> attrMap mempty [])
+    where eventHandler :: ClientUI -> BrickEvent String UIEvent -> EventM String (Next ClientUI)
+          eventHandler cui (AppEvent (UIKey (EvKey e _) ) ) = onUIKey cui e 
+          eventHandler cui (AppEvent (UIModifier modifier) ) = continue $ modifier cui
           eventHandler cui _ = continue cui
 
 
