@@ -44,7 +44,6 @@ offerRessource rID d = do resMap <-  stmRead clRessources
 onAnswer :: Answer -> WeedMonad ()
 onAnswer ans = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRead clRessources
                   t <- getTime
-                  logM "a" "b" Normal "new Answer"
                   case checkAnswer uID t ans of
                         Left s -> logM "Client.Ressource" "onAnswer" InvalidPacket s
                         Right rel -> case M.lookup rID resMap of
