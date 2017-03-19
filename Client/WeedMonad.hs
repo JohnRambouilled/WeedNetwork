@@ -16,8 +16,6 @@ instance MonadRandom WeedMonad where
   putStdGen = stmWrite clRndGen
   asksStdGen = stmRead clRndGen
 
-runWM' :: WeedMonad a -> WeedMonad (IO a)
-runWM' w = (flip runWM)  w <$> ask
 
 runWM :: Client -> WeedMonad a -> IO a
 runWM c w = do t <- getPOSIXTime
@@ -26,6 +24,8 @@ runWM c w = do t <- getPOSIXTime
                onWeedOrders l
                pure r
 
+runWM' :: WeedMonad a -> WeedMonad (IO a)
+runWM' w = (flip runWM)  w <$> ask
 
 onWeedOrders :: WeedOrders -> IO ()
 onWeedOrders = mapM_ onWeedOrder . runWeedOrders 
