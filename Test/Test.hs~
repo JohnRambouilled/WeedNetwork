@@ -1,0 +1,17 @@
+import Client
+import Types
+import Packet
+
+type TestGraph = M.Map Int Client
+
+
+
+genTestGraph :: [[Int]] -> IO TestGraph
+genTestGraph neighList = do tchans <- forM [1..n] $ newTChan
+                            cl <- forM (zip neighList [1..]) $ genClient tchans
+                            forM_ (zip cl tchans) $ \(c,t) -> forkIO (react c t)
+                            forM_ cl introduceThread
+                            pure . M.fromList $ zip cl [1..]
+  where n = length neighList
+        genClient (neighs, i) tchans = generateClient send
+          where send d = forM neighs $ \i -> writeTchan (tchans !! i) d

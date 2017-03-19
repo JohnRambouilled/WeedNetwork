@@ -7,11 +7,13 @@ import Client.Crypto
 import Client.Neighbours
 import Client.Pipes
 import Client.WeedMonad
+import Client.Sender
 
 import Control.Monad
 import Control.Concurrent.STM.TVar
 import Control.Concurrent.STM.TChan
 import System.Random
+import Data.Binary
 import Data.Time.Clock.POSIX
 import qualified Data.Map as M
 
@@ -37,7 +39,14 @@ onLayer1 (L1Data  ndata) = onNeighData  ndata
 onLayer1 (L1Pipe   pipe) = onPipePacket pipe
 
 
-react :: Client -> TChan L1 -> IO ()
+react :: Client -> TChan RawData -> IO ()
 react c inChan = forever $ runWM c action
-  where action = liftSTM (readTChan inChan) >>= onLayer1
+  where action = liftSTM (readTChan inChan) >>= onRawData
+        onRawData d = case decodeOrFail d of
+                        Left (_,_,s) -> logM "Client.Run" "react" Fail $ "Unable to decode packet : " ++ s
+                        Right (_,_,p) -> onLayer1 p
+
+introduceThread :: Client -> IO ()
+introduceThread c = forever $ runWM c sendNeighIntro
   
+
