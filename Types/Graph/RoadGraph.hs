@@ -9,6 +9,8 @@ import           Data.Monoid
 import           Types.Graph.Type
 import           Types.Packets
 
+minEdgeTTL = 120 -- [TODO] Durée avant que l'arc ne puisse timeout
+
 {-| Détails d'un pipe passant par un noeud |-}
 data PipeType = Local | Relayed
 data Direction = PrevD | NextD
@@ -168,4 +170,8 @@ deletePipe pipeID vID g = snd $ foldModifyPrevs pipeID delPipe vID () g1
   where delPipe _ vT _ = ((), deletePipeFromVertex pipeID vT)
         (_,g1) = foldModifyNexts pipeID delPipe vID () g
 
+{-| Supprime tous les sommets par lesquels aucun pipe ne passe et n'ayant aucun arc incident qui ne soit frais |-}
+cleanRoadGraph :: Time -> RoadGraph -> RoadGraph
+cleanRoadGraph cur = filterGraph f
+  where f _ vT (Edges edges) = (not $ M.null $ _vPipes (_pipesT vT)) || (or $ fmap (\e -> edgeUpTime e + minEdgeTTL <= cur) edges)
 
