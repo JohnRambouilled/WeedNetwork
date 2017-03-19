@@ -44,6 +44,7 @@ offerRessource rID d = do resMap <-  stmRead clRessources
 onAnswer :: Answer -> WeedMonad ()
 onAnswer ans = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRead clRessources
                   t <- getTime
+                  logM "a" "b" Normal "new Answer"
                   case checkAnswer uID t ans of
                         Left s -> logM "Client.Ressource" "onAnswer" InvalidPacket s
                         Right rel -> case M.lookup rID resMap of
@@ -57,6 +58,7 @@ onAnswer ans = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRead 
 
 newResearchedAnswer :: M.Map SourceID TimerEntry -> Answer -> WeedMonad ()
 newResearchedAnswer m ans = do me <- keyHash2VertexID . clUserID <$> getClient
+                               logM "Client.Ressource" "newRessourceResearched" Normal "Answer for a researched answer received"
                                t <- getTime
                                stmModify clGraph . addRoad (me, mempty) $ map (wrap t) (_ansRoad ans)
                                case sourceID `M.lookup` m of
@@ -126,7 +128,7 @@ tilt isRes rID = do m <- stmRead clRessources
     where accessor i = if i then researchTilt else answerTilt
           setOn = stmModify clRessources $ M.adjust (set (accessor isRes . tiltOn) True) rID
 
-newTilt :: RessourceID -> Lens RessourceEntry RessourceEntry RessourceTilt RessourceTilt -> WeedMonad RessourceTilt
+newTilt :: RessourceID -> Lens' RessourceEntry RessourceTilt -> WeedMonad RessourceTilt
 newTilt rID l = RessourceTilt False <$> timer l
   where timer l = newTimerEntry ressourceEntryTiltTime $ setOff l 
         setOff l = stmModify clRessources $ M.adjust (set (l . tiltOn) False) rID
@@ -151,7 +153,7 @@ checkAnswer me t ans@(Answer (RessourceCert pK ts val _ _) ttl r sID cnt)
             | ttl < 0 || ttl > answerMaxTTL = Left "Incorrect TTL"
             | me `Prelude.elem` r           = Left "Already in the road" 
             | t - ts > val                  = Left "Answer obsolete"
-            | computeHashFromKey pK /= sID   = Left "SourceID does not match PublicKey"
+            | computeHashFromKey pK /= sID  = Left "SourceID does not match PublicKey"
             | checkSig pK ans               = Right (ttl > 0)
             | otherwise                     = Left "Incorrect signature"
 

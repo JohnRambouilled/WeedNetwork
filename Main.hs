@@ -4,5 +4,5 @@ import Control.Concurrent
 import Control.Monad
   
 main :: IO ()
-main = do tg <- dualTestGraph
+main = do dualTestMain
           forever $ threadDelay (10^6)

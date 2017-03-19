@@ -15,7 +15,7 @@ import Control.Concurrent.STM
 import Control.Lens
 import qualified Data.Map as M
 
-neighTimeOut = 1 :: Time 
+neighTimeOut = 20 :: Time 
 
 -- | Regarde si le voisin est connu, si oui vérifie la signature du paquet 
 -- | et appelle le bon callback sur le packet.

@@ -59,8 +59,9 @@ sendAnswer :: RessourceID -> Time -> TTL -> RawData -> WeedMonad ()
 sendAnswer rID val ttl d = do uk <- fst . clKeyPair <$> getClient
                               uID <- clUserID <$> getClient
                               t <- getTime
+                              keys <- clKeyPair <$> getClient
                               let cert = RessourceCert uk t val rID emptySignature
-                                  ans = Answer cert ttl [uID] uID d
+                                  ans = sign keys $ Answer cert ttl [uID] uID d
                               sendNeighData Broadcast $ L2Answer ans
                               
 sendSimpleResearch :: RessourceID -> WeedMonad ()
