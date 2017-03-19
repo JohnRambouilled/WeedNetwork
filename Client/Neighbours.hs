@@ -15,7 +15,7 @@ import Control.Concurrent.STM
 import Control.Lens
 import qualified Data.Map as M
 
-neighTimeOut = 10 :: Time 
+neighTimeOut = 1 :: Time 
 
 -- | Regarde si le voisin est connu, si oui vérifie la signature du paquet 
 -- | et appelle le bon callback sur le packet.
@@ -40,15 +40,16 @@ onNeighIntro intro
     | otherwise = do nMap <- stmRead clNeighbours
                      case neighID `M.lookup` nMap of
                         Nothing -> do logM "Client.Neighbours" "onNeighIntro" Normal $ "New neighbour : " ++ show neighID
-                                      stmModify clNeighbours .  M.insert neighID . NeighEntry neighID (_neighIPubKey intro) =<< timer
+                                      stmModify clNeighbours . M.insert neighID . NeighEntry neighID (_neighIPubKey intro) =<< timer
                         Just e -> do logM "Client.Neighbours" "onNeighIntro" Normal $ "Refreshing known neighbour : " ++ show neighID
                                      refreshTimer (_neighTimerEntry e)
     where neighID = view neighISource intro
-          timer = newTimerEntry neighTimeOut $ removeNeighbour neighID
+          timer = newTimer neighTimeOut $ removeNeighbour neighID
 
 
 removeNeighbour :: UserID -> WeedMonad ()
-removeNeighbour uID = stmModify clNeighbours $ M.delete uID
+removeNeighbour uID = do stmModify clNeighbours $ M.delete uID
+                         logM "Client.Neighbours" "removeNeighbour" Normal $ "Neighbour removed : " ++ show uID
 
 checkNeighIntro :: NeighIntro -> Bool
 checkNeighIntro intro = checkSig pubkey intro && computeHashFromKey pubkey == _neighISource intro

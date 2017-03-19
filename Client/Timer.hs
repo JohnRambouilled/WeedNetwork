@@ -43,7 +43,7 @@ startTimer eV = killTimer' eV >>= weedIO . ioA
 newTimerEntry_ :: WeedMonad TimerEntry
 newTimerEntry_ = newTimerEntry 1 $ pure ()
 
-
+-- | Create a new TimerEntry with initial value for a delay and a WM action. Does NOT start the timer.
 newTimerEntry :: Time -> WeedMonad () -> WeedMonad TimerEntry
 newTimerEntry t a = newTimerEntryIO t =<< runWM' a
 

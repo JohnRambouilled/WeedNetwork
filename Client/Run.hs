@@ -19,7 +19,7 @@ import Data.Binary
 import Data.Time.Clock.POSIX
 import qualified Data.Map as M
 
-introduceDelay = 5 :: Time
+introduceDelay = 2 :: Time
 
 generateClient :: Sender -> IO Client
 generateClient send = do keys <- generateKeyPair
