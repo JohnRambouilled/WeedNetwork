@@ -52,7 +52,7 @@ relayPipePacket p e = do uID <- clUserID <$> getClient
                              dest = if source == prev then next
                                     else if source == next then prev
                                     else error "Relay pipe packet from a neighbourg absent from the pipe entry"
-                         sendRawPacket . set pipeSource uID $ set pipeDestinary dest p
+                         sendRawPacket . L1Pipe . set pipeSource uID $ set pipeDestinary dest p
 
 
 sendAnswer :: RessourceID -> Time -> TTL -> RawData -> WeedMonad ()
@@ -84,21 +84,24 @@ sendRequest r pk d = do t <- getTime
 
 sendPipePacket :: PipeKeyPair -> PipeID -> KeyHash -> [PipePacketFlag] -> RawData -> WeedMonad ()
 sendPipePacket pks id next flags datas = do c <- getClient
-                                            signAndSend $ PipePacket (clUserID c) next id flags emptySignature datas
+                                            p <- signPacket $ PipePacket (clUserID c) next id flags emptySignature datas
+                                            sendRawPacket $ L1Pipe p
 
 sendNeighData :: NeighDestinary -> L2 -> WeedMonad ()
 sendNeighData kH l2 = do c <- getClient
-                         signAndSend $ NeighData (clUserID c) kH l2 emptySignature 
+                         p <- signPacket $ NeighData (clUserID c) kH l2 emptySignature 
+                         sendRawPacket $ L1Data p
 
 sendNeighIntro :: WeedMonad ()
 sendNeighIntro = do c <- getClient 
-                    signAndSend $ NeighIntro (clUserID c) (fst $ clKeyPair c) emptySignature
+                    p <- signPacket $ NeighIntro (clUserID c) (fst $ clKeyPair c) emptySignature
+                    sendRawPacket $ L1Intro p
 
-signAndSend :: (SignedClass p, Binary p) => p -> WeedMonad ()
-signAndSend p = do c <- getClient
-                   sendRawPacket $ sign (clKeyPair c) p
+signPacket :: SignedClass p => p -> WeedMonad p
+signPacket p = do c <- getClient
+                  pure $ sign (clKeyPair c) p
 
-sendRawPacket :: Binary p => p -> WeedMonad ()
+sendRawPacket :: L1 -> WeedMonad ()
 sendRawPacket p = do c <- getClient
                      clSender c $ encode p
 

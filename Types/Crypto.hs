@@ -31,7 +31,6 @@ type Payload = RawData
 emptyPayload = B.empty :: Payload
 type Hash = RawData
 newtype KeyHash = KeyHash RawData deriving (Eq, Ord, Generic)
---newtype PipeKeyHash = PipeKeyHash RawData deriving (Eq, Ord, Generic)
 type Signature = S.Signature
 emptySignature :: S.Signature
 emptySignature = throwCryptoError . S.signature $ BStrct.replicate 64 0 
@@ -59,7 +58,7 @@ class SignedClass a => IntroClass a where icPubKey :: a -> PubKey
 
 instance Binary PipePubKey
 instance Binary PubKey
-instance Show KeyHash where show (KeyHash d) = prettyPrint d
+instance Show KeyHash where show (KeyHash d) = prettyPrint $ B.take 2 d
 instance Binary KeyHash
 --instance Binary PipeKeyHash
 

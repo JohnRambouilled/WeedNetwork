@@ -39,8 +39,10 @@ onNeighIntro intro
     | not $ checkNeighIntro intro = logM "CLient.Neighbours" "onNeighIntro" InvalidPacket "Invalid signature"
     | otherwise = do nMap <- stmRead clNeighbours
                      case neighID `M.lookup` nMap of
-                        Nothing -> stmModify clNeighbours .  M.insert neighID . NeighEntry neighID (_neighIPubKey intro) =<< timer
-                        Just e -> refreshTimer (_neighTimerEntry e)
+                        Nothing -> do logM "Client.Neighbours" "onNeighIntro" Normal $ "New neighbour : " ++ show neighID
+                                      stmModify clNeighbours .  M.insert neighID . NeighEntry neighID (_neighIPubKey intro) =<< timer
+                        Just e -> do logM "Client.Neighbours" "onNeighIntro" Normal $ "Refreshing known neighbour : " ++ show neighID
+                                     refreshTimer (_neighTimerEntry e)
     where neighID = view neighISource intro
           timer = newTimerEntry neighTimeOut $ removeNeighbour neighID
 

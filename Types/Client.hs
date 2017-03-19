@@ -33,6 +33,7 @@ type Sender = RawData -> WeedMonad ()
 data Client = Client { clUserID :: UserID,
                        clKeyPair :: KeyPair,
                        clSender :: Sender,
+                       clLogHandler :: Log -> IO (),
                        clTime :: TVar Time, -- Should be updated before each call... 
                        clRndGen :: TVar StdGen,
                        clGraph :: TVar RoadGraph,
@@ -59,8 +60,10 @@ instance Show LogStatus where show InvalidPacket = " # Invalid Packet # -> "
 instance Show Log where show (Log mod fun stat mes) = show stat ++ "[" ++ mod ++ ":" ++ fun ++ "]  >> " ++ mes
 
                         
-instance Functor WeedMonad
-instance Applicative WeedMonad
-instance Monad WeedMonad
-instance Monoid WeedOrders
+instance Functor WeedMonad     where fmap f (WeedMonad a) = WeedMonad (fmap f a)
+instance Applicative WeedMonad where pure = WeedMonad . pure
+                                     WeedMonad f <*> WeedMonad a = WeedMonad (f <*> a)
+instance Monad WeedMonad       where (WeedMonad a) >>= f = WeedMonad $ a >>= runWeedMonad . f
+instance Monoid WeedOrders     where mempty = WeedOrders mempty
+                                     mappend (WeedOrders l1) (WeedOrders l2) = WeedOrders (mappend l1 l2)
                        

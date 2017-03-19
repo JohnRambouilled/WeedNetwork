@@ -21,15 +21,15 @@ runWM :: Client -> WeedMonad a -> IO a
 runWM c w = do t <- getPOSIXTime
                (r, l) <- atomically $ do writeTVar (clTime c) t
                                          (flip R.runReaderT) c . W.runWriterT $ runWeedMonad w
-               onWeedOrders l
+               onWeedOrders (clLogHandler c) l
                pure r
 
 runWM' :: WeedMonad a -> WeedMonad (IO a)
 runWM' w = (flip runWM)  w <$> ask
 
-onWeedOrders :: WeedOrders -> IO ()
-onWeedOrders = mapM_ onWeedOrder . runWeedOrders 
-    where onWeedOrder (WeedLog l) = print l
+onWeedOrders :: (Log -> IO ()) -> WeedOrders -> IO ()
+onWeedOrders logH = mapM_ onWeedOrder . runWeedOrders 
+    where onWeedOrder (WeedLog l) = logH l
           onWeedOrder (WeedPerformIO a) = a
 
 logM :: String -> String -> LogStatus -> String -> WeedMonad ()

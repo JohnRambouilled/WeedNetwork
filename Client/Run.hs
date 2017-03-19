@@ -8,8 +8,10 @@ import Client.Neighbours
 import Client.Pipes
 import Client.WeedMonad
 import Client.Sender
+import Client.Timer
 
 import Control.Monad
+import Control.Concurrent
 import Control.Concurrent.STM.TVar
 import Control.Concurrent.STM.TChan
 import System.Random
@@ -17,20 +19,22 @@ import Data.Binary
 import Data.Time.Clock.POSIX
 import qualified Data.Map as M
 
+introduceDelay = 5 :: Time
+
 generateClient :: Sender -> IO Client
 generateClient send = do keys <- generateKeyPair
                          let uID = computeHashFromKey $ fst keys
                          rndGen <- getStdGen
                          t <- getPOSIXTime
-                         Client uID keys send <$> newTVarIO t
-                                              <*> newTVarIO rndGen
-                                              <*> newTVarIO mempty
-                                              <*> newTVarIO M.empty
-                                              <*> newTVarIO M.empty
-                                              <*> newTVarIO M.empty
-                                              <*> newTVarIO M.empty
-                                              <*> newTVarIO M.empty
-                                              <*> newTVarIO M.empty
+                         Client uID keys send print <$> newTVarIO t
+                                                    <*> newTVarIO rndGen
+                                                    <*> newTVarIO mempty
+                                                    <*> newTVarIO M.empty
+                                                    <*> newTVarIO M.empty
+                                                    <*> newTVarIO M.empty
+                                                    <*> newTVarIO M.empty
+                                                    <*> newTVarIO M.empty
+                                                    <*> newTVarIO M.empty
                                               
 
 onLayer1 :: L1 -> WeedMonad ()
@@ -44,9 +48,10 @@ react c inChan = forever $ runWM c action
   where action = liftSTM (readTChan inChan) >>= onRawData
         onRawData d = case decodeOrFail d of
                         Left (_,_,s) -> logM "Client.Run" "react" Fail $ "Unable to decode packet : " ++ s
-                        Right (_,_,p) -> onLayer1 p
+                        Right (_,_,p) -> do logM "Client.Run" "react" Normal "Packet received"
+                                            onLayer1 p
 
 introduceThread :: Client -> IO ()
-introduceThread c = forever $ runWM c sendNeighIntro
+introduceThread c = forever $ runWM c sendNeighIntro >> threadDelay (timeToMicroseconds introduceDelay)
   
 

@@ -1,6 +1,7 @@
 all: Main.hs
 	ghc -threaded --make Main.hs
 
+
 #all: Main.hs obj/ethernet.o obj/receiver.o obj/udp.o
 #		ghc -threaded obj/ethernet.o obj/receiver.o obj/udp.o --make Main.hs
 
