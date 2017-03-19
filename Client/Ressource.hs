@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes #-}
 module Client.Ressource where
 
 import Packets
@@ -10,6 +11,7 @@ import Client.Pipes
 --import Types.Graph.RoadGraph
 import Types.Graph.Type
 import Types.Graph.Search
+import Types.Graph.RoadGraph
 
 
 import Data.Ord
@@ -19,13 +21,24 @@ import Control.Lens
 import Control.Monad
 import qualified Data.Map as M
 
-researchMaxTTL = 10 :: TTL
 answerMaxTTL = 10 :: TTL
 ressourceEntryTiltTime = 3 :: Time
 answerValidity = 15 :: Time
 answerRoadSearchDepth = 10 :: Int
+ressourceSourceTimeOut = 60 :: Time
 
 
+offerRessource :: RessourceID -> RawData -> WeedMonad ()
+offerRessource rID d = do resMap <-  stmRead clRessources
+                          case rID `M.lookup` resMap of
+                            Just (RessourceOffered _ _ _) -> stmModify clRessources $ M.adjust (set ressourceAnswerContent d) rID
+                            Just (RessourceResearched  m t1 t2) -> do mapM killTimer $ M.elems m
+                                                                      killTilt t1 >> killTilt t2
+                                                                      insertNewRessource
+                            Nothing -> insertNewRessource
+  where insertNewRessource :: WeedMonad()
+        insertNewRessource = stmModify clRessources . M.insert rID =<< newRessourceOffered rID d
+        killTilt = killTimer . _tiltTimer
 
 
 onAnswer :: Answer -> WeedMonad ()
@@ -34,7 +47,7 @@ onAnswer ans = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRead 
                   case checkAnswer uID t ans of
                         Left s -> logM "Client.Ressource" "onAnswer" InvalidPacket s
                         Right rel -> case M.lookup rID resMap of
-                                        Just (RessourceResearched m t _) -> unless' t $ do newResearchedAnswer ans 
+                                        Just (RessourceResearched m t _) -> unless' t $ do newResearchedAnswer m ans 
                                                                                            tiltAnswer rID
                                                                                            relayAnswer ans
                                         _ -> pure ()
@@ -42,10 +55,19 @@ onAnswer ans = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRead 
           unless' = unless . view tiltOn
                     
 
-newResearchedAnswer :: Answer -> WeedMonad ()
-newResearchedAnswer ans = do me <- keyHash2VertexID . clUserID <$> getClient
-                             stmModify clGraph . addRoad (me, mempty) $ map wrap (_ansRoad ans)
-   where wrap uID = ((keyHash2VertexID uID, mempty), mempty)
+newResearchedAnswer :: M.Map SourceID TimerEntry -> Answer -> WeedMonad ()
+newResearchedAnswer m ans = do me <- keyHash2VertexID . clUserID <$> getClient
+                               t <- getTime
+                               stmModify clGraph . addRoad (me, mempty) $ map (wrap t) (_ansRoad ans)
+                               case sourceID `M.lookup` m of
+                                 Just t -> refreshTimer t
+                                 Nothing -> overSourceMap . M.insert sourceID =<< newTimerEntry ressourceSourceTimeOut (overSourceMap $ M.delete sourceID)
+   where rID = view (ansCert . cResID) ans
+         wrap t uID = ((keyHash2VertexID uID, EdgeT t), mempty)
+         sourceID = last $ view ansRoad ans
+         overSourceMap :: (M.Map SourceID TimerEntry -> M.Map SourceID TimerEntry) -> WeedMonad ()
+         overSourceMap f = stmModify clRessources $ M.adjust (over ressourceSources f) rID
+         
                              
 
 
@@ -104,15 +126,17 @@ tilt isRes rID = do m <- stmRead clRessources
     where accessor i = if i then researchTilt else answerTilt
           setOn = stmModify clRessources $ M.adjust (set (accessor isRes . tiltOn) True) rID
 
+newTilt :: RessourceID -> Lens RessourceEntry RessourceEntry RessourceTilt RessourceTilt -> WeedMonad RessourceTilt
+newTilt rID l = RessourceTilt False <$> timer l
+  where timer l = newTimerEntry ressourceEntryTiltTime $ setOff l 
+        setOff l = stmModify clRessources $ M.adjust (set (l . tiltOn) False) rID
 
+newRessourceOffered :: RessourceID -> RawData -> WeedMonad RessourceEntry
+newRessourceOffered rID d = RessourceOffered d <$> newTilt rID answerTilt <*> newTilt rID researchTilt
 
 newRessourceResearched :: RessourceID -> [SourceID] -> WeedMonad RessourceEntry
-newRessourceResearched rID sL = RessourceResearched <$> (M.fromList <$> mapM newSource sL) <*> newTilt answerTilt <*> newTilt researchTilt
+newRessourceResearched rID sL = RessourceResearched <$> (M.fromList <$> mapM newSource sL) <*> newTilt rID answerTilt <*> newTilt rID researchTilt
     where newSource sID = (,) sID <$> newTimerEntry_
-          newTilt l = RessourceTilt False <$> timer l
-          timer l = newTimerEntry ressourceEntryTiltTime $ setOff l 
-          setOff l = stmModify clRessources $ M.adjust (set (l . tiltOn) False) rID
-
 
 checkResearch :: UserID -> Research -> Either String Bool
 checkResearch me res@(Research rID ttl r c)

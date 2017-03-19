@@ -31,10 +31,10 @@ instance Monoid VertexT where
   mempty = VertexT mempty
   vT1 `mappend` vT2@(VertexT _) = over pipesT (<> _pipesT vT2) vT1
 
-data EdgeT = EdgeT
+data EdgeT = EdgeT {edgeUpTime :: Time}
 instance Monoid EdgeT where
-  mempty = EdgeT
-  _ `mappend` _ = EdgeT
+  mempty = EdgeT $ (0 :: Time)
+  (EdgeT t1) `mappend` (EdgeT t2) = EdgeT (max t1 t2)
 
 type RoadGraph = Graph VertexT EdgeT
 

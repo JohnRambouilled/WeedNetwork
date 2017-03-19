@@ -9,10 +9,11 @@ import Data.Binary
 import Control.Lens
 import qualified Data.Map as M
 
+researchMaxTTL = 10 :: TTL
 
 type PipeSender = [PipePacketFlag] -> ComPacket -> WeedMonad ()
 
-genPipeSender:: PipeID -> WeedMonad (Maybe PipeSender)
+genPipeSender :: PipeID -> WeedMonad (Maybe PipeSender)
 genPipeSender pID = do pipeMap <- stmRead clLocalPipes
                        case M.lookup pID pipeMap of
                                 Nothing -> logM "Client.Sender" "genPipeSender" Fail "Generating pipe sender for unkown pipeID" >> pure Nothing
@@ -62,7 +63,9 @@ sendAnswer rID val ttl d = do uk <- fst . clKeyPair <$> getClient
                                   ans = Answer cert ttl [uID] uID d
                               sendNeighData Broadcast $ L2Answer ans
                               
-
+sendSimpleResearch :: RessourceID -> WeedMonad ()
+sendSimpleResearch rID = sendResearch rID researchMaxTTL [] emptyPayload
+  
 sendResearch :: RessourceID -> TTL -> Road -> RawData -> WeedMonad ()
 sendResearch rID ttl r d = sendNeighData dest $ L2Research res
     where res = Research rID ttl r d
