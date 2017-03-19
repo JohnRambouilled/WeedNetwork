@@ -106,7 +106,10 @@ onNewSegment pkt = do
           | otherwise = let (frag,rest) = addConsecutiveSegment pkt nconsec -- On determine les fragments consécutifs dans le buffer nconsec
                         in do   sendAck -- On accuse reception
                                 notConsecBuf .= rest -- On retire de nconsec le fragment consecutif au paquet reçu
-                                forM_ frag $ \ seg -> do -- On ajoute les fragment à consec
+                                forM_ frag $ \ seg -> do -- On ajoute les segments du fragment à consec
+                                  (cursiz,maxsiz) <- (,) <$> use (consecBuf . currentSize) <*> use (consecBuf . maxSize)
+                                  when (cursiz + B.length (_tcpPayload seg) < maxsiz) $ flushBuffer -- Si consec n'a plus de place, on le flush avant d'ajouter le paquet
+
                                   consecBuf %= rawAddSegment seg
                                   prevNum .= _tcpSeqNum (_tcpHeader seg) -- On met a jour le dernier seqnum reçu
                                   nextNum += (B.length $ _tcpPayload seg) -- On met à jour le prochain seqnum attendu
