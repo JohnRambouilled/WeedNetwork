@@ -2,7 +2,7 @@
 module UI.Class where
 
 import Brick
-import Data.Default
+--import Data.Default
 import Graphics.Vty
 import Control.Concurrent.Chan
 import Graphics.Vty.Input.Events

@@ -39,6 +39,7 @@ logM s f l m = do t <- getTime
 weedIO :: IOAction -> WeedMonad ()
 weedIO = tell. WeedPerformIO
 
+  
 stmRead :: (Client -> TVar a) -> WeedMonad a
 stmRead a = readSTM =<< asks a
 
