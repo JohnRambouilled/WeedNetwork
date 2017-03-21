@@ -12,7 +12,7 @@ import Control.Lens
 import Data.Ix
 
 maxChanSize = 100 :: Int
-updateDelay = 10^5 :: Int -- In microseconds
+updateDelay = 10^6 :: Int -- In microseconds
 
 newtype Displayer = Displayer { runDisplayer :: IO String }
 

@@ -12,6 +12,15 @@ import Control.Concurrent.STM
 import qualified Data.Map as M
 
 
+
+addProtocol :: ProtocolID -> ProtocolEntry -> WeedMonad Bool
+addProtocol pID pE = do pMap <- stmRead clProtocols
+                        case pID `M.lookup` pMap of
+                          Nothing -> stmModify clProtocols (M.insert pID pE) >> return True
+                          Just _ -> do logM "Client.Communication" "addProtocol" Error $ "An entry is already present in the protocol map for protocol : " ++ show pID
+                                       return False
+
+  
 onComPacket :: TVar ComModule -> PipeID -> ComPacket -> WeedMonad ()
 onComPacket m pID (ComPinit ci) =  onComInit m pID ci
 onComPacket m pID (ComPmessage cm) = onComMessage m pID cm
@@ -23,7 +32,7 @@ newComModule = liftSTM . newTVar . ComModule M.empty
             
 
 -- Appelle le callback enregistré pour le comID du message.
--- 
+-- Supprime le comID en cas de ComExit
 onComMessage :: TVar ComModule -> PipeID -> ComMessage -> WeedMonad ()
 onComMessage comModule pID comMessage = do comMod <- liftSTM $ readTVar comModule
                                            case comID `M.lookup` view comMap comMod of

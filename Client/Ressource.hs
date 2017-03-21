@@ -111,20 +111,28 @@ onResearch res = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRea
     where unless' = unless . view tiltOn 
           rID = _resID res
 
+lookupSources :: RessourceID -> WeedMonad [SourceID]
+lookupSources rID = do rMap <- stmRead clRessources
+                       case rID `M.lookup` rMap of
+                         Just (RessourceResearched sMap _ _ ) -> pure $ M.keys sMap
+                         _ -> pure []
 
 -- | Lookup in the graph to find roads leading to the given sources, and send an answer for the specified ressource
 sendRemoteAnswer :: RessourceID -> [SourceID] -> WeedMonad () 
-sendRemoteAnswer rID sIDs = do me <- keyHash2VertexID . clUserID <$> getClient
-                               t <- getTime
-                               roads <- map (map vertexID2KeyHash) . catMaybes <$> forM sIDs (search me . keyHash2VertexID)
+sendRemoteAnswer rID sIDs = do t <- getTime
+                               roads <- lookupRoads sIDs
                                mapM_ (sendAns t) $ choose roads
-   where search :: VertexID ->  VertexID -> WeedMonad (Maybe [VertexID])
-         search me dest = fmap (map fst) <$> (searchRoad me dest answerRoadSearchDepth =<< stmRead clGraph)
-         sendAns t r = sendAnswer rID t answerMaxTTL emptyPayload
+   where sendAns t r = sendAnswer rID t answerMaxTTL emptyPayload
          choose x | null x = []
                   | otherwise = minimumBy (comparing length)$ x
 
  
+lookupRoads :: [SourceID] -> WeedMonad [Road] 
+lookupRoads sIDs = do me <- keyHash2VertexID . clUserID <$> getClient
+                      map (map vertexID2KeyHash) . catMaybes <$> forM sIDs (search me . keyHash2VertexID)
+   where search :: VertexID ->  VertexID -> WeedMonad (Maybe [VertexID])
+         search me dest = fmap (map fst) <$> (searchRoad me dest answerRoadSearchDepth =<< stmRead clGraph)
+
 
 vertexID2KeyHash :: VertexID -> UserID
 vertexID2KeyHash (VertexID u) = KeyHash u 

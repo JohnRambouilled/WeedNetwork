@@ -21,10 +21,12 @@ type TestGraph = [Client]
 testRessource = RessourceID $ encode "Some Dank Ressource"
 
 dualTestMain = do cl <- genTestGraph [[1],[0]]
-                  buildApp $ dualShow cl
+                  --forkIO . buildApp $ dualShow cl
                   runWM (head cl) $ offerRessource testRessource $ encode "Dankest Dankness ever Danked"
                   threadDelay (10^6)
                   runWM (cl !! 1) $ researchSimpleRessource testRessource
+                  threadDelay (10^6)
+
 
 dualShow :: TestGraph -> ShowClient
 dualShow = map showClient
@@ -49,7 +51,7 @@ genTestGraph neighList = do tchans <- atomically . forM [0..n] $ pure newTChan
                             pure cl
   where n = length neighList
         genClient tchans (neighs, i) = do c <- generateClient send
-                                          pure c{clLogHandler = \l -> pure () }-- putStrLn ("Client " ++ show i ++ " ==> " ++ show l)}
+                                          pure c{clLogHandler = \l -> putStrLn ("Client " ++ show i ++ " ==> " ++ show l)}
           where send :: RawData -> WeedMonad ()
                 send d = do logM "Test.Test" "send" Normal "Sending packet"
                             forM_ neighs sendTo
