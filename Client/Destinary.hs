@@ -16,14 +16,6 @@ import Data.Binary (decodeOrFail)
 
 destinaryTimeOut = 60 :: Time
 
--- | open a Pipe on a given Road. Require the Public Key of the destinary.
-openPipe :: Road -> RawData -> PubKey -> WeedMonad Bool
-openPipe r cnt sK = do dEM <- destinaryInsertPipes sK sID [pID] 
-                       case dEM of
-                            Nothing -> return False
-                            Just dE -> let pipeK = fst $ view destPipeKeys dE in sendRequest r pipeK cnt >> pure True
-  where pID = computePipeID r
-        sID = last r
 
 -- |  Remove a pipe in the destinary pipeMap. If it is the only pipe leading to that source, it start the timeOut timer.
 destinaryRemovePipe :: UserID -> PipeID -> WeedMonad ()

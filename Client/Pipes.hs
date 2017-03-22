@@ -23,6 +23,18 @@ maxRequestValidity = 10 :: Time
 pipeTimeOut = 30 :: Time
 
 
+-- | open a Pipe on a given Road. Require the Public Key of the destinary.
+openPipe :: Road -> RawData -> PubKey -> WeedMonad Bool
+openPipe r cnt sK = do dEM <- destinaryInsertPipes sK sID [pID] 
+                       case dEM of
+                            Nothing -> return False
+                            Just dE -> let pipeK = view destPipeKeys dE in
+                                         do req <- sendRequest r pipeK cnt 
+                                            timer <- newTimer pipeTimeOut (void $ removeLocalPipe pID)
+                                            addLocalPipe True timer  (head $ tail r) req 
+                                            return True
+  where pID = computePipeID r
+        sID = last r
 
 onRequest :: UserID -> Request -> WeedMonad ()
 onRequest sID req = do (t,uID) <- (,) <$> getTime <*> fmap clUserID getClient
@@ -36,15 +48,17 @@ onRequest sID req = do (t,uID) <- (,) <$> getTime <*> fmap clUserID getClient
 
 onLocalRequest :: UserID -> Request -> WeedMonad ()
 onLocalRequest prev req = do locMap <- stmRead clLocalPipes
+                             logM "Client.Pipes" "onLocalRequest" Normal $ "Reveiced local request from : " ++ show sID ++ " for pipe : " ++ show pID
                              case pID `M.lookup` locMap of
                                     Just _ -> logM "Client.Pipes" "onLocalRequest" InvalidPacket "Request for an already used pipeID"
-                                    Nothing -> do dEM <- destinaryInsertPipes (_reqSourceKey req) (last $ _reqRoad req) [pID]
+                                    Nothing -> do dEM <- destinaryInsertPipes (_reqSourceKey req) sID [pID]
                                                   case dEM of
                                                     Just _ -> do timer <- newTimer pipeTimeOut (void $ removeLocalPipe pID)
                                                                  addLocalPipe False timer prev req
                                                                  logM "Client.Pipes" "onLocalRequest" Normal ("New local pipe : " ++ show pID ++ " have been added.")
                                                     Nothing -> pure ()
         where pID = _reqPipeID req
+              sID = last $ view reqRoad req
 
 
 
@@ -61,6 +75,12 @@ removeLocalPipe pID = do locMap <- stmRead clLocalPipes
                                              
 
 
+-- | Add a local pipe entry to the pipeMap and to the graph.
+-- | A pipe is local of the client is at an extremity (and therefore posess the key).
+-- | Parameter are : * outgoing pipe (true if we emit the request)
+-- |                 * timer entry to add to the map
+-- |                 * direct neighbor on the pipe
+-- |                 * request (not sent by this function)
 addLocalPipe :: Bool -> TimerEntry -> UserID -> Request -> WeedMonad ()
 addLocalPipe out tE prev req = do stmModify clLocalPipes $ M.insert pID entry
                                   uVertex <- keyHash2VertexID . clUserID <$> getClient 
@@ -102,11 +122,11 @@ keyHash2VertexID (KeyHash u) = VertexID u
 checkRequest :: UserID -> Time -> Request -> Either String (Either (UserID, UserID) UserID)
 checkRequest uID t req@(Request i r sk t0 pk (PipeID pid) s c)
     | i < 0 = Left "Negative Position"
-    | length r <= i+2 = Left "Road is too short"
+    | length r < i+2 = Left $ "Road is too short : " ++ show i ++ " / " ++ show (length r)
     | not $ checkPipeSig pk req = Left "Invalid signature"
     | t - t0 > maxRequestValidity = Left "Request expired"
     | pid /= computeHash r = Left "PipeID does not match road hash"
-    | i == 0 = Right . Right . head $ tail r
+    | i == 0 = Right . Right . head $ tail r  -- Incoming pipe
     | otherwise = if uID == r' !! 1 then Right $ Left (r' !! 2, head r')
                                    else Left "UserID at Position in Road doesn't match"
             where r' = drop (i-1) r

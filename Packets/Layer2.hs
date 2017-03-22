@@ -65,7 +65,7 @@ instance SignedClass Request where scHash (Request n r epk t pK pID s c) = B.con
                                    scPushSignature r s = set reqPipeSig s r
 instance IntroClass Request where icPubKey = view reqSourceKey
 
-instance SignedClass Answer where scHash (Answer (RessourceCert k t t' rid _) _ _ sID c) = B.concat [ c , encode (k, t, t', rid, sID) ]
+instance SignedClass Answer where scHash (Answer (RessourceCert k t t' rid _) _ _ sID _) = encode (k, t, t', rid, sID) 
                                   scSignature = view $ ansCert . cResSig
                                   scPushSignature a s = over ansCert (set cResSig s) a
 instance IntroClass Answer where icPubKey = view $ ansCert . cResSourceKey 

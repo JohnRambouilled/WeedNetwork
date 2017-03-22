@@ -19,10 +19,14 @@ data RessourceTilt = RessourceTilt {_tiltOn :: Bool,
 data RessourceEntry = RessourceOffered {_ressourceAnswerContent :: RawData,
                                         _answerTilt :: RessourceTilt,
                                         _researchTilt :: RessourceTilt} |
-                      RessourceResearched {_ressourceSources :: M.Map SourceID TimerEntry,
+                      RessourceResearched {_ressourceSources :: M.Map SourceID RessourceSourceEntry,
                                         _answerTilt :: RessourceTilt,
                                         _researchTilt :: RessourceTilt} 
 
+
+data RessourceSourceEntry = RessourceSourceEntry { _rseCert :: RessourceCert,
+                                                   _rseTimer :: TimerEntry}
 makeLenses ''RessourceTilt
 makeLenses ''RessourceEntry
+makeLenses ''RessourceSourceEntry
 

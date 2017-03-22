@@ -27,20 +27,44 @@ answerValidity = 15 :: Time
 answerRoadSearchDepth = 10 :: Int
 ressourceSourceTimeOut = 60 :: Time
 researchMaxTTL = 10 :: TTL
+ 
+getSourceKey :: RessourceID -> SourceID -> WeedMonad (Maybe PubKey)
+getSourceKey rID sID = (=<<) getKey . M.lookup rID <$> stmRead clRessources
+  where getKey :: RessourceEntry -> Maybe PubKey
+        getKey (RessourceResearched m _ _) = view (rseCert . cResSourceKey) <$> M.lookup sID m
+        getKey _ = Nothing
+  
+-- | Find a road leading to a source in the graph
+lookupRoad :: SourceID -> WeedMonad Road 
+lookupRoad sID = do me <- keyHash2VertexID . clUserID <$> getClient
+                    maybe [] (map vertexID2KeyHash) <$> search me  
+   where search :: VertexID -> WeedMonad (Maybe [VertexID])
+         search me = fmap (map fst) <$> (searchRoad me vID answerRoadSearchDepth =<< stmRead clGraph)
+         vID = keyHash2VertexID sID
 
 
+  
+-- | Return the known source offering a given ressource
+lookupSources :: RessourceID -> WeedMonad [SourceID]
+lookupSources rID = do rMap <- stmRead clRessources
+                       case rID `M.lookup` rMap of
+                         Just (RessourceResearched sMap _ _ ) -> pure $ M.keys sMap
+                         _ -> pure []
+
+-- | Add an offered ressource to the ressource map.
 offerRessource :: RessourceID -> RawData -> WeedMonad ()
 offerRessource rID d = do resMap <-  stmRead clRessources
                           case rID `M.lookup` resMap of
                             Just (RessourceOffered _ _ _) -> stmModify clRessources $ M.adjust (set ressourceAnswerContent d) rID
-                            Just (RessourceResearched  m t1 t2) -> do mapM killTimer $ M.elems m
+                            Just (RessourceResearched  m t1 t2) -> do mapM (killTimer . view rseTimer) $ M.elems m
                                                                       killTilt t1 >> killTilt t2
                                                                       insertNewRessource
                             Nothing -> insertNewRessource
   where insertNewRessource :: WeedMonad()
         insertNewRessource = stmModify clRessources . M.insert rID =<< newRessourceOffered rID d
-        killTilt = killTimer . _tiltTimer
+        killTilt = killTimer . view tiltTimer
 
+-- | Send a research without specifying any road or payload. The ressource is added to the ressource map as Researched.
 researchSimpleRessource :: RessourceID -> WeedMonad ()
 researchSimpleRessource rID = researchRessource rID researchMaxTTL [] emptyPayload
   
@@ -72,19 +96,21 @@ onAnswer ans = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRead 
           unless' = unless . view tiltOn
                     
 
-newResearchedAnswer :: M.Map SourceID TimerEntry -> Answer -> WeedMonad ()
+newResearchedAnswer :: M.Map SourceID RessourceSourceEntry -> Answer -> WeedMonad ()
 newResearchedAnswer m ans = do me <- keyHash2VertexID . clUserID <$> getClient
                                logM "Client.Ressource" "newRessourceResearched" Normal $ "Answer for a researched ressource : " ++ show rID ++ " received from : " ++ show sourceID
                                t <- getTime
                                stmModify clGraph . addRoad (me, mempty) $ map (wrap t) (_ansRoad ans)
                                case sourceID `M.lookup` m of
-                                 Just t -> refreshTimer t
-                                 Nothing -> overSourceMap . M.insert sourceID =<< newTimerEntry ressourceSourceTimeOut (overSourceMap $ M.delete sourceID)
+                                 Just rsE -> refreshTimer $ view rseTimer rsE
+                                 Nothing -> overSourceMap . M.insert sourceID =<< newRSEntry t
    where rID = view (ansCert . cResID) ans
          wrap t uID = ((keyHash2VertexID uID, EdgeT t), mempty)
          sourceID = last $ view ansRoad ans
-         overSourceMap :: (M.Map SourceID TimerEntry -> M.Map SourceID TimerEntry) -> WeedMonad ()
+         overSourceMap :: (M.Map SourceID RessourceSourceEntry -> M.Map SourceID RessourceSourceEntry) -> WeedMonad ()
          overSourceMap f = stmModify clRessources $ M.adjust (over ressourceSources f) rID
+         newRSEntry t = RessourceSourceEntry (view ansCert ans) <$> newTimerEntry (timeOut t) (overSourceMap $ M.delete sourceID)
+         timeOut t = max ressourceSourceTimeOut $ view (ansCert . cResValidity) ans
          
                              
 
@@ -106,33 +132,21 @@ onResearch res = do (uID, resMap) <- (,) <$> (clUserID <$> getClient) <*> stmRea
                                         Just (RessourceOffered c _ t) -> unless' t $ do logM "Client.Ressource" "onRessearch" Normal $ "Sending answer for Ressource : " ++ show rID 
                                                                                         sendAnswer rID answerValidity answerMaxTTL c
                                                                                         tiltResearch rID
-                                        Just (RessourceResearched map _ t) -> unless' t $ tiltResearch rID >> if M.null map then relayResearch res
-                                                                                                              else sendRemoteAnswer rID $ M.keys map
+                                        Just (RessourceResearched m _ t) -> unless' t $ tiltResearch rID >> if M.null m then relayResearch res
+                                                                                                              else sendRemoteAnswer rID . map (over _2 _rseCert) $ M.assocs m
     where unless' = unless . view tiltOn 
           rID = _resID res
 
-lookupSources :: RessourceID -> WeedMonad [SourceID]
-lookupSources rID = do rMap <- stmRead clRessources
-                       case rID `M.lookup` rMap of
-                         Just (RessourceResearched sMap _ _ ) -> pure $ M.keys sMap
-                         _ -> pure []
-
 -- | Lookup in the graph to find roads leading to the given sources, and send an answer for the specified ressource
-sendRemoteAnswer :: RessourceID -> [SourceID] -> WeedMonad () 
+sendRemoteAnswer :: RessourceID -> [(SourceID, RessourceCert)] -> WeedMonad () 
 sendRemoteAnswer rID sIDs = do t <- getTime
-                               roads <- lookupRoads sIDs
-                               mapM_ (sendAns t) $ choose roads
-   where sendAns t r = sendAnswer rID t answerMaxTTL emptyPayload
-         choose x | null x = []
-                  | otherwise = minimumBy (comparing length)$ x
-
- 
-lookupRoads :: [SourceID] -> WeedMonad [Road] 
-lookupRoads sIDs = do me <- keyHash2VertexID . clUserID <$> getClient
-                      map (map vertexID2KeyHash) . catMaybes <$> forM sIDs (search me . keyHash2VertexID)
-   where search :: VertexID ->  VertexID -> WeedMonad (Maybe [VertexID])
-         search me dest = fmap (map fst) <$> (searchRoad me dest answerRoadSearchDepth =<< stmRead clGraph)
-
+                               roads <- forM sIDs $ lookupRoad . fst
+                               mapM_ (sendAns t) $ choose (zip sIDs roads)
+   where sendAns t ((sID,cert),r) = sendRawAnswer sID r cert rID t (answerMaxTTL - length r) emptyPayload
+         choose :: [((SourceID, RessourceCert), Road)] -> Maybe ((SourceID, RessourceCert), Road)
+         choose x | null x = Nothing
+                  | otherwise = Just $ minimumBy minFun x
+         minFun x y = compare (length $ snd x) (length $ snd y)
 
 vertexID2KeyHash :: VertexID -> UserID
 vertexID2KeyHash (VertexID u) = KeyHash u 
@@ -160,9 +174,9 @@ newTilt rID l = RessourceTilt False <$> timer l
 newRessourceOffered :: RessourceID -> RawData -> WeedMonad RessourceEntry
 newRessourceOffered rID d = RessourceOffered d <$> newTilt rID answerTilt <*> newTilt rID researchTilt
 
-newRessourceResearched :: RessourceID -> [SourceID] -> WeedMonad RessourceEntry
+newRessourceResearched :: RessourceID -> [(SourceID, RessourceCert)] -> WeedMonad RessourceEntry
 newRessourceResearched rID sL = RessourceResearched <$> (M.fromList <$> mapM newSource sL) <*> newTilt rID answerTilt <*> newTilt rID researchTilt
-    where newSource sID = (,) sID <$> newTimerEntry_
+    where newSource (sID,cert) = (,) sID . RessourceSourceEntry cert <$> newTimerEntry_
 
 checkResearch :: UserID -> Research -> Either String Bool
 checkResearch me res@(Research rID ttl r c)

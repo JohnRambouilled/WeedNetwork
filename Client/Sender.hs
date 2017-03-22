@@ -62,6 +62,15 @@ sendAnswer rID val ttl d = do uk <- fst . clKeyPair <$> getClient
                                   ans = sign keys $ Answer cert ttl [uID] uID d
                               sendNeighData Broadcast $ L2Answer ans
                               
+
+sendRawAnswer :: SourceID -> Road -> RessourceCert -> RessourceID -> Time -> TTL -> RawData -> WeedMonad ()
+sendRawAnswer sID r cert rID val ttl d = do uk <- fst . clKeyPair <$> getClient
+                                            uID <- clUserID <$> getClient
+                                            let ans = Answer cert ttl (uID:r) sID d
+                                            sendNeighData Broadcast $ L2Answer ans
+                              
+
+  
   
 sendResearch :: RessourceID -> TTL -> Road -> RawData -> WeedMonad ()
 sendResearch rID ttl r d = sendNeighData dest $ L2Research res
@@ -69,14 +78,17 @@ sendResearch rID ttl r d = sendNeighData dest $ L2Research res
           dest = if null r then Broadcast else UserDest $ head r
 
 
--- | Send a request on the given road, using the provided pipePublicKey. Return the pipeID as it is computed to forge the request.
-sendRequest :: Road -> PipePubKey -> RawData -> WeedMonad PipeID
+-- | Send a request on the given road, using the provided pipePublicKey. Return the request to be pass to addLocalPipe.
+-- | The road is provided in receveir convention (Client's userID first)
+sendRequest :: Road -> PipeKeyPair -> RawData -> WeedMonad Request
 sendRequest r pk d = do t <- getTime
                         uk <- fst . clKeyPair <$> getClient
-                        let pipeID = computePipeID r
-                            req = Request (length r - 1) r uk t pk pipeID emptySignature d
-                        sendNeighData (UserDest . head $ tail r) $ L2Request req
-                        pure pipeID
+                        let pipeID = computePipeID r'
+                            req = signPipe pk $ Request pos r' uk t (fst pk) pipeID emptySignature d
+                        sendNeighData (UserDest $ r !! pos) $ L2Request req
+                        pure req
+     where pos = length r - 2
+           r' = reverse r
 
 
 sendPipePacket :: PipeKeyPair -> PipeID -> KeyHash -> [PipePacketFlag] -> RawData -> WeedMonad ()

@@ -6,6 +6,7 @@ import Packets
 import Client.WeedMonad
 import Client.Ressource
 
+
 import qualified Data.Map as M
 import qualified Data.Array as A
 import Data.Binary
@@ -22,10 +23,22 @@ testRessource = RessourceID $ encode "Some Dank Ressource"
 
 dualTestMain = do cl <- genTestGraph [[1],[0]]
                   --forkIO . buildApp $ dualShow cl
-                  runWM (head cl) $ offerRessource testRessource $ encode "Dankest Dankness ever Danked"
+                  runWM (head cl) $ offerRessource rID $ encode "Dankest Dankness ever Danked"
                   threadDelay (10^6)
-                  runWM (cl !! 1) $ researchSimpleRessource testRessource
+                  runWM (cl !! 1) $ researchSimpleRessource rID
                   threadDelay (10^6)
+                  runWM (cl !! 1) connect
+   where rID = testRessource
+         connect :: WeedMonad ()
+         connect = do sIDs <- lookupSources rID 
+                      case sIDs of
+                        [] -> pure ()
+                        sID:_ -> do r <- lookupRoad sID
+                                    kM <- getSourceKey rID sID
+                                    case kM of
+                                      Nothing -> pure ()
+                                      Just k -> do b <- openPipe r (encode "Give me some of this Dank Shit") k
+                                                   when b $ logM "Test.Test" "dualTestMain" Normal "Success!!"
 
 
 dualShow :: TestGraph -> ShowClient

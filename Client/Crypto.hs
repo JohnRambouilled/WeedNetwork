@@ -31,6 +31,10 @@ sign :: SignedClass a => KeyPair-> a -> a
 sign (pK, k) a = scPushSignature a . makeSignature $ scHash a
     where makeSignature d = S.sign  (sigPrivKey k) (sigPubKey pK) $ B.toStrict d
 
+signPipe :: SignedClass a => PipeKeyPair-> a -> a
+signPipe (pK, k) a = scPushSignature a . makeSignature $ scHash a
+    where makeSignature d = S.sign  (pipePrivKey k) (pipePubKey pK) $ B.toStrict d
+
 -- | Create a KeyHash from a key
 computeHashFromKey :: PubKey -> KeyHash
 computeHashFromKey = KeyHash . computeHash

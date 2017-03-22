@@ -4,6 +4,7 @@ module Client (
               module Client.Timer,
               module Client.Communication,
               module Client.Destinary,
+              module Client.Pipes,
               module Client.Run
               )
 where
