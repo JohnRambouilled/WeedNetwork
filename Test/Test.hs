@@ -27,18 +27,31 @@ dualTestMain = do cl <- genTestGraph [[1],[0]]
                   threadDelay (10^6)
                   runWM (cl !! 1) $ researchSimpleRessource rID
                   threadDelay (10^6)
-                  runWM (cl !! 1) connect
+                  senderM <- runWM (cl !! 1) connect
+                  case senderM of
+                    Nothing -> putStrLn "failed to connect"
+                    Just sender -> do putStrLn $ "connected!"
+                                      threadDelay (10^5)
+                                      runWM (cl !! 1) . sender [] . ComPinit $ ComInit cID pID (encode "bouya")
+                                      threadDelay (10^5)
+                                      runWM (cl !! 1) . sender [] . ComPmessage $ ComData cID (encode "how you doing?") 
+                                      
+                  
+                                   
    where rID = testRessource
-         connect :: WeedMonad ()
+         cID = ComID 42
+         pID = ProtocolID 42
+         connect :: WeedMonad (Maybe PipeSender)
          connect = do sIDs <- lookupSources rID 
                       case sIDs of
-                        [] -> pure ()
+                        [] -> pure Nothing
                         sID:_ -> do r <- lookupRoad sID
                                     kM <- getSourceKey rID sID
                                     case kM of
-                                      Nothing -> pure ()
-                                      Just k -> do b <- openPipe r (encode "Give me some of this Dank Shit") k
-                                                   when b $ logM "Test.Test" "dualTestMain" Normal "Success!!"
+                                      Nothing -> pure Nothing
+                                      Just k -> openPipe r (encode "Give me some of this Dank Shit") k >>= (\pM -> case pM of Nothing -> pure Nothing
+                                                                                                                              Just p -> genPipeSender p)
+                                                                     
 
 
 dualShow :: TestGraph -> ShowClient
@@ -64,7 +77,7 @@ genTestGraph neighList = do tchans <- atomically . forM [0..n] $ pure newTChan
                             pure cl
   where n = length neighList
         genClient tchans (neighs, i) = do c <- generateClient send
-                                          pure c{clLogHandler = \l -> putStrLn ("Client " ++ show i ++ " ==> " ++ show l)}
+                                          pure c{clLogHandler = \l -> putStrLn ("Client " ++ show (clUserID c) ++ " ==> " ++ show l)}
           where send :: RawData -> WeedMonad ()
                 send d = do logM "Test.Test" "send" Normal "Sending packet"
                             forM_ neighs sendTo

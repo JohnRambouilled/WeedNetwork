@@ -21,7 +21,8 @@ destinaryTimeOut = 60 :: Time
 destinaryRemovePipe :: UserID -> PipeID -> WeedMonad ()
 destinaryRemovePipe sID pID = do destMod <- stmRead clDestinaries
                                  case sID `M.lookup` destMod of
-                                    Nothing -> logM "Client.Destinary" "destinaryRemovePipe" Error "Attempted to remove a pipe from a non-existing source" >> pure ()
+                                    Nothing -> do logM "Client.Destinary" "destinaryRemovePipe" Error $ "Attempted to remove pipe : " ++ show pID ++" from the non-existing source : " ++ show sID
+                                                  pure ()
                                     Just e -> do stmWrite clDestinaries $ M.insert sID (over destPipes (filter (==pID)) e) destMod
                                                  when (_destPipes e == [pID]) $ startTimer (_destTimer e)
 
@@ -36,11 +37,14 @@ destinaryInsertPipes pk sID pIDs = do destMod <- stmRead clDestinaries
                                       case sID `M.lookup` destMod of
                                             Nothing -> do destEM <- newDestinaryEntry sID pk pIDs
                                                           case destEM of
-                                                              Nothing -> pure Nothing
+                                                              Nothing -> do logM "Client.Destinary" "destinaryInsertPipes" Error $ "Diffie-Hellman failed for source : " ++ show sID
+                                                                            pure Nothing
                                                               Just destE -> do stmModify clDestinaries $ M.insert sID destE
+                                                                               logM "Client.destinary" "destinaryInsertPipes" Normal $ "New destinary entry created for source : " ++ show sID
                                                                                pure $ Just destE
                                             Just destE -> if pk == _destKey destE then do let destE' = over destPipes (pIDs++) destE
                                                                                           stmWrite clDestinaries $ M.insert sID destE' destMod
+                                                                                          logM "Client.destinary" "destinaryInsertPipes" Normal $ "Pipe added to existing entry for source : " ++ show sID
                                                                                           when (null $ view destPipes destE) $ killTimer (view destTimer destE) 
                                                                                           pure $ Just destE'
                                                                                   else do logM "Client.Destinary" "destinaryInsertPipes" InvalidPacket $ "Provided key does not match the one store for the source : " ++ show sID

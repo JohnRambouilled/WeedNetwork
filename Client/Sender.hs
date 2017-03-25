@@ -85,6 +85,7 @@ sendRequest r pk d = do t <- getTime
                         uk <- fst . clKeyPair <$> getClient
                         let pipeID = computePipeID r'
                             req = signPipe pk $ Request pos r' uk t (fst pk) pipeID emptySignature d
+                        logM "Client.Sender" "sendRequest" Normal $ "sending request : " ++ show req
                         sendNeighData (UserDest $ r !! pos) $ L2Request req
                         pure req
      where pos = length r - 2
