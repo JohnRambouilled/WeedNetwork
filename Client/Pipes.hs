@@ -161,7 +161,7 @@ onPipePacket packet = do uID <- clUserID <$> getClient
                                                             Just (destE, locE) -> if checkPipeSig (fst $ _destPipeKeys destE) packet
                                                                                     then do when isRefresh $ refreshTimer (_locPipeTimer locE)
                                                                                             onPipeContent destE packet
-                                                                                    else logM "Client.Pipes" "onPipePacket" InvalidPacket "Signature invalid on received pipe packet. This should be worrying..."
+                                                                                    else logM "Client.Pipes" "onPipePacket" InvalidPacket $ "Signature invalid on received pipe packet. This should be worrying... " ++ show (fst $ _destPipeKeys destE)
 
     where (pID, sID)  = (,) <$> _pipePID <*> _pipeSource $ packet
           getLocalEntries :: WeedMonad (Maybe (DestinaryEntry, LocalPipeEntry))

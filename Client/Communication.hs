@@ -36,7 +36,7 @@ newComModule = liftSTM . newTVar . ComModule M.empty
 onComMessage :: TVar ComModule -> PipeID -> ComMessage -> WeedMonad ()
 onComMessage comModule pID comMessage = do comMod <- liftSTM $ readTVar comModule
                                            case comID `M.lookup` view comMap comMod of
-                                                Nothing -> logM "Client.Communication" "onComMessage" InvalidPacket $ "reception d'un com message du comID " ++ show comID ++ " mais il$ est inconnu."
+                                                Nothing -> logM "Client.Communication" "onComMessage" InvalidPacket $ "reception d'un com message du comID " ++ show comID ++ " mais il est inconnu."
                                                 Just comEntry -> do weedIO $ (comCallback comEntry) pID  comMessage
                                                                     when (isComExit comMessage) $ liftSTM (writeTVar comModule $ over comMap (M.delete comID) comMod)
                                                                                                 --liftSTM (writeTVar comModule $ ComModule (M.delete comID $ view comMap comMod) (view comSource comMod))

@@ -81,7 +81,7 @@ instance SignedClass NeighData  where scHash (NeighData src dst pay _) = encode 
                                       scSignature = view neighDSig
                                       scPushSignature d s = set neighDSig s d
 
-instance SignedClass PipePacket  where scHash (PipePacket src dst pid f p _) = encode (src, dst, pid, f, p)
+instance SignedClass PipePacket  where scHash (PipePacket _ _ pid f _ p) = encode (pid, f, p)
                                        scSignature = view pipeSig 
                                        scPushSignature p s = set pipeSig s p
 

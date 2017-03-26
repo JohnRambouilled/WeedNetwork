@@ -19,7 +19,7 @@ genPipeSender pID = do pipeMap <- stmRead clLocalPipes
                                              case _locPipeSource e `M.lookup` sourceMap of
                                                 Nothing -> logM "Client.Sender" "genPipeSender" Error "Known pipe leading to unknown source" >> pure Nothing
                                                 Just se -> let keys = _destPipeKeys se
-                                                           in pure . Just $ \f -> sendPipePacket keys pID (_locPipeNeigh e) f . encode
+                                                           in pure . Just $ \f -> sendPipePacket keys pID (_locPipeNeigh e) f . encode . PPCComPacket
 
 relayAnswer :: Answer -> WeedMonad ()
 relayAnswer ans = if view ansTTL ans > 0 then relAns else error "Relayed Answer with a negative ttl"
@@ -94,7 +94,7 @@ sendRequest r pk d = do t <- getTime
 
 sendPipePacket :: PipeKeyPair -> PipeID -> KeyHash -> [PipePacketFlag] -> RawData -> WeedMonad ()
 sendPipePacket pks id next flags datas = do c <- getClient
-                                            p <- signPacket $ PipePacket (clUserID c) next id flags emptySignature datas
+                                            let p = signPipe pks $ PipePacket (clUserID c) next id flags emptySignature datas
                                             sendRawPacket $ L1Pipe p
 
 sendNeighData :: NeighDestinary -> L2 -> WeedMonad ()
