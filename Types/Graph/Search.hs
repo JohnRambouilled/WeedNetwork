@@ -10,7 +10,9 @@ import           Control.Monad.State
 import           Data.List
 import qualified Data.Map.Strict       as M
 import           Data.Maybe
+import           Debug.Trace
 import           System.Random
+import           Types.Graph.Export
 import           Types.Graph.RoadGraph
 import           Types.Graph.Type
 import           Types.Random
@@ -43,7 +45,7 @@ moveTo g vID
   | isNothing vTM = error $ "Moving to the unregistered vertex: " ++ show vID
   | isJust vTM = do
       prev <- use currentID
-      currentID .= vID
+      currentID .= trace (showVID vID)vID
       currentVal .= vT
       currentNeighs .= neighs
       seen %= ((vID,vT):)
@@ -71,19 +73,23 @@ randomWalkToMe g maxLen = do
                       then moveToRandomNeighbour -- Si le plus proche des pipes est trop loin, je continue la marche aléatoire
                       else do walkOnPipe nearest -- Sinon, j'emprunte le pipe
                               pure True
-                    pure False
             else moveToRandomNeighbour -- S'il n'y a pas de pipes passant par ici, je poursuis la marche aléatoire.
 
   where -- Génère un voisin aléatoire que l'on n'a pas visité
         randomNeighbour = do
           seen <- map fst <$> use seen
           neighs <- M.filterWithKey (\vID _ -> not $ vID `elem` seen) . _eMap <$> use currentNeighs -- On considère un voisin que l'on n'a pas déjà visité
+          if (length neighs == 0) then pure Nothing
+            else do
           r <- getRandomInt (0,M.size neighs-1)
-          pure $ M.elemAt r neighs
+          pure $ Just $ M.elemAt r neighs
         moveToRandomNeighbour = do
-          (nxtID,_) <- randomNeighbour
-          moveTo g nxtID
-          randomWalkToMe g (maxLen - 1)
+          r  <- randomNeighbour
+          case r of
+            Nothing -> pure False
+            Just (nxtID,_) -> do
+              moveTo g nxtID
+              randomWalkToMe g (maxLen - 1)
         -- Progresse le long d'un pipe jusqu'à moi
         walkOnPipe (pipeID,(PipeNode prevM nextM _ dir _)) = do
           (me,posID) <- (,) <$> use me <*> use currentID
