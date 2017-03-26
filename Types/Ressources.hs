@@ -20,8 +20,8 @@ data RessourceEntry = RessourceOffered {_ressourceAnswerContent :: RawData,
                                         _answerTilt :: RessourceTilt,
                                         _researchTilt :: RessourceTilt} |
                       RessourceResearched {_ressourceSources :: M.Map SourceID RessourceSourceEntry,
-                                        _answerTilt :: RessourceTilt,
-                                        _researchTilt :: RessourceTilt} 
+                                           _answerTilt :: RessourceTilt,
+                                           _researchTilt :: RessourceTilt} 
 
 
 data RessourceSourceEntry = RessourceSourceEntry { _rseCert :: RessourceCert,

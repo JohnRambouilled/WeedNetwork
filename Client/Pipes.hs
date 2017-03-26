@@ -187,7 +187,7 @@ removeRelayedPipe pID = do m <- stmRead clRelayedPipes
 onPipeContent :: DestinaryEntry -> PipePacket -> WeedMonad ()
 onPipeContent destE packet = case decodeOrFail $ _pipePacketData packet of
                                 Left (_,_,s) -> logM "Client.Pipes" "onPipeContent" InvalidPacket ("Unable to decode content of a PipePacket : " ++ s)
-                                Right (_,_, PPCPipePacket packet') -> undefined
-                                Right (_,_, PPCL2 layer2) -> undefined
+                                Right (_,_, PPCPipePacket packet') -> logM "Client.Pipes" "onPipeContent" Error "Pipe-on-Pipe not implemented yet..."
+                                Right (_,_, PPCL2 layer2) -> logM "Client.Pipes" "onPipeContent" Error "Layer2-on-Pipe not implemented yet..."
                                 Right (_,_, PPCComPacket comP) -> onComPacket (_destComModule destE) pID comP
     where pID = view pipePID packet

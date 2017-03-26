@@ -11,6 +11,23 @@ import Control.Monad
 import Control.Concurrent.STM
 import qualified Data.Map as M
 
+  
+maxComID = 100 :: Int
+
+openCommunication :: SourceID -> PipeSender -> ProtocolID -> ComEntry -> RawData -> WeedMonad (Maybe ComID)
+openCommunication sID sender pID cE cnt = do
+  dMap <- stmRead clDestinaries
+  case sID `M.lookup` dMap of
+     Nothing -> do logM "Client.Communication" "openCommunication" Error $ "Unable to open communication : source " ++ show sID ++ "does not exist"
+                   pure Nothing
+     Just dE -> do cID <- ComID <$> getRandomInt (0, maxComID)
+                   registerComCallback (view destComModule dE) cID cE 
+                   sender [] . ComPinit $ ComInit cID pID cnt 
+                   pure $ Just cID
+                                  
+                                  
+  
+  
 
 
 addProtocol :: ProtocolID -> ProtocolEntry -> WeedMonad Bool
@@ -38,7 +55,9 @@ onComMessage comModule pID comMessage = do comMod <- liftSTM $ readTVar comModul
                                            case comID `M.lookup` view comMap comMod of
                                                 Nothing -> logM "Client.Communication" "onComMessage" InvalidPacket $ "reception d'un com message du comID " ++ show comID ++ " mais il est inconnu."
                                                 Just comEntry -> do weedIO $ (comCallback comEntry) pID  comMessage
-                                                                    when (isComExit comMessage) $ liftSTM (writeTVar comModule $ over comMap (M.delete comID) comMod)
+                                                                    logM "Client.Communication" "onComMessage" Normal $ "ComMessage received on communication : " ++ show comID
+                                                                    when (isComExit comMessage) $ do liftSTM (writeTVar comModule $ over comMap (M.delete comID) comMod)
+                                                                                                     logM "Client.Communication" "onComMessage" Normal $ "ComClose received for communcation " ++ show comID
                                                                                                 --liftSTM (writeTVar comModule $ ComModule (M.delete comID $ view comMap comMod) (view comSource comMod))
     where comID = view cmComID comMessage
 

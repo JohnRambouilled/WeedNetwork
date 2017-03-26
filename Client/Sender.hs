@@ -11,6 +11,10 @@ import qualified Data.Map as M
 
 type PipeSender = [PipePacketFlag] -> ComPacket -> WeedMonad ()
 
+sendComMessage :: PipeSender -> ComID -> RawData -> WeedMonad ()
+sendComMessage sender cID = sender [] . ComPmessage . ComData cID
+
+
 genPipeSender :: PipeID -> WeedMonad (Maybe PipeSender)
 genPipeSender pID = do pipeMap <- stmRead clLocalPipes
                        case M.lookup pID pipeMap of

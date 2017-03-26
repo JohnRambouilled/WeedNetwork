@@ -21,27 +21,32 @@ type TestGraph = [Client]
 
 testRessource = RessourceID $ encode "Some Dank Ressource"
 
-dualTestMain = do cl <- genTestGraph [[1],[0]]
+dualTestMain = do c0:c1:_ <- genTestGraph [[1],[0]]
                   --forkIO . buildApp $ dualShow cl
-                  runWM (head cl) $ offerRessource rID $ encode "Dankest Dankness ever Danked"
+                  runWM c0 $ do offerRessource rID $ encode "Dankest Dankness ever Danked"
+                                addProtocol pID pEntry
                   threadDelay (10^6)
-                  runWM (cl !! 1) $ researchSimpleRessource rID
+                  runWM c1 $ researchSimpleRessource rID
                   threadDelay (10^6)
-                  senderM <- runWM (cl !! 1) connect
+                  senderM <- runWM c1 connect
                   case senderM of
                     Nothing -> putStrLn "failed to connect"
-                    Just sender -> do putStrLn $ "connected!"
-                                      threadDelay (10^5)
-                                      runWM (cl !! 1) . sender [] . ComPinit $ ComInit cID pID (encode "bouya")
-                                      threadDelay (10^5)
-                                      runWM (cl !! 1) . sender [] . ComPmessage $ ComData cID (encode "how you doing?") 
+                    Just (sID,sender) -> do putStrLn $ "connected!"
+                                            cIDM <- runWM c1 $ openCommunication sID sender pID comEntry (encode "booya") 
+                                            case cIDM of
+                                              Nothing -> putStrLn "failed to create com"
+                                              Just cID -> do putStrLn "communication established!"
+                                                             runWM c1 $ sendComMessage sender cID (encode "Hello friend!")
                                       
                   
                                    
    where rID = testRessource
          cID = ComID 42
          pID = ProtocolID 42
-         connect :: WeedMonad (Maybe PipeSender)
+         pEntry sID d = pure comEntry
+         comEntry = ComEntry callback
+           where callback pID cm = print pID
+         connect :: WeedMonad (Maybe (SourceID,PipeSender))
          connect = do sIDs <- lookupSources rID 
                       case sIDs of
                         [] -> pure Nothing
@@ -50,7 +55,7 @@ dualTestMain = do cl <- genTestGraph [[1],[0]]
                                     case kM of
                                       Nothing -> pure Nothing
                                       Just k -> openPipe r (encode "Give me some of this Dank Shit") k >>= (\pM -> case pM of Nothing -> pure Nothing
-                                                                                                                              Just p -> genPipeSender p)
+                                                                                                                              Just p -> fmap ((,) $ sID) <$>  genPipeSender p)
                                                                      
 
 
