@@ -45,7 +45,7 @@ moveTo g vID
   | isNothing vTM = error $ "Moving to the unregistered vertex: " ++ show vID
   | isJust vTM = do
       prev <- use currentID
-      currentID .= trace (showVID vID)vID
+      currentID .= vID
       currentVal .= vT
       currentNeighs .= neighs
       seen %= ((vID,vT):)
@@ -77,12 +77,17 @@ randomWalkToMe g maxLen = do
 
   where -- Génère un voisin aléatoire que l'on n'a pas visité
         randomNeighbour = do
+          me <- use me
           seen <- map fst <$> use seen
           neighs <- M.filterWithKey (\vID _ -> not $ vID `elem` seen) . _eMap <$> use currentNeighs -- On considère un voisin que l'on n'a pas déjà visité
           if (length neighs == 0) then pure Nothing
-            else do
-          r <- getRandomInt (0,M.size neighs-1)
-          pure $ Just $ M.elemAt r neighs
+            else case M.lookup me neighs of
+
+            Just e -> pure $ Just (me,e) -- Si je fais parti d'un voisin, on emprunte l'arrête
+            Nothing ->
+                 do
+                   r <- getRandomInt (0,M.size neighs-1)
+                   pure $ Just $ M.elemAt r neighs
         moveToRandomNeighbour = do
           r  <- randomNeighbour
           case r of
