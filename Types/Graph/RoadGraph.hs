@@ -17,8 +17,8 @@ data Direction = PrevD | NextD
                deriving Eq
 data PipeNode = PipeNode {_previous :: Maybe VertexID,
                           _next     :: Maybe VertexID,
-                          _pathLen  :: Int, -- Nombre d'arcs d'ici à moi
-                          _pathToMe :: Direction, -- Direction à emprunter pour arriver à moi
+                        _pathLen    :: Int, -- Nombre d'arcs d'ici à moi
+                        _pathToMe   :: Direction, -- Direction à emprunter pour arriver à moi
                           _pipeType :: PipeType} -- Type de pipe (que l'on relaie ou que l'on demande)
 
 data VertexPipes = VertexPipes {_vPipes   :: M.Map PipeID PipeNode}
@@ -173,5 +173,5 @@ deletePipe pipeID vID g = snd $ foldModifyPrevs pipeID delPipe vID () g1
 {-| Supprime tous les sommets par lesquels aucun pipe ne passe et n'ayant aucun arc incident qui ne soit frais |-}
 cleanRoadGraph :: Time -> RoadGraph -> RoadGraph
 cleanRoadGraph cur = filterGraph f
-  where f _ vT (Edges edges) = (not $ M.null $ _vPipes (_pipesT vT)) || (or $ fmap (\e -> edgeUpTime e + minEdgeTTL <= cur) edges)
+  where f _ vT (Edges edges) = (not $ M.null $ _vPipes (_pipesT vT)) || (or $ fmap (\e -> edgeUpTime e + minEdgeTTL >= cur) edges)
 
