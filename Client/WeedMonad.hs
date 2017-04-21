@@ -4,6 +4,7 @@ module Client.WeedMonad where
 
 import Types
 
+import qualified Data.Map as M
 import Control.Concurrent.STM 
 import Control.Monad.STM
 import Control.Monad.Trans
@@ -49,6 +50,8 @@ stmWrite a v = (flip writeSTM) v =<< asks a
 stmModify :: (Client -> TVar a) -> (a -> a) -> WeedMonad ()
 stmModify a f = (flip modifySTM) f  =<< asks a
 
+wmLookup :: Ord k => k -> (Client -> TVar (M.Map k a)) -> WeedMonad (Maybe a)
+wmLookup k a = M.lookup k <$> stmRead a
   
 getClient :: WeedMonad Client
 getClient = ask
