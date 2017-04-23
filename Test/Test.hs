@@ -45,8 +45,6 @@ tripleTest = do c0:c1:c2:[] <- genTestGraph [[1],[0,2],[1]]
                                                              runWM c2 $ sendComMessage sender cID (encode "Hello friend!")
                                                              threadDelay (15*10^6)
                                                              runWM c2 $ closeCommunication sID sender cID (encode "See you soon...")
-                  
- 
    where rID = testRessource
          cID = ComID 42
          pID = ProtocolID 42
