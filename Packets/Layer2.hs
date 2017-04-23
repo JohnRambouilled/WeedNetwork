@@ -60,7 +60,7 @@ makeLenses ''Answer
 makeLenses ''RessourceCert
 
 
-instance SignedClass Request where scHash (Request n r epk t pK pID s c) = B.concat [ c , encode (n,r,epk,t,pK,pID) ]
+instance SignedClass Request where scHash (Request _ r epk t pK pID _ c) = B.concat [ c , encode (r,epk,t,pK,pID) ]
                                    scSignature = view reqPipeSig
                                    scPushSignature r s = set reqPipeSig s r
 instance IntroClass Request where icPubKey = view reqSourceKey

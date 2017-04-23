@@ -138,9 +138,10 @@ checkRequest uID t req@(Request i r sk t0 pk (PipeID pid) s c)
     | not $ checkPipeSig pk req = Left "Invalid signature"
     | t - t0 > maxRequestValidity = Left "Request expired"
     | pid /= computeHash r = Left "PipeID does not match road hash"
-    | i == 0 = Right . Right . head $ tail r  -- Incoming pipe
+    | i == 0 = if uID == head r then Right . Right . head $ tail r  -- Incoming pipe
+                                else Left "UserID at Position in Road doesn't match"
     | otherwise = if uID == r' !! 1 then Right $ Left (r' !! 2, head r')
-                                   else Left "UserID at Position in Road doesn't match"
+                                    else Left "UserID at Position in Road doesn't match"
             where r' = drop (i-1) r
                                                
 
