@@ -35,6 +35,18 @@ tripleTest = do c0:c1:c2:[] <- genTestGraph [[1],[0,2],[1]]
                 threadDelay (10^6)
                 senderM <- runWM c2 connect
                 pure ()
+                case senderM of
+                    Nothing -> putStrLn "failed to connect"
+                    Just (sID,sender) -> do putStrLn $ "connected!"
+                                            cIDM <- runWM c2 $ openCommunication sID sender pID comEntry (encode "booya") 
+                                            case cIDM of
+                                              Nothing -> putStrLn "failed to create com"
+                                              Just cID -> do putStrLn "communication established!"
+                                                             runWM c2 $ sendComMessage sender cID (encode "Hello friend!")
+                                                             threadDelay (15*10^6)
+                                                             runWM c2 $ closeCommunication sID sender cID (encode "See you soon...")
+                  
+ 
    where rID = testRessource
          cID = ComID 42
          pID = ProtocolID 42
