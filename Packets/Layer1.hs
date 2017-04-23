@@ -49,7 +49,8 @@ data PipePacket = PipePacket{ _pipeSource       :: KeyHash,  -- Not signed, upda
 
 data PipePacketContent = PPCPipePacket PipePacket |
                          PPCL2 L2 |
-                         PPCComPacket ComPacket
+                         PPCComPacket ComPacket |
+                         PPCPing
         deriving (Show, Generic)
 
 data PipePacketFlag = PipeControlRefresh

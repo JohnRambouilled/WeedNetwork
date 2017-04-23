@@ -37,8 +37,8 @@ dualTestMain = do c0:c1:_ <- genTestGraph [[1],[0]]
                                               Nothing -> putStrLn "failed to create com"
                                               Just cID -> do putStrLn "communication established!"
                                                              runWM c1 $ sendComMessage sender cID (encode "Hello friend!")
-                                                             threadDelay (10^6)
---                                                             runWM c1 $ closeCommunication sID sender cID (encode "See you soon...")
+                                                             threadDelay (15*10^6)
+                                                             runWM c1 $ closeCommunication sID sender cID (encode "See you soon...")
                                       
                   
                                    

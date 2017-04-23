@@ -24,7 +24,7 @@ data RelayedPipeEntry = RelayedPipeEntry {_relPipePubKey :: PipePubKey,
 
 data LocalPipeEntry = LocalPipeEntry {_locPipeNeigh :: UserID,
                                       _locPipeTimer :: TimerEntry,
-                                      _locPipeOutgoing :: Bool,
+                                      _locPipeRepeater :: Maybe TimerEntry,
                                       _locPipeSource :: SourceID}
 
 

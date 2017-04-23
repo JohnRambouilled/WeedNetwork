@@ -15,9 +15,21 @@ timeToMicroseconds = round . (*10^6)
 refreshTimer :: TimerEntry -> WeedMonad ()
 refreshTimer = startTimer
 
+-- | Create a repeater : execute the specified in a loop, with the specified wait time.
+-- | This will not execute the action right away, but will wait the specified time before executing it for the first time.
+newRepeater :: Time -> WeedMonad () -> WeedMonad TimerEntry
+newRepeater t w = do e <- newTimerEntry_ 
+                     let w' = w >> startTimer e
+                     setTimerEntry e t w'
+                     startTimer e
+                     pure e
+
+  
+-- | Create a timer a start it. The action will be executed after the specified wait time.
 newTimer :: Time -> WeedMonad () -> WeedMonad TimerEntry
 newTimer t w = newTimerIO t =<< runWM' w
 
+-- | Create a timer a start it. The action will be executed after the specified wait time. IO version.
 newTimerIO :: Time -> IOAction -> WeedMonad TimerEntry
 newTimerIO t a = do e <- newTimerEntryIO t a
                     startTimer e
@@ -37,9 +49,10 @@ startTimer eV = killTimer' eV >>= weedIO . ioA
           timerA e = do threadDelay . timeToMicroseconds $ _timerDelay e
                         e' <- readTVarIO eV
                         case _timerThreadID e' of Nothing -> pure ()
-                                                  Just _ -> _timerAction e
+                                                  Just _ -> do atomically . modifyTVar eV $ set timerThreadID Nothing
+                                                               _timerAction e
 
-
+-- | Create an empty TimerEntry
 newTimerEntry_ :: WeedMonad TimerEntry
 newTimerEntry_ = newTimerEntry 1 $ pure ()
 
@@ -51,6 +64,7 @@ newTimerEntry t a = newTimerEntryIO t =<< runWM' a
 newTimerEntryIO :: Time -> IOAction -> WeedMonad TimerEntry
 newTimerEntryIO t a = liftSTM . newTVar $ TimerEntry' Nothing t a
 
+-- | set the delay and action of the TimerEntry. Does not modify the current instances if the timer is already running.
 setTimerEntry :: TimerEntry -> Time -> WeedMonad () -> WeedMonad ()
 setTimerEntry e t a = setTimerEntryIO e t =<< runWM' a
 
@@ -62,6 +76,7 @@ setTimerEntryIO eV t a = modifySTM eV $ set timerDelay t . set timerAction a
 setTimerDelay :: TimerEntry -> Time -> WeedMonad ()
 setTimerDelay eV = modifySTM eV . set timerDelay
 
+-- | Configure a TimerEntry, does not start the timer or modify the currently running thread, will only take act on later start call
 setTimerAction :: TimerEntry -> WeedMonad () -> WeedMonad ()
 setTimerAction t a = setTimerActionIO t =<< runWM' a
 
@@ -69,11 +84,13 @@ setTimerAction t a = setTimerActionIO t =<< runWM' a
 setTimerActionIO :: TimerEntry -> IOAction -> WeedMonad ()
 setTimerActionIO eV = modifySTM eV . set timerAction
 
+-- | Kill the running thread
 killTimer :: TimerEntry -> WeedMonad ()
 killTimer = void . killTimer'
 
 -- | Stop a timer. The TimerEntry is modified immediately, but the actual timer will only be stopped after the transaction.
--- | If the timer isn't running, it, surprisingly enough, does do anything.
+-- | If the timer isn't running, it, surprisingly enough, does not do anything.
+-- | Returns the timerEntry content with the killed thread ID.
 killTimer' :: TimerEntry -> WeedMonad TimerEntry'
 killTimer' eV = do e <- readSTM eV
                    case _timerThreadID e of 

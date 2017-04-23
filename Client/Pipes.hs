@@ -21,6 +21,7 @@ import qualified Data.Map as M
 
 maxRequestValidity = 5 :: Time
 pipeTimeOut = 10 :: Time
+pipeRefreshTime = 5 :: Time
 
 
 -- | open a Pipe on a given Road. Require the Public Key of the destinary.
@@ -32,10 +33,14 @@ openPipe r cnt sK = do dEM <- destinaryInsertPipes sK sID [pID]
                                          do req <- sendRequest r pipeK cnt 
                                             logM "Client.pipes" "openPipe" Normal $ "Opening pipe to source : " ++ show sID ++ " with pipeID : " ++ show pID
                                             timer <- newTimer pipeTimeOut (void $ removeLocalPipe pID)
-                                            addLocalPipe True timer req 
+                                            repeater <- newRepeater pipeRefreshTime $ refresh pipeK timer
+                                            pipeE <- addLocalPipe (Just repeater) timer req 
                                             return (Just pID)
   where pID = computePipeID $ reverse r
         sID = last r
+        nID = head $ tail r
+        refresh k t = do sendPipePacket k pID nID [PipeControlRefresh] (encode PPCPing) >> refreshTimer t
+                         logM "Client.Pipes" "openPipe" Normal $ "Refreshing pipe : " ++ show pID ++ " to neigh " ++ show nID 
 
 onRequest :: UserID -> Request -> WeedMonad ()
 onRequest sID req = do (t,uID) <- (,) <$> getTime <*> fmap clUserID getClient
@@ -55,7 +60,7 @@ onLocalRequest req = do locMap <- stmRead clLocalPipes
                                     Nothing -> do dEM <- destinaryInsertPipes (_reqSourceKey req) sID [pID]
                                                   case dEM of
                                                     Just _ -> do timer <- newTimer pipeTimeOut (void $ removeLocalPipe pID)
-                                                                 addLocalPipe False timer req
+                                                                 void $ addLocalPipe Nothing timer req
                                                     Nothing -> pure ()
         where pID = view reqPipeID req
               sID = last $ view reqRoad req
@@ -79,20 +84,22 @@ removeLocalPipe pID = do locMap <- stmRead clLocalPipes
 
 -- | Add a local pipe entry to the pipeMap and to the graph.
 -- | A pipe is local of the client is at an extremity (and therefore posess the key).
--- | Parameter are : * outgoing pipe (true if we emit the request)
+-- | Parameter are : * repeater (only for outgoing pipes, the origin of the request is responsible for maintaining the pipe)
 -- |                 * timer entry to add to the map
 -- |                 * request (not sent by this function)
 -- | WARNING : raises error if called with a request with empty road
-addLocalPipe :: Bool -> TimerEntry -> Request -> WeedMonad ()
-addLocalPipe out tE req = do stmModify clLocalPipes $ M.insert pID entry
+addLocalPipe :: Maybe TimerEntry -> TimerEntry -> Request -> WeedMonad LocalPipeEntry
+addLocalPipe rpM tE req = do stmModify clLocalPipes $ M.insert pID entry
                              uVertex <- keyHash2VertexID . clUserID <$> getClient 
                              stmModify clGraph $ insertPipe uVertex Local pID (map keyHash2VertexID r)
                              logM "Client.Pipes" "addLocalPipe" Normal ("New local " ++ (if out then "outgoing" else "incoming") ++ " pipe : " ++ show pID ++ " have been added to source : " ++ show sID ++ " with neighbour : " ++ show prev)
+                             pure entry
         where pID = _reqPipeID req
               r = _reqRoad req
+              out = isJust rpM
               sID = if out then head r else last r 
               prev  = if out then last $ init r else head $ tail r
-              entry = LocalPipeEntry prev tE out sID
+              entry = LocalPipeEntry prev tE rpM sID
 
                                                   
 
@@ -146,20 +153,22 @@ checkRequest uID t req@(Request i r sk t0 pk (PipeID pid) s c)
 -- |                Else, we ignore the packet (just like uncorrectly signed packets).
 onPipePacket :: PipePacket -> WeedMonad ()
 onPipePacket packet = do uID <- clUserID <$> getClient
-                         if uID /= _pipeDestinary packet then pure ()
+                         if uID /= _pipeDestinary packet then logM "Client.Pipes" "onPipePacket" Normal "PipePacket not adressed to me"
                          else do (relMap, neighMap) <- (,) <$> stmRead clRelayedPipes <*> stmRead clNeighbours
                                  if isNothing $ M.lookup sID neighMap then logM "Client.Pipes" "onPipePacket" InvalidPacket "PipePacket from an unknown neighbour."
                                  else case pID `M.lookup` relMap of   
                                         Just e -> if checkPipeSig (_relPipePubKey e) packet 
                                                     then do when isRefresh $ refreshTimer (_relPipeTimer e)
                                                             when isClose $ removeRelayedPipe pID >> pure ()
+                                                            logM "Client.Pipes" "onPipePacket" Normal $ "relaying PipePacket on Pipe " ++ show pID 
                                                             relayPipePacket  packet e
                                                     else logM "Client.Pipes" "onPipePacket" InvalidPacket "Signature invalid on relayed pipe packet."
                                         Nothing -> do eM <- getLocalEntries
                                                       case eM of 
                                                             Nothing -> logM "Client.Pipes" "onPipePacket" InvalidPacket "Packet received from a unknown pipe."
                                                             Just (destE, locE) -> if checkPipeSig (fst $ _destPipeKeys destE) packet
-                                                                                    then do when isRefresh $ refreshTimer (_locPipeTimer locE)
+                                                                                    then do when isRefresh $ do refreshTimer $ view locPipeTimer locE
+                                                                                                                logM "Client.Pipes" "onPipePacket" Normal $ "Refreshing pipe : " ++ show pID
                                                                                             onPipeContent destE packet
                                                                                     else logM "Client.Pipes" "onPipePacket" InvalidPacket $ "Signature invalid on received pipe packet. This should be worrying... " ++ show (fst $ _destPipeKeys destE)
 
@@ -190,4 +199,5 @@ onPipeContent destE packet = case decodeOrFail $ _pipePacketData packet of
                                 Right (_,_, PPCPipePacket packet') -> logM "Client.Pipes" "onPipeContent" Error "Pipe-on-Pipe not implemented yet..."
                                 Right (_,_, PPCL2 layer2) -> logM "Client.Pipes" "onPipeContent" Error "Layer2-on-Pipe not implemented yet..."
                                 Right (_,_, PPCComPacket comP) -> onComPacket (_destComModule destE) pID comP
+                                Right (_,_, PPCPing) -> pure ()
     where pID = view pipePID packet
