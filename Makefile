@@ -1,5 +1,5 @@
 all: Main.hs
-	ghc -threaded --make Main.hs
+	ghc -threaded --make Main.hs -dynamic
 
 
 #all: Main.hs obj/ethernet.o obj/receiver.o obj/udp.o
@@ -33,3 +33,10 @@ tests:
 profil: Main.hs   #obj/ethernet.o obj/receiver.o obj/udp.o
 	ghc -osuf p_o -prof -auto-all -threaded --make Main.hs  #obj/ethernet.o obj/receiver.o obj/udp.o --make Main.hs
 			
+
+cabal-reinstall:
+		mv ~/.cabal .cabal_backup
+		mv ~/.ghc .ghc_backup
+		cp .cabal ~
+		cabal update
+		cabal install brick lens cryptonite ansi-terminal
