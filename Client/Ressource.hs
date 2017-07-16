@@ -100,7 +100,7 @@ newResearchedAnswer :: M.Map SourceID RessourceSourceEntry -> Answer -> WeedMona
 newResearchedAnswer m ans = do me <- keyHash2VertexID . clUserID <$> getClient
                                logM "Client.Ressource" "newRessourceResearched" Normal $ "Answer for a researched ressource : " ++ show rID ++ " received from : " ++ show sourceID
                                t <- getTime
-                               stmModify clGraph . addRoad (me, mempty) $ map (wrap t) (_ansRoad ans)
+                               stmModify clGraph $ addRoad (me, mempty) $ map (wrap t) (_ansRoad ans)
                                case sourceID `M.lookup` m of
                                  Just rsE -> refreshTimer $ view rseTimer rsE
                                  Nothing -> overSourceMap . M.insert sourceID =<< newRSEntry t
