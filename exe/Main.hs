@@ -1,3 +1,5 @@
+module Main where
+
 import Test.Test
 
 import Control.Concurrent
